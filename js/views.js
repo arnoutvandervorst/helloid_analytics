@@ -1,0 +1,1354 @@
+/* All views. Each render function returns a DocumentFragment / element that app.js
+   mounts into #view-root. State lives in HR.app.state. */
+(function (HR) {
+  'use strict';
+
+  const U = HR.util, el = U.el, C = HR.charts;
+  const T = (k, p) => HR.i18n.t(k, p);
+
+  /* ------------------------------------------------------------- primitives */
+  function card(title, note, children, cls) {
+    const c = el('div', { class: 'card ' + (cls || '') });
+    if (title) c.appendChild(el('h2', {}, [document.createTextNode(title), note ? el('span', { class: 'card-note', text: note }) : null]));
+    (Array.isArray(children) ? children : [children]).forEach(ch => ch && c.appendChild(ch));
+    return c;
+  }
+
+  function tile(label, value, foot, opts) {
+    opts = opts || {};
+    const t = el('div', { class: 'tile' + (opts.onClick ? ' click' : '') });
+    t.appendChild(el('div', { class: 'label' }, [
+      opts.severity ? el('span', { class: 'sev ' + opts.severity }) : null,
+      document.createTextNode(label)
+    ]));
+    const v = el('div', { class: 'value' + (opts.small ? ' sm' : ''), text: value });
+    if (opts.color) v.style.color = opts.color;
+    t.appendChild(v);
+    const footRow = el('div', { class: 'foot' });
+    if (foot) footRow.append(document.createTextNode(foot));
+    if (opts.delta != null) {
+      footRow.append(document.createTextNode(foot ? ' · ' : ''), deltaBadge(opts.delta, opts.deltaFormat, opts.inverse));
+    }
+    if (footRow.childNodes.length) t.appendChild(footRow);
+    if (opts.onClick) t.addEventListener('click', opts.onClick);
+    return t;
+  }
+
+  function deltaBadge(d, fmt, inverse) {
+    const change = typeof d === 'object' ? d.change : d;
+    const dir = change > 0 ? 'up' : change < 0 ? 'down' : 'flat';
+    const arrow = change > 0 ? '▲' : change < 0 ? '▼' : '=';
+    const txt = change === 0 ? T('df.noChange')
+      : (change > 0 ? '+' : '−') + (fmt ? fmt(Math.abs(change)) : U.fmtInt(Math.abs(change)));
+    return el('span', { class: 'delta ' + dir + (inverse ? ' inverse' : ''), text: arrow + ' ' + txt, title: T('df.vsBaseline') });
+  }
+
+  function bandPill(band) { return el('span', { class: 'sev ' + band, text: T('c.' + band) }); }
+
+  function scoreBar(score) {
+    const wrap = el('span');
+    const bar = el('span', { class: 'scorebar' });
+    const i = el('i');
+    i.style.width = U.clamp(score, 0, 100) + '%';
+    i.style.background = C.STATUS[HR.config.severityOf(score)];
+    bar.appendChild(i);
+    wrap.append(bar, el('span', { text: ' ' + score, class: 'mono' }));
+    return wrap;
+  }
+
+  const dl = pairs => {
+    const d = el('dl', { class: 'kv' });
+    pairs.forEach(([k, v]) => { if (v == null) return; d.append(el('dt', { text: k }), el('dd', {}, typeof v === 'string' ? document.createTextNode(v) : v)); });
+    return d;
+  };
+
+  const bDelta = key => {
+    const b = HR.app.state.diff;
+    return b ? b.summary[key] : null;
+  };
+
+  /* ================================================================ OVERVIEW */
+  function overview(m) {
+    const f = document.createDocumentFragment();
+    const s = m.summary;
+    f.appendChild(el('div', { class: 'view-head' }, [
+      el('div', {}, [
+        el('h1', { text: T('ov.title') }),
+        el('p', { text: T('ov.lead', { rows: U.fmtInt(s.rows), accounts: s.accounts, perms: s.permissions, systems: s.systems }) })
+      ])
+    ]));
+
+    const kpis = el('div', { class: 'grid g4' });
+    kpis.append(
+      tile(T('ov.overallRisk'), String(s.riskScore), T('ov.weighted'), {
+        severity: s.riskBand, delta: bDelta('riskScore'), onClick: () => HR.app.go('risk')
+      }),
+      tile(T('ov.unownedAccounts'), U.fmtInt(s.orphanAccounts),
+        T('ov.stillEnabled', { n: s.orphanEnabled }), { severity: s.orphanEnabled ? 'critical' : 'good', delta: bDelta('orphanAccounts'), onClick: () => HR.app.go('accounts', { filter: 'orphan' }) }),
+      tile(T('ov.unmanagedEnt'), U.fmtInt(s.unmanagedPermissionRows),
+        T('ov.outsideModel'), { severity: 'medium', delta: bDelta('unmanagedPermissionRows'), onClick: () => HR.app.go('permissions') }),
+      tile(T('ov.recoverable'), U.fmtMoney(s.wasteMonthly) + '/mo',
+        T('ov.perYear', { amount: U.fmtMoney(m.cost.wasteAnnual) }), { severity: s.wasteMonthly > 0 ? 'high' : 'good', onClick: () => HR.app.go('cost') })
+    );
+    f.appendChild(kpis);
+
+    const kpis2 = el('div', { class: 'grid g4' });
+    kpis2.style.marginTop = '14px';
+    kpis2.append(
+      tile(T('ov.accounts'), U.fmtInt(s.accounts), T('ov.enabledDisabled', { e: s.enabledAccounts, d: s.disabledAccounts }), { small: true, delta: bDelta('accounts') }),
+      tile(T('ov.coverage'), U.fmtPct(s.coverage, 0), T('ov.coverageFoot'), { small: true, severity: s.coverage > .9 ? 'good' : 'medium' }),
+      tile(T('ov.licenceSpend'), U.fmtMoney(s.monthlyCost) + '/mo', T('ov.pricedGroups', { n: m.cost.pricedPermissions }), { small: true, delta: bDelta('monthlyCost'), deltaFormat: U.fmtMoney }),
+      tile(T('ov.cleanup'), U.fmtMoney(m.cost.remediationCost), T('ov.cleanupFoot', { h: Math.round(m.cost.remediation.hours), rate: U.fmtMoney(m.cost.remediation.rate) }), { small: true })
+    );
+    f.appendChild(kpis2);
+
+    const g = el('div', { class: 'grid g2' }); g.style.marginTop = '14px';
+
+    /* issue mix */
+    const issueColors = { 'Account unmanaged': C.STATUS.critical, 'Permission unmanaged': C.slot(1), 'Permission missing': C.STATUS.warning };
+    const issueData = Object.entries(s.issueCounts).map(([k, v]) => ({
+      label: k, value: v, color: issueColors[k] || C.slot(7),
+      onClick: () => HR.app.go('accounts', { issue: k })
+    }));
+    g.appendChild(card(T('ov.issueMix'), U.fmtInt(s.rows) + ' ' + T('app.rows'), C.stackedBar(issueData)));
+
+    /* account population */
+    const pop = [
+      { label: T('ov.managed'), value: s.accounts - s.orphanAccounts, color: C.slot(3) },
+      { label: T('ov.unownedEnabled'), value: s.orphanEnabled, color: C.STATUS.critical },
+      { label: T('ov.unownedDisabled'), value: s.orphanAccounts - s.orphanEnabled, color: C.STATUS.serious }
+    ];
+    g.appendChild(card(T('ov.population'), U.fmtInt(s.accounts) + ' ' + T('app.accounts'), C.stackedBar(pop)));
+
+    /* risk distribution */
+    g.appendChild(card(T('ov.riskDist'), T('ov.riskDistNote'),
+      C.histogram(m.accountList.map(a => a.riskScore), {
+        max: 100, bins: 10, unit: T('app.riskShort'), itemLabel: T('app.accounts'),
+        onBin: (lo, hi) => HR.app.go('accounts', { riskMin: lo, riskMax: hi })
+      })));
+
+    /* top risky accounts */
+    /* Ranked on the uncapped exposure so the top of the list still separates —
+       many accounts pin at the 100 cap once they are unowned and privileged. */
+    g.appendChild(card(T('ov.topAccounts'), T('ov.topAccountsNote'), C.barList(
+      m.risk.topAccounts.slice(0, 10).map(a => ({
+        label: a.userName, value: Math.round(a.riskRaw), color: C.STATUS[a.riskBand],
+        onClick: () => drawerAccount(a),
+        tip: '<div class="t-title">' + U.esc(a.userName) + '</div>' +
+          '<div class="t-row"><span>' + T('ov.riskCapped') + '</span><b>' + a.riskScore + '</b></div>' +
+          '<div class="t-row"><span>' + T('c.exposure') + '</span><b>' + Math.round(a.riskRaw) + '</b></div>' +
+          '<div class="t-row"><span>' + T('dr.permsHeld') + '</span><b>' + a.permCount + '</b></div>' +
+          '<div class="t-row"><span>' + T('ov.ownerTip') + '</span><b>' + U.esc(a.personName || T('ov.none')) + '</b></div>'
+      })), { valueLabel: T('c.exposure') })));
+
+    /* permission categories */
+    const catRows = Array.from(U.by(m.permissionList, p => p.categoryLabel).entries())
+      .map(([k, list]) => ({
+        label: k, value: U.sum(list, p => p.holderCount), color: C.slot(list[0].colorSlot),
+        note: T('ov.groupsNote', { n: list.length })
+      })).sort((a, b) => b.value - a.value);
+    g.appendChild(card(T('ov.byCategory'), T('ov.byCategoryNote'), C.barList(catRows, { valueLabel: T('c.assignments') })));
+
+    /* cost by SKU */
+    if (m.cost.bySku.length) {
+      g.appendChild(card(T('ov.spendByGroup'), T('ov.spendByGroupNote'), C.barList(
+        m.cost.bySku.slice(0, 10).map(x => ({
+          label: x.name, value: x.monthly, color: C.slot(4),
+          note: T('ov.holdersAt', { n: x.holders, price: U.fmtMoney(x.unit) })
+        })), { format: v => U.fmtMoney(v), valueLabel: T('c.perMonth') })));
+    }
+
+    /* scatter: entitlement volume vs risk */
+    /* One circle per account stops being readable — and stops being fast — long before
+       the population does, so above the cap this shows an even sample and says so. */
+    const SCATTER_CAP = 4000;
+    const scatterAll = m.accountList.filter(a => a.permCount > 0);
+    const step = Math.ceil(scatterAll.length / SCATTER_CAP);
+    const scatterPoints = step > 1 ? scatterAll.filter((_, i) => i % step === 0) : scatterAll;
+    g.appendChild(card(T('ov.scatter'),
+      step > 1 ? T('ov.scatterSampled', { shown: U.fmtInt(scatterPoints.length), total: U.fmtInt(scatterAll.length) }) : T('ov.scatterNote'),
+      C.scatter(
+      scatterPoints.map(a => ({
+        x: a.permCount, y: a.riskScore,
+        r: 3 + Math.min(9, Math.sqrt(a.monthlyCost)),
+        color: C.STATUS[a.riskBand],
+        onClick: () => drawerAccount(a),
+        tip: '<div class="t-title">' + U.esc(a.userName) + '</div>' +
+          '<div class="t-row"><span>' + T('dr.permsHeld') + '</span><b>' + a.permCount + '</b></div>' +
+          '<div class="t-row"><span>' + T('app.riskShort') + '</span><b>' + a.riskScore + '</b></div>' +
+          '<div class="t-row"><span>' + T('dr.monthlyCost') + '</span><b>' + U.fmtMoney(a.monthlyCost) + '/mo</b></div>'
+      })), { xLabel: T('ov.scatterX'), yLabel: T('app.riskShort'), maxY: 100, height: 300 })));
+
+    /* class × band heatmap */
+    const bands = ['critical', 'high', 'medium', 'low'];
+    const classes = Array.from(U.by(m.accountList, a => a.clsLabel).entries());
+    g.appendChild(card(T('ov.heat'), T('app.accounts'), C.heatmap(
+      classes.map(([label, list]) => ({
+        label,
+        cells: bands.map(b => ({
+          value: list.filter(a => a.riskBand === b).length,
+          tip: '<div class="t-title">' + U.esc(label) + ' · ' + T('c.' + b) + '</div><div class="t-row"><span>' + T('app.accounts') + '</span><b>' +
+            list.filter(a => a.riskBand === b).length + '</b></div>',
+          onClick: () => HR.app.go('accounts', { cls: label, band: b })
+        }))
+      })), bands.map(b => T('c.' + b)), { corner: T('c.class') })));
+
+    f.appendChild(g);
+
+    if (m.systemList.length > 1) {
+      f.appendChild(el('div', { class: 'grid' }, card(T('ov.systems'), null, HR.table.make({
+        columns: [
+          { key: 'name', label: T('c.system') },
+          { key: 'accountCount', label: T('ov.accounts'), num: true },
+          { key: 'permissionCount', label: T('pm.title'), num: true },
+          { key: 'rows', label: T('c.rowsCol'), num: true }
+        ], rows: m.systemList, pageSize: 20, exportName: 'systems'
+      }))));
+    }
+    return f;
+  }
+
+  /* =================================================================== RISK */
+  function riskView(m) {
+    const f = document.createDocumentFragment();
+    f.appendChild(el('div', { class: 'view-head' }, el('div', {}, [
+      el('h1', { text: T('rk.title') }),
+      el('p', { text: T('rk.lead') })
+    ])));
+
+    const top = el('div', { class: 'grid g4' });
+    top.append(
+      tile(T('ov.overallRisk'), String(m.risk.overall), T('c.' + m.summary.riskBand), { severity: m.summary.riskBand, delta: bDelta('riskScore') }),
+      tile(T('rk.criticalFindings'), String(m.summary.criticalFindings), T('rk.actWeek'), { severity: 'critical' }),
+      tile(T('rk.highFindings'), String(m.summary.highFindings), T('rk.actQuarter'), { severity: 'high' }),
+      tile(T('rk.atHigh'), String((m.risk.bands.critical || 0) + (m.risk.bands.high || 0)), T('rk.ofN', { n: m.summary.accounts }), { severity: 'high' })
+    );
+    f.appendChild(top);
+
+    const g = el('div', { class: 'grid g2' }); g.style.marginTop = '14px';
+    g.appendChild(card(T('rk.formula'), null, [
+      (() => {
+        const t = el('table', { class: 'tbl' });
+        const tb = el('tbody');
+        m.risk.formula.forEach(x => {
+          tb.appendChild(el('tr', {}, [
+            el('td', { text: x.label }),
+            el('td', { class: 'num', text: '×' + x.weight.toFixed(2) }),
+            el('td', { class: 'num', text: U.fmtNum(x.value, 1) }),
+            el('td', { class: 'num', text: U.fmtNum(x.value * x.weight, 1) })
+          ]));
+        });
+        tb.appendChild(el('tr', {}, [el('td', { html: '<b>' + U.esc(T('rk.overall')) + '</b>' }), el('td', {}), el('td', {}),
+          el('td', { class: 'num', html: '<b>' + m.risk.overall + '</b>' })]));
+        t.appendChild(tb);
+        return el('div', { class: 'tbl-wrap' }, t);
+      })(),
+      el('p', { class: 'note', text: T('rk.formulaNote') })
+    ]));
+
+    g.appendChild(card(T('rk.byClass'), null, HR.table.make({
+      columns: [
+        { key: 'key', label: T('c.class') },
+        { key: 'accounts', label: T('ov.accounts'), num: true },
+        { key: 'meanRisk', label: T('rk.meanRisk'), num: true, render: r => U.fmtNum(r.meanRisk, 1) },
+        { key: 'maxRisk', label: T('rk.max'), num: true },
+        { key: 'critical', label: T('c.critical'), num: true },
+        { key: 'high', label: T('c.high'), num: true },
+        { key: 'monthlyCost', label: T('c.costMo'), num: true, render: r => U.fmtMoney(r.monthlyCost) }
+      ], rows: m.risk.byClass, pageSize: 12, exportName: 'risk-by-class',
+      initialSort: { key: 'meanRisk', dir: -1 }
+    })));
+    f.appendChild(g);
+
+    /* findings */
+    const list = el('div', { class: 'stack' }); list.style.marginTop = '14px';
+    list.appendChild(el('div', { class: 'row' }, [
+      el('h2', { text: T('rk.findings', { n: m.findings.length }) }),
+      el('span', { class: 'spacer' }),
+      el('button', {
+        class: 'btn sm', text: T('rk.exportReport'),
+        onclick: () => U.download('reconciliation-report.md', buildReport(m), 'text/markdown;charset=utf-8')
+      }),
+      el('button', {
+        class: 'btn sm', text: T('rk.exportFindings'), onclick: () => {
+          U.download('findings.csv', U.toCSV(m.findings.map(x => ({
+            severity: x.severity, category: x.category, title: x.title, affected: x.count,
+            monthlyImpact: Math.round(x.impactMonthly || 0), annualImpact: Math.round(x.annualImpact || 0),
+            what: x.what, why: x.why, remediation: x.fix
+          }))), 'text/csv;charset=utf-8');
+        }
+      })
+    ]));
+    m.findings.forEach(fd => list.appendChild(findingCard(fd, m)));
+    f.appendChild(list);
+
+    f.appendChild(el('div', { class: 'grid' }, card(T('rk.topPerms'), T('rk.topPermsNote'), HR.table.make({
+      columns: [
+        { key: 'name', label: T('c.permission'), render: r => el('a', { href: '#', text: r.name, onclick: e => { e.preventDefault(); drawerPermission(r, m); } }) },
+        { key: 'categoryLabel', label: T('c.category') },
+        { key: 'holderCount', label: T('c.holders'), num: true },
+        { key: 'holdersOrphan', label: T('c.unowned'), num: true },
+        { key: 'holdersDisabled', label: T('c.disabled'), num: true },
+        { key: 'riskScore', label: T('c.risk'), num: true, render: r => scoreBar(r.riskScore) }
+      ], rows: m.permissionList.slice().sort((a, b) => b.riskScore - a.riskScore), pageSize: 15,
+      exportName: 'permission-risk', initialSort: { key: 'riskScore', dir: -1 },
+      search: (r, q) => r.name.toLowerCase().includes(q),
+      onRowClick: r => drawerPermission(r, m)
+    }))));
+
+    return f;
+  }
+
+  function findingCard(fd, m) {
+    const d = el('details', { class: 'finding' });
+    const sum = el('summary');
+    sum.append(
+      el('span', { class: 'sev ' + fd.severity, text: T('c.' + fd.severity) }),
+      el('span', { class: 'f-title', text: fd.title }),
+      el('span', { class: 'pill', text: fd.category }),
+      el('span', { class: 'pill solid', text: T(fd.count === 1 ? 'rk.item' : 'rk.items', { n: fd.count }) }),
+      fd.impactMonthly ? el('span', { class: 'pill', text: U.fmtMoney(fd.impactMonthly) + '/mo · ' + T(fd.recoverable ? 'rk.recoverable' : 'rk.atStake') }) : null
+    );
+    d.appendChild(sum);
+    const body = el('div', { class: 'f-body' });
+    body.appendChild(dl([
+      [T('rk.what'), fd.what],
+      [T('rk.why'), fd.why],
+      [T('rk.fix'), fd.fix],
+      fd.impactMonthly ? [T('rk.impact'), T('rk.impactVal', { m: U.fmtMoney(fd.impactMonthly), y: U.fmtMoney(fd.annualImpact) })] : null
+    ].filter(Boolean)));
+    if (fd.entities.length) {
+      const rows = fd.entities;
+      body.appendChild(el('div', { style: 'margin-top:10px' }, HR.table.make({
+        columns: [
+          { key: 'label', label: T(fd.entities[0].type === 'permission' ? 'c.permission' : 'c.account') },
+          { key: 'detail', label: T('rk.detail') }
+        ],
+        rows, pageSize: 15, exportName: 'finding-' + fd.id,
+        search: (r, q) => (r.label + ' ' + r.detail).toLowerCase().includes(q),
+        onRowClick: r => {
+          if (r.type === 'account') { const a = m.accounts.get(r.key); if (a) drawerAccount(a); }
+          else { const p = m.permissions.get(r.key); if (p) drawerPermission(p, m); }
+        }
+      })));
+    }
+    d.appendChild(body);
+    return d;
+  }
+
+
+  /** Executive summary as Markdown — the thing that gets pasted into the report. */
+  function buildReport(m) {
+    const s = m.summary, c = m.cost, st = HR.app.state;
+    const L = [];
+    const row = (k, v) => L.push('| ' + k + ' | ' + v + ' |');
+    L.push('# ' + T('md.title', { systems: m.systemList.map(x => x.name).join(', ') }));
+    L.push('');
+    L.push(T('md.source', {
+      name: (st.snapshots.find(x => x.id === st.currentSnapshotId) || {}).name || '—',
+      rows: U.fmtInt(s.rows), date: new Date().toLocaleString(HR.i18n.locale)
+    }));
+    if (st.baselineSnapshot) L.push(T('md.baseline', { name: st.baselineSnapshot.name, date: U.fmtDate(st.baselineSnapshot.importedAt) }));
+    L.push('');
+    L.push('## ' + T('md.headline'));
+    L.push('');
+    L.push('| ' + T('md.metric') + ' | ' + T('md.value') + ' |');
+    L.push('| --- | --- |');
+    row(T('md.mRisk'), s.riskScore + '/100 (' + T('c.' + s.riskBand) + ')');
+    row(T('md.mAccounts'), T('md.mAccountsVal', { n: s.accounts, e: s.enabledAccounts, d: s.disabledAccounts }));
+    row(T('md.mOrphan'), T('md.mOrphanVal', { n: s.orphanAccounts, e: s.orphanEnabled }));
+    row(T('md.mCoverage'), U.fmtPct(s.coverage, 0));
+    row(T('md.mUnmanaged'), U.fmtInt(s.unmanagedPermissionRows));
+    row(T('md.mMissing'), U.fmtInt(s.missingPermissionRows));
+    row(T('md.mSpend'), U.fmtMoney(c.totalMonthly) + '/mo · ' + U.fmtMoney(c.totalAnnual) + '/yr');
+    row(T('md.mRecoverable'), U.fmtMoney(c.wasteMonthly) + '/mo · ' + U.fmtMoney(c.wasteAnnual) + '/yr');
+    row(T('md.mCleanup'), U.fmtNum(c.remediation.hours, 0) + ' h ≈ ' + U.fmtMoney(c.remediationCost));
+    if (c.paybackMonths) row(T('md.mPayback'), T('md.mPaybackVal', { n: U.fmtNum(c.paybackMonths, 1) }));
+    L.push('');
+    L.push('## ' + T('md.findings'));
+    m.findings.forEach(f => {
+      L.push('');
+      L.push('### [' + T('c.' + f.severity).toUpperCase() + '] ' + f.title);
+      L.push('');
+      L.push('- **' + T('md.affected') + ':** ' + f.count);
+      if (f.impactMonthly) L.push('- **' + T('md.money') + ':** ' + U.fmtMoney(f.impactMonthly) + '/mo · ' +
+        U.fmtMoney(f.annualImpact) + '/yr (' + T(f.recoverable ? 'rk.recoverable' : 'rk.atStake') + ')');
+      L.push('- **' + T('md.what') + ':** ' + f.what);
+      L.push('- **' + T('md.why') + ':** ' + f.why);
+      L.push('- **' + T('md.fix') + ':** ' + f.fix);
+      if (f.entities.length) {
+        L.push('- **' + T('md.examples') + ':** ' + f.entities.slice(0, 8).map(e => e.label).join(', ') +
+          (f.entities.length > 8 ? ' … (' + f.entities.length + ' ' + T('md.total') + ')' : ''));
+      }
+    });
+    L.push('');
+    L.push('## ' + T('md.topAccounts'));
+    L.push('');
+    L.push('| ' + [T('c.account'), T('c.owner'), T('c.class'), T('c.perms'), T('c.risk'), T('md.drivers')].join(' | ') + ' |');
+    L.push('| --- | --- | --- | --- | --- | --- |');
+    m.risk.topAccounts.slice(0, 15).forEach(a => L.push('| ' + [
+      a.userName, a.personName || '—', a.clsLabel, a.permCount, a.riskScore,
+      a.riskParts.slice(0, 3).map(p => p.label).join('; ')
+    ].join(' | ') + ' |'));
+    if (st.diff) {
+      L.push('');
+      L.push('## ' + T('md.change'));
+      L.push('');
+      L.push(st.diff.headline);
+      L.push('');
+      L.push('| ' + [T('c.finding'), T('c.was'), T('c.now'), T('c.change')].join(' | ') + ' |');
+      L.push('| --- | --- | --- | --- |');
+      st.diff.findings.filter(f => f.change).forEach(f => L.push('| ' + [
+        f.title, f.was, f.now, (f.change > 0 ? '+' : '') + f.change
+      ].join(' | ') + ' |'));
+    }
+    L.push('');
+    L.push('---');
+    L.push(T('md.disclaimer'));
+    return L.join('\n');
+  }
+
+  /* =================================================================== COST */
+  function costView(m) {
+    const f = document.createDocumentFragment();
+    const c = m.cost;
+    f.appendChild(el('div', { class: 'view-head' }, el('div', {}, [
+      el('h1', { text: T('ct.title') }),
+      el('p', { text: T('ct.lead') })
+    ])));
+
+    const k = el('div', { class: 'grid g4' });
+    k.append(
+      tile(T('ov.licenceSpend'), U.fmtMoney(c.totalMonthly) + '/mo', T('ov.perYear', { amount: U.fmtMoney(c.totalAnnual) }), { delta: bDelta('monthlyCost'), deltaFormat: U.fmtMoney }),
+      tile(T('ct.recoverableNow'), U.fmtMoney(c.wasteMonthly) + '/mo', T('ov.perYear', { amount: U.fmtMoney(c.wasteAnnual) }), { severity: c.wasteMonthly ? 'high' : 'good' }),
+      tile(T('ct.outsideControl'), U.fmtMoney(c.unmanagedSpend) + '/mo', T('ct.outsideControlFoot'), { severity: 'medium' }),
+      tile(T('ov.cleanup'), U.fmtMoney(c.remediationCost), T('ct.cleanupFoot', { h: Math.round(c.remediation.hours) }) + (c.paybackMonths ? ' · ' + T('ct.payback', { n: U.fmtNum(c.paybackMonths, 1) }) : ''), { small: true })
+    );
+    f.appendChild(k);
+
+    const g = el('div', { class: 'grid g2' }); g.style.marginTop = '14px';
+
+    /* waste buckets */
+    const buckets = [
+      { label: T('ct.bucketDisabled'), value: c.disabledWaste, n: c.disabledHolders.length, color: C.STATUS.critical, hard: true },
+      { label: T('ct.bucketStacked'), value: c.stackedWasteNet, n: c.stacked.length, color: C.STATUS.serious, hard: true },
+      { label: T('ct.bucketOrphan'), value: c.orphanExposure, n: c.orphanEnabled.length, color: C.STATUS.warning, hard: false }
+    ];
+    g.appendChild(card(T('ct.leaks'), T('ct.leaksNote'), [
+      C.barList(buckets.map(b => ({ label: b.label, value: b.value, color: b.color, note: T('ct.bucketFoot', { n: b.n }) })),
+        { format: v => U.fmtMoney(v), valueLabel: T('c.perMonth') }),
+      el('p', { class: 'note', text: T('ct.leaksNote2') })
+    ]));
+
+    /* savings scenario */
+    g.appendChild(card(T('ct.scenario'), null, savingsScenario(m)));
+
+    g.appendChild(card(T('ct.byCategory'), null, C.barList(c.byCategory.map(x => ({
+      label: x.key, value: x.monthly, color: C.slot(4), note: T('ct.groupsN', { n: x.items })
+    })), { format: v => U.fmtMoney(v), valueLabel: T('c.perMonth') })));
+
+    g.appendChild(card(T('ct.effortModel'), T('ct.effortNote'), (() => {
+      const r = c.remediation;
+      const rows = [
+        [T('ct.workUnmanagedPerms'), r.counts.unmanagedPerms, HR.config.get().effort.minutesPerUnmanagedPermission],
+        [T('ct.workUnmanagedAccounts'), r.counts.unmanagedAccounts, HR.config.get().effort.minutesPerUnmanagedAccount],
+        [T('ct.workMissingPerms'), r.counts.missingPerms, HR.config.get().effort.minutesPerMissingPermission],
+        [T('ct.workPrivReview'), r.counts.privilegedReviews, HR.config.get().effort.minutesPerPrivilegedReview]
+      ];
+      const t = el('table', { class: 'tbl' });
+      t.appendChild(el('thead', {}, el('tr', {}, [
+        el('th', { class: 'no-sort', text: T('ct.workItem') }), el('th', { class: 'no-sort num', text: T('ct.count') }),
+        el('th', { class: 'no-sort num', text: T('ct.minEach') }), el('th', { class: 'no-sort num', text: T('ct.hours') })])));
+      const tb = el('tbody');
+      rows.forEach(([lb, n0, mins]) => tb.appendChild(el('tr', {}, [
+        el('td', { text: lb }), el('td', { class: 'num', text: U.fmtInt(n0) }),
+        el('td', { class: 'num', text: String(mins) }), el('td', { class: 'num', text: U.fmtNum(n0 * mins / 60, 1) })
+      ])));
+      tb.appendChild(el('tr', {}, [el('td', { html: '<b>' + U.esc(T('ct.total')) + '</b>' }), el('td', {}), el('td', {}),
+        el('td', { class: 'num', html: '<b>' + U.fmtNum(r.hours, 1) + '</b>' })]));
+      t.appendChild(tb);
+      return el('div', { class: 'tbl-wrap' }, t);
+    })()));
+    f.appendChild(g);
+
+    f.appendChild(el('div', { class: 'grid', style: 'margin-top:14px' }, card(T('ct.pricedGroups'), T('ct.pricedNote', { priced: c.pricedPermissions, unpriced: c.unpricedPermissions }), HR.table.make({
+      columns: [
+        { key: 'name', label: T('ct.group') },
+        { key: 'label', label: T('ct.priceEntry') },
+        { key: 'unit', label: T('c.unitMo'), num: true, render: r => U.fmtMoney(r.unit) },
+        { key: 'holders', label: T('c.holders'), num: true },
+        { key: 'disabled', label: T('c.disabled'), num: true },
+        { key: 'orphan', label: T('c.unowned'), num: true },
+        { key: 'monthly', label: T('ct.monthly'), num: true, render: r => U.fmtMoney(r.monthly) },
+        { key: 'annual', label: T('ct.annual'), num: true, render: r => U.fmtMoney(r.annual) }
+      ], rows: c.bySku, pageSize: 20, exportName: 'spend-by-group',
+      initialSort: { key: 'monthly', dir: -1 },
+      search: (r, q) => r.name.toLowerCase().includes(q),
+      onRowClick: r => { const p = m.permissions.get(r.key); if (p) drawerPermission(p, m); }
+    }))));
+
+    f.appendChild(el('div', { class: 'grid', style: 'margin-top:14px' }, card(T('ct.disabledHolding'), T('ct.disabledHoldingNote', { n: c.disabledHolders.length, amount: U.fmtMoney(c.disabledWaste) }), HR.table.make({
+      columns: [
+        { key: 'userName', label: T('c.account') },
+        { key: 'displayName', label: T('c.displayName') },
+        { key: 'perms', label: T('ct.paidGroups'), render: r => el('span', { class: 'trunc', text: r.perms.filter(p => p.monthlyPrice).map(p => p.name).join(', ') }) },
+        { key: 'monthlyCost', label: T('c.costMo'), num: true, render: r => U.fmtMoney(r.monthlyCost) }
+      ], rows: c.disabledHolders, pageSize: 20, exportName: 'disabled-licensed',
+      initialSort: { key: 'monthlyCost', dir: -1 },
+      search: (r, q) => (r.userName + ' ' + r.displayName).toLowerCase().includes(q),
+      onRowClick: a => drawerAccount(a)
+    }))));
+
+    return f;
+  }
+
+  function savingsScenario(m) {
+    const wrap = el('div');
+    const out = el('div');
+    const state = { pct: 80, months: 12 };
+    const rate = el('input', { type: 'range', min: 0, max: 100, value: state.pct, oninput: e => { state.pct = +e.target.value; draw(); } });
+    rate.style.width = '100%';
+    function draw() {
+      const monthly = m.cost.wasteMonthly * state.pct / 100;
+      const annual = monthly * 12;
+      const net = annual - m.cost.remediationCost;
+      out.innerHTML = '';
+      out.append(
+        el('div', { class: 'row' }, [
+          el('div', { class: 'tile', style: 'flex:1' }, [
+            el('div', { class: 'label', text: T('ct.actioned') }),
+            el('div', { class: 'value sm', text: state.pct + '%' }),
+            el('div', { class: 'foot', text: T('ct.removedMo', { amount: U.fmtMoney(monthly) }) })
+          ]),
+          el('div', { class: 'tile', style: 'flex:1' }, [
+            el('div', { class: 'label', text: T('ct.year1') }),
+            el('div', { class: 'value sm', text: U.fmtMoney(annual) }),
+            el('div', { class: 'foot', text: T('ct.gross') })
+          ]),
+          el('div', { class: 'tile', style: 'flex:1' }, [
+            el('div', { class: 'label', text: T('ct.netOf') }),
+            el('div', { class: 'value sm', text: U.fmtMoney(net) }),
+            el('div', { class: 'foot', text: T(net > 0 ? 'ct.paysItself' : 'ct.effortExceeds') })
+          ])
+        ])
+      );
+    }
+    wrap.append(el('label', { class: 'inline', text: T('ct.scenarioLabel') }), rate, out);
+    draw();
+    return wrap;
+  }
+
+  /* =============================================================== ACCOUNTS */
+  function accountsView(m, params) {
+    params = params || {};
+    const f = document.createDocumentFragment();
+    f.appendChild(el('div', { class: 'view-head' }, el('div', {}, [
+      el('h1', { text: T('ac.title') }),
+      el('p', { text: T('ac.lead') })
+    ])));
+
+    let rows = m.accountList;
+    const notes = [];
+    if (params.filter === 'orphan') { rows = rows.filter(a => a.orphan); notes.push(T('ac.fUnownedOnly')); }
+    if (params.issue) { rows = rows.filter(a => a.issues[params.issue]); notes.push(T('ac.fIssue', { v: params.issue })); }
+    if (params.cls) { rows = rows.filter(a => a.clsLabel === params.cls); notes.push(T('ac.fClass', { v: params.cls })); }
+    if (params.band) { rows = rows.filter(a => a.riskBand === params.band); notes.push(T('ac.fBand', { v: T('c.' + params.band) })); }
+    if (params.riskMin != null) { rows = rows.filter(a => a.riskScore >= params.riskMin && a.riskScore <= params.riskMax); notes.push(T('ac.fRisk', { a: params.riskMin, b: params.riskMax })); }
+    if (params.permKey) { rows = rows.filter(a => a.permKeys.has(params.permKey)); notes.push(T('ac.fHolders')); }
+
+    if (notes.length) {
+      f.appendChild(el('div', { class: 'row', style: 'margin-bottom:10px' }, [
+        el('span', { class: 'pill solid', text: T('c.filtered', { what: notes.join(' · ') }) }),
+        el('button', { class: 'btn sm', text: T('c.clear'), onclick: () => HR.app.go('accounts') })
+      ]));
+    }
+
+    f.appendChild(card(null, null, HR.table.make({
+      columns: [
+        { key: 'userName', label: T('c.account') },
+        { key: 'displayName', label: T('c.displayName') },
+        { key: 'personName', label: T('c.person'), render: r => r.personRaw ? el('span', { text: r.personName }) : el('span', { class: 'sev critical', text: T('c.unowned') }) },
+        { key: 'clsLabel', label: T('c.class') },
+        { key: 'enabled', label: T('c.state'), value: r => T(r.enabled === false ? 'c.disabled' : 'c.enabled'), render: r => el('span', { class: 'pill', text: T(r.enabled === false ? 'c.disabled' : 'c.enabled') }) },
+        { key: 'permCount', label: T('c.perms'), num: true },
+        { key: 'unmanagedPermCount', label: T('c.unmanaged'), num: true },
+        { key: 'missingCount', label: T('c.missing'), num: true },
+        { key: 'monthlyCost', label: T('c.costMo'), num: true, render: r => U.fmtMoney(r.monthlyCost) },
+        { key: 'outlier', label: T('c.outlier'), num: true, render: r => r.outlier == null ? '—' : U.fmtPct(r.outlier, 0), hint: T('ac.outlierHint') },
+        { key: 'riskScore', label: T('c.risk'), num: true, render: r => scoreBar(r.riskScore) }
+      ],
+      rows, pageSize: 40, exportName: 'accounts',
+      initialSort: { key: 'riskScore', dir: -1 },
+      searchPlaceholder: T('ac.searchPh'),
+      search: (r, q) => (r.userName + ' ' + r.displayName + ' ' + r.personRaw + ' ' + r.clsLabel).toLowerCase().includes(q) ||
+        r.perms.some(p => p.name.toLowerCase().includes(q)),
+      filters: [
+        { key: 'state', label: T('c.state'), options: [{ value: 'enabled', label: T('c.enabled') }, { value: 'disabled', label: T('c.disabled') }], match: (r, v) => (v === 'disabled') === (r.enabled === false) },
+        { key: 'owner', label: T('c.owner'), options: [{ value: 'owned', label: T('c.linked') }, { value: 'orphan', label: T('c.unowned') }], match: (r, v) => (v === 'orphan') === !!r.orphan },
+        { key: 'cls', label: T('c.class'), options: U.uniq(m.accountList.map(a => a.clsLabel)).map(v => ({ value: v, label: v })), match: (r, v) => r.clsLabel === v },
+        { key: 'band', label: T('c.risk'), options: ['critical', 'high', 'medium', 'low'].map(v => ({ value: v, label: T('c.' + v) })), match: (r, v) => r.riskBand === v }
+      ],
+      onRowClick: a => drawerAccount(a)
+    })));
+    return f;
+  }
+
+  /* ============================================================ PERMISSIONS */
+  function permissionsView(m) {
+    const f = document.createDocumentFragment();
+    f.appendChild(el('div', { class: 'view-head' }, el('div', {}, [
+      el('h1', { text: T('pm.title') }),
+      el('p', { text: T('pm.lead') })
+    ])));
+
+    const k = el('div', { class: 'grid g4' });
+    const rare = m.permissionList.filter(p => p.rare).length;
+    const priv = m.permissionList.filter(p => p.category === 'privileged' || p.category === 'server').length;
+    k.append(
+      tile(T('pm.distinct'), U.fmtInt(m.permissionList.length), T('pm.acrossSystems', { n: m.systemList.length }), { small: true, delta: bDelta('permissions') }),
+      tile(T('pm.privInfra'), U.fmtInt(priv), T('pm.sensAtLeast'), { small: true, severity: 'high' }),
+      tile(T('pm.rareGroups'), U.fmtInt(rare), T('pm.rareFoot', { n: HR.config.get().rarityThreshold }), { small: true, severity: 'medium' }),
+      tile(T('pm.heldByUnowned'), U.fmtInt(m.permissionList.filter(p => p.holdersOrphan > 0).length), T('pm.heldByUnownedFoot'), { small: true, severity: 'high' })
+    );
+    f.appendChild(k);
+
+    f.appendChild(el('div', { style: 'margin-top:14px' }, card(null, null, HR.table.make({
+      columns: [
+        { key: 'name', label: T('c.permission') },
+        { key: 'categoryLabel', label: T('c.category') },
+        { key: 'sensitivity', label: T('c.sensitivity'), num: true, render: r => U.fmtNum(r.sensitivity, 1) },
+        { key: 'holderCount', label: T('c.holders'), num: true },
+        { key: 'holdersEnabled', label: T('c.enabled'), num: true },
+        { key: 'holdersDisabled', label: T('c.disabled'), num: true },
+        { key: 'holdersOrphan', label: T('c.unowned'), num: true },
+        { key: 'monthlyPrice', label: T('c.unitMo'), num: true, render: r => r.monthlyPrice ? U.fmtMoney(r.monthlyPrice) : '—' },
+        { key: 'monthlyTotal', label: T('c.totalMo'), num: true, render: r => r.monthlyTotal ? U.fmtMoney(r.monthlyTotal) : '—' },
+        { key: 'riskScore', label: T('c.risk'), num: true, render: r => scoreBar(r.riskScore) }
+      ],
+      rows: m.permissionList, pageSize: 40, exportName: 'permissions',
+      initialSort: { key: 'riskScore', dir: -1 },
+      searchPlaceholder: T('pm.searchPh'),
+      search: (r, q) => (r.name + ' ' + r.path + ' ' + r.categoryLabel).toLowerCase().includes(q),
+      filters: [
+        { key: 'cat', label: T('c.category'), options: U.uniq(m.permissionList.map(p => p.categoryLabel)).map(v => ({ value: v, label: v })), match: (r, v) => r.categoryLabel === v },
+        { key: 'rare', label: T('c.rarity'), options: [{ value: 'rare', label: T('c.rare') }, { value: 'common', label: T('c.common') }], match: (r, v) => (v === 'rare') === !!r.rare },
+        { key: 'priced', label: T('c.priced'), options: [{ value: 'yes', label: T('c.yes') }, { value: 'no', label: T('c.no') }], match: (r, v) => (v === 'yes') === (r.monthlyPrice > 0) }
+      ],
+      onRowClick: p => drawerPermission(p, m)
+    }))));
+    return f;
+  }
+
+  /* ================================================================= PEOPLE */
+  function peopleView(m) {
+    const f = document.createDocumentFragment();
+    f.appendChild(el('div', { class: 'view-head' }, el('div', {}, [
+      el('h1', { text: T('pp.title') }),
+      el('p', { text: T('pp.lead') })
+    ])));
+    const multi = m.personList.filter(p => p.accountCount > 1).length;
+    const k = el('div', { class: 'grid g4' });
+    k.append(
+      tile(T('pp.persons'), U.fmtInt(m.personList.length), T('pp.personsFoot'), { small: true, delta: bDelta('persons') }),
+      tile(T('pp.multi'), U.fmtInt(multi), T('pp.multiFoot'), { small: true, severity: multi ? 'medium' : 'good' }),
+      tile(T('pp.perPerson'), U.fmtNum(m.personList.length ? U.sum(m.personList, p => p.accountCount) / m.personList.length : 0, 2), T('pp.mean'), { small: true }),
+      tile(T('pp.unowned'), U.fmtInt(m.summary.orphanAccounts), T('pp.unownedFoot'), { small: true, severity: 'critical', onClick: () => HR.app.go('accounts', { filter: 'orphan' }) })
+    );
+    f.appendChild(k);
+
+    f.appendChild(el('div', { style: 'margin-top:14px' }, card(null, null, HR.table.make({
+      columns: [
+        { key: 'name', label: T('c.person') },
+        { key: 'externalId', label: T('c.employeeId') },
+        { key: 'accountCount', label: T('pp.accounts'), num: true },
+        { key: 'enabledAccounts', label: T('c.enabled'), num: true },
+        { key: 'permCount', label: T('c.perms'), num: true },
+        { key: 'monthlyCost', label: T('c.costMo'), num: true, render: r => U.fmtMoney(r.monthlyCost) },
+        { key: 'maxRisk', label: T('pp.maxRisk'), num: true, value: r => Math.max(0, ...r.accounts.map(a => a.riskScore)), render: r => scoreBar(Math.max(0, ...r.accounts.map(a => a.riskScore))) }
+      ],
+      rows: m.personList, pageSize: 40, exportName: 'people',
+      initialSort: { key: 'permCount', dir: -1 },
+      search: (r, q) => (r.name + ' ' + r.externalId).toLowerCase().includes(q),
+      onRowClick: p => drawerPerson(p, m)
+    }))));
+    return f;
+  }
+
+  /* =================================================================== DIFF */
+  function diffView(m) {
+    const f = document.createDocumentFragment();
+    const st = HR.app.state;
+    f.appendChild(el('div', { class: 'view-head' }, el('div', {}, [
+      el('h1', { text: T('df.title') }),
+      el('p', { text: T('df.lead') })
+    ])));
+
+    if (!st.diff) {
+      f.appendChild(card(null, null, el('p', {
+        text: T(st.snapshots && st.snapshots.length > 1 ? 'df.pickBaseline' : 'df.importSecond')
+      })));
+      return f;
+    }
+
+    const d = st.diff;
+    f.appendChild(el('p', { class: 'note', text: T('df.baselineIs', { name: st.baselineSnapshot.name, date: U.fmtDate(st.baselineSnapshot.importedAt), headline: d.headline }) }));
+
+    const k = el('div', { class: 'grid g4' });
+    const dt = (label, key, fmt, inverse) => {
+      const x = d.summary[key];
+      return tile(label, fmt ? fmt(x.now) : U.fmtInt(x.now), T('df.wasVal', { v: fmt ? fmt(x.was) : U.fmtInt(x.was) }),
+        { small: true, delta: x, deltaFormat: fmt, inverse });
+    };
+    k.append(
+      dt(T('ov.overallRisk'), 'riskScore'),
+      dt(T('ov.unownedAccounts'), 'orphanAccounts'),
+      dt(T('ov.unmanagedEnt'), 'unmanagedPermissionRows'),
+      dt(T('df.licenceSpendMo'), 'monthlyCost', U.fmtMoney)
+    );
+    f.appendChild(k);
+    const k2 = el('div', { class: 'grid g4', style: 'margin-top:14px' });
+    k2.append(
+      dt(T('ov.accounts'), 'accounts'),
+      dt(T('df.enabledAccounts'), 'enabledAccounts'),
+      dt(T('pp.persons'), 'persons'),
+      dt(T('df.recoverableMo'), 'wasteMonthly', U.fmtMoney)
+    );
+    f.appendChild(k2);
+
+    const g = el('div', { class: 'grid g2', style: 'margin-top:14px' });
+    g.appendChild(card(T('df.findingsMovement'), null, HR.table.make({
+      columns: [
+        { key: 'severity', label: T('c.sev'), render: r => el('span', { class: 'sev ' + r.severity, text: T('c.' + r.severity) }) },
+        { key: 'title', label: T('c.finding') },
+        { key: 'was', label: T('c.was'), num: true },
+        { key: 'now', label: T('c.now'), num: true },
+        { key: 'change', label: T('c.change'), num: true, render: r => deltaBadge(r.change) },
+        { key: 'status', label: T('c.status'), value: r => r.isNew ? T('df.new') : r.resolved ? T('df.resolved') : '', render: r => r.isNew ? el('span', { class: 'pill removed', text: T('df.new') }) : (r.resolved ? el('span', { class: 'pill added', text: T('df.resolved') }) : el('span', { text: '' })) }
+      ], rows: d.findings, pageSize: 20, exportName: 'findings-diff'
+    })));
+
+    g.appendChild(card(T('df.entMovement'), T('df.entMovementNote'), HR.table.make({
+      columns: [
+        { key: 'name', label: T('c.permission'), value: r => r.perm.name },
+        { key: 'was', label: T('c.was'), num: true },
+        { key: 'now', label: T('c.now'), num: true },
+        { key: 'change', label: T('c.change'), num: true, render: r => deltaBadge(r.change) }
+      ], rows: d.permissions.moved, pageSize: 20, exportName: 'permission-diff',
+      onRowClick: r => drawerPermission(r.perm, m)
+    })));
+    f.appendChild(g);
+
+    f.appendChild(el('div', { style: 'margin-top:14px' }, card(T('df.changedAccounts'), T('df.changedAccountsNote', { n: d.accounts.changed.length }), HR.table.make({
+      columns: [
+        { key: 'userName', label: T('c.account'), value: r => r.account.userName },
+        { key: 'what', label: T('df.whatChanged'), value: r => r.changes.map(c => c.field).join(', '), render: r => el('span', { class: 'trunc', title: r.changes.map(c => c.field + ': ' + c.from + ' → ' + c.to).join(' | '), text: r.changes.map(c => c.field).join(', ') }) },
+        { key: 'granted', label: T('c.granted'), num: true, value: r => r.permsAdded.length },
+        { key: 'revoked', label: T('c.revoked'), num: true, value: r => r.permsRemoved.length },
+        { key: 'riskDelta', label: T('df.dRisk'), num: true, render: r => deltaBadge(r.riskDelta) },
+        { key: 'costDelta', label: T('df.dCost'), num: true, render: r => deltaBadge(r.costDelta, U.fmtMoney) }
+      ], rows: d.accounts.changed, pageSize: 25, exportName: 'account-changes',
+      search: (r, q) => r.account.userName.toLowerCase().includes(q),
+      onRowClick: r => drawerAccount(r.account, r)
+    }))));
+
+    const g2 = el('div', { class: 'grid g2', style: 'margin-top:14px' });
+    g2.appendChild(card(T('df.newAccounts'), T('df.added', { n: d.accounts.added.length }), HR.table.make({
+      columns: [
+        { key: 'userName', label: T('c.account'), value: r => r.account.userName },
+        { key: 'cls', label: T('c.class'), value: r => r.account.clsLabel },
+        { key: 'perms', label: T('c.perms'), num: true, value: r => r.account.permCount },
+        { key: 'risk', label: T('c.risk'), num: true, value: r => r.account.riskScore, render: r => scoreBar(r.account.riskScore) }
+      ], rows: d.accounts.added, pageSize: 15, exportName: 'accounts-added',
+      onRowClick: r => drawerAccount(r.account)
+    })));
+    g2.appendChild(card(T('df.goneAccounts'), T('df.removed', { n: d.accounts.removed.length }), HR.table.make({
+      columns: [
+        { key: 'userName', label: T('c.account'), value: r => r.account.userName },
+        { key: 'cls', label: T('c.class'), value: r => r.account.clsLabel },
+        { key: 'perms', label: T('c.perms'), num: true, value: r => r.account.permCount },
+        { key: 'risk', label: T('c.risk'), num: true, value: r => r.account.riskScore, render: r => scoreBar(r.account.riskScore) }
+      ], rows: d.accounts.removed, pageSize: 15, exportName: 'accounts-removed'
+    })));
+    f.appendChild(g2);
+    return f;
+  }
+
+  /* ============================================================== SNAPSHOTS */
+  function snapshotsView(m) {
+    const f = document.createDocumentFragment();
+    const st = HR.app.state;
+    f.appendChild(el('div', { class: 'view-head' }, [
+      el('div', {}, [
+        el('h1', { text: T('sn.title') }),
+        el('p', { text: T('sn.lead') })
+      ]),
+      el('div', { class: 'row' }, [
+        el('button', { class: 'btn sm', text: T('sn.exportAll'), onclick: async () => {
+          U.download('recon-snapshots.json', await HR.store.exportAll(), 'application/json');
+        } }),
+        el('label', { class: 'btn sm' }, [
+          document.createTextNode(T('sn.importJson')),
+          el('input', { type: 'file', accept: '.json', hidden: true, onchange: async e => {
+            const file = e.target.files[0]; if (!file) return;
+            try { const n = await HR.store.importJSON(await file.text()); U.toast(T('toast.importedSnaps', { n: n })); HR.app.refreshSnapshots(); }
+            catch (err) { U.toast(T('toast.importFail', { msg: err.message }), 5000); }
+          } })
+        ])
+      ])
+    ]));
+
+    if (HR.store.isMemory()) {
+      f.appendChild(card(null, null, el('p', {
+        class: 'note',
+        text: T('sn.noStorage')
+      })));
+    }
+
+    const snaps = st.snapshots || [];
+    if (snaps.length > 1) {
+      const ordered = snaps.slice().sort((a, b) => a.importedAt - b.importedAt);
+      const labels = ordered.map(s => new Date(s.importedAt).toLocaleDateString(HR.i18n.locale, { day: '2-digit', month: 'short' }));
+      const g = el('div', { class: 'grid g2' });
+      g.appendChild(card(T('sn.riskOverTime'), T('sn.perImport'), C.line(
+        [{ label: T('ov.overallRisk'), color: C.slot(1), points: ordered.map((s, i) => ({ x: i, y: s.summary.riskScore, tip: '<div class="t-title">' + U.esc(s.name) + '</div><div class="t-row"><span>' + T('app.riskShort') + '</span><b>' + s.summary.riskScore + '</b></div>' })) }],
+        labels, { maxY: 100 })));
+      g.appendChild(card(T('sn.unownedOverTime'), T('sn.perImport'), C.line(
+        [{ label: T('ov.unownedAccounts'), color: C.STATUS.critical, points: ordered.map((s, i) => ({ x: i, y: s.summary.orphanAccounts })) }],
+        labels)));
+      f.appendChild(g);
+    }
+
+    f.appendChild(el('div', { style: 'margin-top:14px' }, card(null, null, HR.table.make({
+      columns: [
+        { key: 'name', label: T('sn.snapshot'), render: r => el('span', {}, [
+          document.createTextNode(r.name),
+          st.currentSnapshotId === r.id ? el('span', { class: 'pill solid', text: ' ' + T('sn.loaded') }) : null,
+          st.baselineId === r.id ? el('span', { class: 'pill', text: ' ' + T('sn.baseline') }) : null
+        ]) },
+        { key: 'importedAt', label: T('sn.imported'), render: r => U.fmtDate(r.importedAt) },
+        { key: 'rowCount', label: T('c.rowsCol'), num: true },
+        { key: 'accounts', label: T('ov.accounts'), num: true, value: r => r.summary.accounts },
+        { key: 'orphan', label: T('c.unowned'), num: true, value: r => r.summary.orphanAccounts },
+        { key: 'risk', label: T('c.risk'), num: true, value: r => r.summary.riskScore, render: r => scoreBar(r.summary.riskScore) },
+        { key: 'cost', label: T('sn.spendMo'), num: true, value: r => r.summary.monthlyCost || 0, render: r => U.fmtMoney(r.summary.monthlyCost || 0) },
+        { key: 'actions', label: '', sortable: false, render: r => el('div', { class: 'row' }, [
+          el('button', { class: 'btn sm', text: T('sn.load'), onclick: e => { e.stopPropagation(); HR.app.loadSnapshot(r.id); } }),
+          el('button', { class: 'btn sm', text: T('sn.setBaseline'), onclick: e => { e.stopPropagation(); HR.app.setBaseline(r.id); } }),
+          el('button', { class: 'btn sm', text: T('sn.rename'), onclick: async e => {
+            e.stopPropagation();
+            const name = prompt(T('sn.renamePrompt'), r.name); if (!name) return;
+            const full = await HR.store.get(r.id); full.name = name; await HR.store.put(full); HR.app.refreshSnapshots();
+          } }),
+          el('button', { class: 'btn sm danger', text: T('sn.delete'), onclick: async e => {
+            e.stopPropagation();
+            if (!confirm(T('sn.deleteConfirm', { name: r.name }))) return;
+            await HR.store.remove(r.id); HR.app.refreshSnapshots();
+          } })
+        ]) }
+      ],
+      rows: snaps, pageSize: 20, exportName: 'snapshots',
+      initialSort: { key: 'importedAt', dir: -1 }
+    }))));
+    return f;
+  }
+
+  /* =============================================================== SETTINGS */
+  function settingsView() {
+    const cfg = HR.config.clone(HR.config.get());
+    const f = document.createDocumentFragment();
+    f.appendChild(el('div', { class: 'view-head' }, [
+      el('div', {}, [
+        el('h1', { text: T('st.title') }),
+        el('p', { text: T('st.lead') })
+      ]),
+      el('div', { class: 'row' }, [
+        el('button', { class: 'btn primary', text: T('st.save'), onclick: () => { HR.config.save(cfg); HR.app.rebuild(); U.toast(T('toast.settingsSaved')); } }),
+        el('button', { class: 'btn', text: T('st.reset'), onclick: () => { if (confirm(T('st.resetConfirm'))) { HR.config.reset(); HR.app.rebuild(); HR.app.go('settings'); } } })
+      ])
+    ]));
+
+    const editableList = (title, note, list, fields, factory, opts) => {
+      const body = el('div');
+      const draw = () => {
+        body.innerHTML = '';
+        const t = el('table', { class: 'tbl' });
+        t.appendChild(el('thead', {}, el('tr', {}, fields.map(fl => el('th', { class: 'no-sort' + (fl.num ? ' num' : ''), text: fl.label }))
+          .concat([el('th', { class: 'no-sort num', text: opts && opts.target ? T('rv.matches') : '' }), el('th', { class: 'no-sort' })]))));
+        const tb = el('tbody');
+        list.forEach((item, idx) => {
+          const tr = el('tr');
+          fields.forEach(fl => {
+            const td = el('td', { class: fl.num ? 'num' : '' });
+            const shown = (fl.translated && item.key) ? HR.config.labelOf(item) : item[fl.key];
+            const inp = el('input', {
+              type: fl.num ? 'number' : 'text', value: shown == null ? '' : shown,
+              step: fl.step || 'any',
+              oninput: e => {
+                item[fl.key] = fl.num ? parseFloat(e.target.value) || 0 : e.target.value;
+                if (fl.translated) delete item.key;   // a hand-typed label stops being translated
+              }
+            });
+            inp.style.width = fl.width || (fl.num ? '90px' : '100%');
+            td.appendChild(inp);
+            tr.appendChild(td);
+          });
+          if (opts && opts.target && HR.app.state.model) {
+            const res = HR.mine.test(item.pattern, opts.target, HR.app.state.model);
+            tr.appendChild(el('td', { class: 'num' }, el('span', {
+              class: 'pill' + (res.valid ? (res.everything ? ' removed' : '') : ' removed'),
+              title: res.valid ? '' : res.error,
+              text: res.valid ? T('st.ruleMatches', { n: U.fmtInt(res.count) }) : '!'
+            })));
+          } else {
+            tr.appendChild(el('td', {}));
+          }
+          tr.appendChild(el('td', {}, el('button', { class: 'btn sm danger', text: '✕', onclick: () => { list.splice(idx, 1); draw(); } })));
+          tb.appendChild(tr);
+        });
+        t.appendChild(tb);
+        body.appendChild(el('div', { class: 'tbl-wrap' }, t));
+        body.appendChild(el('button', { class: 'btn sm', text: T('st.addRow'), onclick: () => { list.push(factory()); draw(); } }));
+      };
+      draw();
+      return card(title, note, body);
+    };
+
+    const g = el('div', { class: 'grid' });
+
+    g.appendChild(editableList(T('st.priceBook'), T('st.priceBookNote'),
+      cfg.priceBook,
+      [{ key: 'label', label: T('st.label') }, { key: 'pattern', label: T('st.pattern') },
+       { key: 'price', label: T('st.price'), num: true, step: '0.01' }],
+      () => ({ label: 'New SKU', pattern: '^LIC-', price: 0, unit: 'month' }), { target: 'permission' }));
+
+    g.appendChild(editableList(T('st.categories'), T('st.categoriesNote'),
+      cfg.categories,
+      [{ key: 'label', label: T('c.category'), translated: true }, { key: 'pattern', label: T('st.patternShort') }, { key: 'sensitivity', label: T('st.sensitivity'), num: true, step: '0.1' }],
+      () => ({ id: 'custom' + Date.now(), label: 'New category', pattern: '^X', sensitivity: 1, color: 2 }), { target: 'permission' }));
+
+    g.appendChild(editableList(T('st.classes'), T('st.classesNote'),
+      cfg.accountClasses,
+      [{ key: 'label', label: T('c.class'), translated: true }, { key: 'pattern', label: T('st.patternShort') }, { key: 'weight', label: T('st.weight'), num: true, step: '0.1' }],
+      () => ({ id: 'custom' + Date.now(), label: 'New class', pattern: '^X', weight: 1 }), { target: 'account' }));
+
+    const numField = (obj, key, label, step) => {
+      const w = el('label', { class: 'inline' });
+      const i = el('input', { type: 'number', value: obj[key], step: step || 'any', oninput: e => obj[key] = parseFloat(e.target.value) || 0 });
+      i.style.width = '90px';
+      w.append(document.createTextNode(label), i);
+      return w;
+    };
+
+    g.appendChild(card(T('st.riskWeights'), T('st.riskWeightsNote'), el('div', { class: 'row' }, [
+      numField(cfg.risk.issueWeights, 'Account unmanaged', T('st.wAccountUnmanaged')),
+      numField(cfg.risk.issueWeights, 'Permission unmanaged', T('st.wPermUnmanaged')),
+      numField(cfg.risk.issueWeights, 'Permission missing', T('st.wPermMissing')),
+      numField(cfg.risk, 'orphanEnabledBonus', T('st.wOrphanEnabled')),
+      numField(cfg.risk, 'privilegedOrphanBonus', T('st.wOrphanPriv')),
+      numField(cfg.risk, 'disabledWithEntitlementsBonus', T('st.wDisabledEnt')),
+      numField(cfg.risk, 'disabledWithLicenceBonus', T('st.wDisabledLic')),
+      numField(cfg.risk, 'rarityBonus', T('st.wRarity')),
+      numField(cfg.risk, 'outlierBonus', T('st.wOutlier')),
+      numField(cfg.risk, 'stackedLicenceBonus', T('st.wStacked'))
+    ])));
+
+    g.appendChild(card(T('st.effort'), T('st.effortNote'), el('div', { class: 'row' }, [
+      numField(cfg.effort, 'hourlyRate', T('st.hourlyRate')),
+      numField(cfg.effort, 'minutesPerUnmanagedPermission', T('st.minPerm')),
+      numField(cfg.effort, 'minutesPerUnmanagedAccount', T('st.minAccount')),
+      numField(cfg.effort, 'minutesPerMissingPermission', T('st.minMissing')),
+      numField(cfg.effort, 'minutesPerPrivilegedReview', T('st.minPriv'))
+    ])));
+
+    g.appendChild(card(T('st.thresholds'), null, el('div', { class: 'row' }, [
+      numField(cfg.severityBands, 'critical', T('st.criticalAt')),
+      numField(cfg.severityBands, 'high', T('st.highAt')),
+      numField(cfg.severityBands, 'medium', T('st.mediumAt')),
+      numField(cfg, 'rarityThreshold', T('st.rareAt')),
+      (() => {
+        const w = el('label', { class: 'inline' });
+        const s = el('select', { onchange: e => cfg.currency = e.target.value });
+        ['EUR', 'USD', 'GBP', 'CHF', 'SEK', 'NOK', 'DKK'].forEach(c => s.appendChild(el('option', { value: c, text: c, selected: cfg.currency === c })));
+        w.append(document.createTextNode(T('st.currency')), s);
+        return w;
+      })()
+    ])));
+
+    if (HR.app.state.model) {
+      g.appendChild(card(T('rv.tester'), T('rv.testerNote'), regexTester(HR.app.state.model)));
+    }
+
+    /* ---- branding: icon, wordmark, report title block ---- */
+    const B = HR.brand.state;
+    const slotRow = (slot, labelKey, previewCls) => {
+      const preview = el('div', { class: 'logo-preview' + (slot === 'logoLight' ? ' on-dark' : '') });
+      const draw = () => { preview.innerHTML = ''; preview.appendChild(HR.brand.mark(slot, previewCls)); };
+      draw();
+      const upload = el('input', {
+        type: 'file', accept: 'image/svg+xml,image/png,image/jpeg', hidden: true,
+        onchange: e => {
+          const file = e.target.files[0]; if (!file) return;
+          const reader = new FileReader();
+          reader.onload = () => { HR.brand.setAsset(slot, String(reader.result)); draw(); };
+          reader.readAsDataURL(file);     // inlined so it survives into the printed PDF
+        }
+      });
+      return el('div', { class: 'brand-slot' }, [
+        el('div', { class: 'brand-slot-label', text: T(labelKey) }),
+        preview,
+        el('div', { class: 'row' }, [
+          el('label', { class: 'btn sm' }, [document.createTextNode(T('st.logoUpload')), upload]),
+          el('button', { class: 'btn sm', text: T('st.logoClear'), onclick: () => { HR.brand.setAsset(slot, null); draw(); } })
+        ])
+      ]);
+    };
+    g.appendChild(card(T('st.branding'), T('st.brandingNote'), [
+      el('div', { class: 'brand-slots' }, [
+        slotRow('icon', 'st.slotIcon', 'logo-sample'),
+        slotRow('logo', 'st.slotLogo', 'logo-sample'),
+        slotRow('logoLight', 'st.slotLogoLight', 'logo-sample')
+      ]),
+      el('div', { class: 'row', style: 'margin-top:10px' }, [
+        (() => {
+          const i = el('input', { type: 'text', value: B.productName || '', placeholder: T('app.title'),
+            oninput: e => { HR.brand.set({ productName: e.target.value }); HR.app.applyChrome(); } });
+          i.style.minWidth = '220px';
+          return el('label', { class: 'inline' }, [document.createTextNode(T('st.productName')), i]);
+        })()
+      ]),
+      el('p', { class: 'note', text: T('st.logoHint') })
+    ]));
+
+    f.appendChild(g);
+    return f;
+  }
+
+  /* ============================================== CONFIGURATION REVIEW ==== */
+  /* Shown once per import (unless switched off): what the current settings do and do
+     not describe about this particular export, plus rules mined from its own naming. */
+  function reviewView(m) {
+    const f = document.createDocumentFragment();
+    const sug = HR.app.state.review || HR.mine.suggest(m);
+    const cfg = HR.config.clone(HR.config.get());
+    const picked = { categories: new Set(), classes: new Set(), prices: new Set() };
+
+    f.appendChild(el('div', { class: 'view-head' }, el('div', {}, [
+      el('h1', { text: T('rv.title') }),
+      el('p', { text: T('rv.lead') })
+    ])));
+
+    const c = sug.coverage;
+    const k = el('div', { class: 'grid g4' });
+    k.append(
+      tile(T('rv.covCategorised'), U.fmtPct(c.categorisedPct, 0),
+        T('rv.covCategorisedFoot', { n: c.permissions - c.categorised }),
+        { small: true, severity: c.categorisedPct > 0.9 ? 'good' : 'medium' }),
+      tile(T('rv.covClassified'), U.fmtPct(c.classifiedPct, 0),
+        T('rv.covClassifiedFoot', { n: c.accounts - c.classified }), { small: true }),
+      tile(T('rv.covPriced'), U.fmtInt(c.priced),
+        T('rv.covPricedFoot', { n: c.priceable }), { small: true, severity: c.priceable ? 'medium' : 'good' }),
+      tile(T('rv.covSpend'), U.fmtMoney(c.pricedSpend) + '/mo', T('rv.covSpendFoot'), { small: true })
+    );
+    f.appendChild(k);
+
+    /* ---- one proposal table per rule type ---- */
+    const proposalTable = (kind, rows, valueField, valueLabel, targetType) => {
+      if (!rows.length) return null;
+      const body = el('div');
+      const t = el('table', { class: 'tbl' });
+      t.appendChild(el('thead', {}, el('tr', {}, [
+        el('th', { class: 'no-sort', text: '' }),
+        el('th', { class: 'no-sort', text: T('st.label') }),
+        el('th', { class: 'no-sort', text: T('st.patternShort') }),
+        el('th', { class: 'no-sort num', text: valueLabel }),
+        el('th', { class: 'no-sort num', text: T('rv.matches') }),
+        el('th', { class: 'no-sort', text: T('rv.examples') })
+      ])));
+      const tb = el('tbody');
+      rows.forEach((row, i) => {
+        const check = el('input', { type: 'checkbox', onchange: e => {
+          if (e.target.checked) picked[kind].add(i); else picked[kind].delete(i);
+        } });
+        const patternInput = el('input', { type: 'text', value: row.pattern,
+          oninput: e => { row.pattern = e.target.value; refreshMatch(); } });
+        patternInput.style.minWidth = '190px';
+        const valueInput = el('input', { type: 'number', step: '0.1', value: row[valueField],
+          oninput: e => row[valueField] = parseFloat(e.target.value) || 0 });
+        valueInput.style.width = '80px';
+        const matchCell = el('td', { class: 'num' });
+        const refreshMatch = () => {
+          const res = HR.mine.test(row.pattern, targetType, m);
+          matchCell.textContent = res.valid ? U.fmtInt(res.count) : '!';
+          matchCell.title = res.valid ? (res.everything ? T('rv.matchesEverything') : '') : res.error;
+          matchCell.className = 'num' + (!res.valid || res.everything ? ' tone-warn' : '');
+        };
+        refreshMatch();
+        tb.appendChild(el('tr', {}, [
+          el('td', {}, check),
+          el('td', {}, [el('strong', { text: row.label }),
+            row.hint ? el('span', { class: 'pill', text: T('cat.' + row.hint) !== 'cat.' + row.hint ? T('cat.' + row.hint) : row.hint }) : null]),
+          el('td', {}, patternInput),
+          el('td', { class: 'num' }, valueInput),
+          matchCell,
+          el('td', {}, el('span', { class: 'trunc mono', title: row.samples.join(', '), text: row.samples.join(', ') }))
+        ]));
+      });
+      t.appendChild(tb);
+      body.appendChild(el('div', { class: 'tbl-wrap' }, t));
+      body.appendChild(el('div', { class: 'row', style: 'margin-top:8px' }, [
+        el('button', { class: 'btn sm', text: T('rv.selectAll'), onclick: () => {
+          body.querySelectorAll('input[type=checkbox]').forEach((cb, i) => {
+            if (!cb.checked) { cb.checked = true; picked[kind].add(i); }
+          });
+        } }),
+        el('button', { class: 'btn sm', text: T('rv.selectNone'), onclick: () => {
+          body.querySelectorAll('input[type=checkbox]').forEach(cb => { cb.checked = false; });
+          picked[kind].clear();
+        } })
+      ]));
+      return body;
+    };
+
+    const stack = el('div', { class: 'stack', style: 'margin-top:14px' });
+    const catBody = proposalTable('categories', sug.categories, 'sensitivity', T('st.sensitivity'), 'permission');
+    if (catBody) stack.appendChild(card(T('rv.secCategories'), T('rv.secCategoriesNote'), catBody));
+    const clsBody = proposalTable('classes', sug.classes, 'weight', T('st.weight'), 'account');
+    if (clsBody) stack.appendChild(card(T('rv.secClasses'), T('rv.secClassesNote'), clsBody));
+    const priceBody = proposalTable('prices', sug.prices, 'price', T('st.price'), 'permission');
+    if (priceBody) stack.appendChild(card(T('rv.secPrices'), T('rv.secPricesNote'), priceBody));
+    if (!catBody && !clsBody && !priceBody) {
+      stack.appendChild(card(T('rv.secNone'), null, el('p', { class: 'note', text: T('rv.secNoneBody') })));
+    }
+    stack.appendChild(card(T('rv.tester'), T('rv.testerNote'), regexTester(m)));
+    f.appendChild(stack);
+
+    /* ---- apply ---- */
+    const skip = el('input', { type: 'checkbox', onchange: e => { cfg.skipReview = e.target.checked; } });
+    f.appendChild(el('div', { class: 'row', style: 'margin-top:16px' }, [
+      el('button', { class: 'btn primary', text: T('rv.apply'), onclick: () => {
+        /* Order matters: mined rules are more specific than the catch-all, so they go
+           in front of it and keep the shipped defaults ahead of them. */
+        const insertBefore = (list, id, items) => {
+          const at = list.findIndex(x => x.id === id);
+          list.splice(at < 0 ? list.length : at, 0, ...items);
+        };
+        insertBefore(cfg.categories, 'other', Array.from(picked.categories).map(i => {
+          const r = sug.categories[i];
+          return { id: 'mined-' + r.label.toLowerCase(), label: r.label, pattern: r.pattern, sensitivity: r.sensitivity, color: 2 };
+        }));
+        insertBefore(cfg.accountClasses, 'user', Array.from(picked.classes).map(i => {
+          const r = sug.classes[i];
+          return { id: 'mined-' + r.label.toLowerCase(), label: r.label, pattern: r.pattern, weight: r.weight };
+        }));
+        cfg.priceBook.unshift(...Array.from(picked.prices).map(i => {
+          const r = sug.prices[i];
+          return { label: r.label, pattern: r.pattern, price: r.price, unit: 'month' };
+        }));
+        HR.config.save(cfg);
+        HR.app.state.review = null;
+        HR.app.rebuild();
+        U.toast(T('toast.settingsSaved'));
+        HR.app.go('overview');
+      } }),
+      el('button', { class: 'btn', text: T('rv.skip'), onclick: () => {
+        HR.config.save(cfg);
+        HR.app.state.review = null;
+        HR.app.go('overview');
+      } }),
+      el('label', { class: 'inline' }, [skip, document.createTextNode(T('rv.dontAsk'))])
+    ]));
+    return f;
+  }
+
+  /** Live regex check against the imported names — pattern in, matches out. */
+  function regexTester(m) {
+    const wrap = el('div');
+    const input = el('input', { type: 'text', placeholder: '^APP-', oninput: () => run() });
+    input.style.minWidth = '260px';
+    const target = el('select', { onchange: () => run() });
+    target.append(el('option', { value: 'permission', text: T('rv.targetPermission') }),
+                  el('option', { value: 'account', text: T('rv.targetAccount') }));
+    const out = el('div', { style: 'margin-top:10px' });
+    function run() {
+      out.innerHTML = '';
+      if (!input.value.trim()) {                       // empty box tests nothing
+        out.appendChild(el('p', { class: 'note', text: T('rv.testerEmpty') }));
+        return;
+      }
+      const res = HR.mine.test(input.value, target.value, m);
+      if (!res.valid) {
+        out.appendChild(el('p', { class: 'note tone-warn', text: T('rv.invalid', { msg: res.error }) }));
+        return;
+      }
+      out.append(
+        el('p', { class: 'note', text: T('rv.matchCount', { n: U.fmtInt(res.count), total: U.fmtInt(res.total), pct: U.fmtPct(res.total ? res.count / res.total : 0, 0) }) +
+          (res.everything ? ' · ' + T('rv.matchesEverything') : '') }),
+        el('div', { class: 'mono trunc-multi', text: res.samples.join(', ') || T('rv.noMatch') })
+      );
+    }
+    wrap.append(el('div', { class: 'row' }, [input, target]), out);
+    run();
+    return wrap;
+  }
+
+  /* ================================================================ DRAWERS */
+  function openDrawer(title, body) {
+    const d = document.getElementById('drawer');
+    document.getElementById('drawer-title').innerHTML = '';
+    document.getElementById('drawer-title').append(title);
+    const b = document.getElementById('drawer-body');
+    b.innerHTML = ''; b.appendChild(body); b.scrollTop = 0;
+    d.hidden = false; document.getElementById('drawer-scrim').hidden = false;
+  }
+  function closeDrawer() {
+    document.getElementById('drawer').hidden = true;
+    document.getElementById('drawer-scrim').hidden = true;
+  }
+
+  function drawerAccount(a, change) {
+    const m = HR.app.state.model;
+    const head = el('div', {}, [
+      el('h2', { text: a.userName }),
+      el('div', { class: 'row' }, [
+        el('span', { class: 'sev ' + a.riskBand, text: T('app.riskShort') + ' ' + a.riskScore }),
+        el('span', { class: 'pill', text: a.clsLabel }),
+        el('span', { class: 'pill', text: T(a.enabled === false ? 'c.disabled' : 'c.enabled') }),
+        a.orphan ? el('span', { class: 'pill removed', text: T('c.unowned') }) : el('span', { class: 'pill', text: a.personName })
+      ])
+    ]);
+
+    const body = el('div', { class: 'stack' });
+    body.appendChild(dl([
+      [T('c.system'), a.system],
+      [T('c.displayName'), a.displayName],
+      [T('c.person'), a.personRaw || T('dr.notLinked')],
+      [T('c.employeeId'), a.personId || '—'],
+      [T('dr.permsHeld'), String(a.permCount)],
+      [T('dr.unmanagedAssign'), String(a.unmanagedPermCount)],
+      [T('dr.missingEnt'), String(a.missingCount)],
+      [T('dr.monthlyCost'), U.fmtMoney(a.monthlyCost)],
+      [T('dr.closestPeer'), a.peerKey ? (m.accounts.get(a.peerKey) ? m.accounts.get(a.peerKey).userName : a.peerKey) + ' · ' + T('dr.overlap', { p: U.fmtPct(a.peerBest || 0, 0) }) : T('dr.noPeer')],
+      [T('dr.uniqueEnt'), a.uniquePerms && a.uniquePerms.length ? a.uniquePerms.map(p => p.name).join(', ') : '—']
+    ]));
+
+    body.appendChild(card(T('dr.whyScore'), T('dr.componentsSum', { n: a.riskScore }) + (a.riskRaw > a.riskScore ? ' · ' + T('dr.cappedFrom', { n: Math.round(a.riskRaw) }) : ''),
+      a.riskParts.length ? C.barList(a.riskParts.map(p => ({
+        label: p.label, value: Math.round(p.value), color: C.STATUS[a.riskBand], note: p.detail,
+        tip: '<div class="t-title">' + U.esc(p.label) + '</div><div class="t-row"><span>points</span><b>' +
+          U.fmtNum(p.value, 1) + '</b></div>' + (p.detail ? '<div class="t-row"><span>' + U.esc(p.detail) + '</span></div>' : '')
+      })), { valueLabel: T('c.points') }) : el('p', { class: 'note', text: T('dr.clean') })));
+
+    if (change) {
+      body.appendChild(card(T('dr.changedSince'), null, el('ul', { class: 'clean' },
+        change.changes.map(c => el('li', { text: c.field + ': ' + (c.from === '' ? '' : c.from + ' → ') + c.to })))));
+    }
+
+    if (a.perms.length) {
+      body.appendChild(card(T('dr.entitlements'), T('dr.groupsN', { n: a.perms.length }), HR.table.make({
+        columns: [
+          { key: 'name', label: T('ct.group') },
+          { key: 'categoryLabel', label: T('c.category') },
+          { key: 'sensitivity', label: T('c.sensitivity'), num: true, render: r => U.fmtNum(r.sensitivity, 1) },
+          { key: 'holderCount', label: T('c.holders'), num: true },
+          { key: 'monthlyPrice', label: T('c.unitMo'), num: true, render: r => r.monthlyPrice ? U.fmtMoney(r.monthlyPrice) : '—' },
+          { key: 'riskScore', label: T('c.risk'), num: true }
+        ], rows: a.perms, pageSize: 15, exportName: 'account-' + a.userName + '-permissions',
+        initialSort: { key: 'riskScore', dir: -1 },
+        search: (r, q) => r.name.toLowerCase().includes(q),
+        onRowClick: p => drawerPermission(p, m)
+      })));
+    }
+    if (a.missingPerms.length) {
+      body.appendChild(card(T('dr.missingEnt'), T('dr.missingList'),
+        el('ul', { class: 'clean' }, a.missingPerms.map(p => el('li', { text: p.name })))));
+    }
+
+    body.appendChild(card(T('dr.sourceRows'), T('dr.csvLines', { n: a.records.length }), HR.table.make({
+      columns: [
+        { key: 'issue', label: T('dr.issue') },
+        { key: 'permission', label: T('c.permission') },
+        { key: 'resolution', label: T('dr.resolution') },
+        { key: 'permissionPath', label: T('dr.path'), render: r => el('span', { class: 'trunc mono', title: r.permissionPath, text: r.permissionPath }) }
+      ], rows: a.records, pageSize: 10, exportName: 'account-' + a.userName + '-rows'
+    })));
+
+    openDrawer(head, body);
+  }
+
+  function drawerPermission(p, m) {
+    m = m || HR.app.state.model;
+    const holders = Array.from(p.holders).map(k => m.accounts.get(k)).filter(Boolean);
+    const head = el('div', {}, [
+      el('h2', { text: p.name }),
+      el('div', { class: 'row' }, [
+        el('span', { class: 'sev ' + p.riskBand, text: T('app.riskShort') + ' ' + p.riskScore }),
+        el('span', { class: 'pill', text: p.categoryLabel }),
+        p.rare ? el('span', { class: 'pill removed', text: T('c.rare') }) : null,
+        p.monthlyPrice ? el('span', { class: 'pill', text: U.fmtMoney(p.monthlyPrice) + '/holder/mo' }) : null
+      ])
+    ]);
+    const body = el('div', { class: 'stack' });
+    body.appendChild(dl([
+      [T('c.system'), p.system],
+      [T('dr.dn'), el('span', { class: 'mono', text: p.path || '—' })],
+      [T('dr.holders'), T('dr.holdersDetail', { n: p.holderCount, e: p.holdersEnabled, d: p.holdersDisabled })],
+      [T('dr.heldByUnowned'), p.holdersOrphan + ' (' + U.fmtPct(p.orphanShare, 0) + ')'],
+      [T('dr.monthlyTotal'), U.fmtMoney(p.monthlyTotal)],
+      [T('dr.annualTotal'), U.fmtMoney(p.monthlyTotal * 12)],
+      [T('dr.pSensitivity'), U.fmtNum(p.sensitivity, 1)],
+      [T('dr.missingFor'), p.missingFor.size ? Array.from(p.missingFor).map(k => (m.accounts.get(k) || {}).userName).join(', ') : '—']
+    ]));
+    body.appendChild(card(T('dr.whyScore'), null, C.barList(p.riskParts.map(x => ({
+      label: x.label, value: Math.round(x.value), color: C.STATUS[p.riskBand]
+    })), { valueLabel: T('c.points') })));
+    body.appendChild(card(T('dr.holders'), T('dr.holdersN', { n: holders.length }), HR.table.make({
+      columns: [
+        { key: 'userName', label: T('c.account') },
+        { key: 'personName', label: T('c.person'), render: r => r.personRaw ? el('span', { text: r.personName }) : el('span', { class: 'sev critical', text: T('c.unowned') }) },
+        { key: 'enabled', label: T('c.state'), value: r => T(r.enabled === false ? 'c.disabled' : 'c.enabled') },
+        { key: 'permCount', label: T('c.perms'), num: true },
+        { key: 'riskScore', label: T('c.risk'), num: true, render: r => scoreBar(r.riskScore) }
+      ], rows: holders, pageSize: 20, exportName: 'permission-' + p.name + '-holders',
+      initialSort: { key: 'riskScore', dir: -1 },
+      search: (r, q) => (r.userName + ' ' + r.personRaw).toLowerCase().includes(q),
+      onRowClick: a => drawerAccount(a)
+    })));
+    openDrawer(head, body);
+  }
+
+  function drawerPerson(per, m) {
+    const head = el('div', {}, [
+      el('h2', { text: per.name }),
+      el('div', { class: 'row' }, [
+        el('span', { class: 'pill', text: per.externalId || T('dr.noId') }),
+        el('span', { class: 'pill', text: T('dr.accountsN', { n: per.accountCount }) }),
+        el('span', { class: 'pill', text: U.fmtMoney(per.monthlyCost) + '/mo' })
+      ])
+    ]);
+    const body = el('div', { class: 'stack' });
+    body.appendChild(card(T('pp.accounts'), null, HR.table.make({
+      columns: [
+        { key: 'userName', label: T('c.account') },
+        { key: 'clsLabel', label: T('c.class') },
+        { key: 'enabled', label: T('c.state'), value: r => T(r.enabled === false ? 'c.disabled' : 'c.enabled') },
+        { key: 'permCount', label: T('c.perms'), num: true },
+        { key: 'monthlyCost', label: T('c.costMo'), num: true, render: r => U.fmtMoney(r.monthlyCost) },
+        { key: 'riskScore', label: T('c.risk'), num: true, render: r => scoreBar(r.riskScore) }
+      ], rows: per.accounts, pageSize: 10, exportName: 'person-accounts',
+      onRowClick: a => drawerAccount(a)
+    })));
+    const allPerms = U.uniq(per.accounts.flatMap(a => a.perms.map(p => p.name)));
+    body.appendChild(card(T('pp.combined'), T('pp.combinedNote', { n: allPerms.length }),
+      el('p', { class: 'note', text: allPerms.join(', ') })));
+    openDrawer(head, body);
+  }
+
+  HR.views = {
+    board: (m, params) => HR.board.view(m, params),
+    review: reviewView,
+    overview, risk: riskView, cost: costView, accounts: accountsView,
+    permissions: permissionsView, people: peopleView, diff: diffView,
+    snapshots: snapshotsView, settings: settingsView,
+    openDrawer, closeDrawer, drawerAccount, drawerPermission, drawerPerson, card, tile
+  };
+})(window.HR);

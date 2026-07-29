@@ -1,0 +1,151 @@
+/* CSV parsing + normalisation of a HelloID reconciliation export. */
+(function (HR) {
+  'use strict';
+
+  /** RFC4180 parser: quoted fields, embedded delimiters/newlines, CRLF, BOM. */
+  function parseDelimited(text, delim) {
+    if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+    const rows = [];
+    let row = [], field = '', i = 0, inQ = false;
+    const n = text.length;
+    while (i < n) {
+      const c = text[i];
+      if (inQ) {
+        if (c === '"') {
+          if (text[i + 1] === '"') { field += '"'; i += 2; continue; }
+          inQ = false; i++; continue;
+        }
+        field += c; i++; continue;
+      }
+      if (c === '"' && field === '') { inQ = true; i++; continue; }
+      if (c === delim) { row.push(field); field = ''; i++; continue; }
+      if (c === '\r') { i++; continue; }
+      if (c === '\n') { row.push(field); rows.push(row); row = []; field = ''; i++; continue; }
+      field += c; i++;
+    }
+    if (field !== '' || row.length) { row.push(field); rows.push(row); }
+    return rows;
+  }
+
+  /** Guess the delimiter from the header line — Dutch exports often use ';'. */
+  function sniffDelim(text) {
+    const line = text.split(/\r?\n/, 1)[0] || '';
+    const cands = [',', ';', '\t', '|'];
+    let best = ',', bestN = -1;
+    for (const d of cands) {
+      const n = parseDelimited(line + '\n', d)[0].length;
+      if (n > bestN) { bestN = n; best = d; }
+    }
+    return best;
+  }
+
+  /* Canonical field -> accepted header spellings (lowercased, non-alnum stripped). */
+  const ALIASES = {
+    system: ['system', 'systemname', 'targetsystem', 'systeem'],
+    person: ['person', 'persondisplayname', 'persoon', 'employee'],
+    accountDisplayName: ['accountdisplayname', 'accountname', 'displayname'],
+    accountUserName: ['accountusername', 'username', 'samaccountname', 'userprincipalname', 'accountlogin'],
+    accountEnabled: ['accountenabled', 'enabled', 'isenabled', 'accountactive'],
+    permission: ['permissiondisplayname', 'permission', 'permissionname', 'entitlement'],
+    permissionConfig: ['permissionconfigurationdisplayname', 'permissionconfiguration', 'configuration'],
+    subPermission: ['subpermissiondisplayname', 'subpermission'],
+    issue: ['issue', 'issuetype', 'finding'],
+    resolution: ['resolution', 'resolutiontype', 'action']
+  };
+
+  const norm = s => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+  function mapHeaders(header) {
+    const map = {};
+    header.forEach((h, idx) => {
+      const k = norm(h);
+      for (const field in ALIASES) if (ALIASES[field].includes(k)) { map[field] = idx; return; }
+    });
+    return map;
+  }
+
+  const TRUE_SET = new Set(['true', '1', 'yes', 'y', 'ja', 'enabled', 'active', 'waar']);
+  const FALSE_SET = new Set(['false', '0', 'no', 'n', 'nee', 'disabled', 'inactive', 'onwaar']);
+  function parseBool(v) {
+    const s = String(v || '').trim().toLowerCase();
+    if (TRUE_SET.has(s)) return true;
+    if (FALSE_SET.has(s)) return false;
+    return null;
+  }
+
+  /* "Karin Aarts (500038)" -> {name, externalId} ; "APP-X (avo.local/OU/APP-X)" -> {name, path} */
+  function splitParenthetical(raw) {
+    const s = String(raw || '').trim();
+    if (!s) return { name: '', extra: '' };
+    const m = s.match(/^(.*?)\s*\(([^()]*)\)\s*$/);
+    if (!m) return { name: s, extra: '' };
+    return { name: m[1].trim(), extra: m[2].trim() };
+  }
+
+  /**
+   * Parse raw CSV text into normalised records.
+   * @returns {{records:Array, meta:Object, warnings:Array<string>}}
+   */
+  function parse(text, fileName) {
+    const delim = sniffDelim(text);
+    const grid = parseDelimited(text, delim).filter(r => r.length && !(r.length === 1 && r[0].trim() === ''));
+    if (!grid.length) throw new Error('CSV is empty.');
+    const header = grid[0].map(h => h.trim());
+    const map = mapHeaders(header);
+    const warnings = [];
+    const required = ['accountUserName', 'issue'];
+    const missing = required.filter(f => map[f] == null);
+    if (missing.length) {
+      throw new Error('Not a recognisable reconciliation export — missing column(s): ' +
+        missing.join(', ') + '. Found headers: ' + header.join(', '));
+    }
+    ['system', 'person', 'permission', 'accountEnabled'].forEach(f => {
+      if (map[f] == null) warnings.push('Column "' + f + '" not found; related analytics will be limited.');
+    });
+
+    const g = (row, f) => map[f] == null ? '' : (row[map[f]] || '').trim();
+    const records = [];
+    for (let i = 1; i < grid.length; i++) {
+      const row = grid[i];
+      const userName = g(row, 'accountUserName');
+      const issue = g(row, 'issue');
+      if (!userName && !issue) continue;
+      const personRaw = g(row, 'person');
+      const p = splitParenthetical(personRaw);
+      const permRaw = g(row, 'permission');
+      const perm = splitParenthetical(permRaw);
+      records.push({
+        i: records.length,
+        system: g(row, 'system') || 'Unknown system',
+        personRaw,
+        personName: p.name,
+        personId: p.extra,
+        accountDisplayName: g(row, 'accountDisplayName'),
+        userName,
+        enabled: parseBool(g(row, 'accountEnabled')),
+        permissionRaw: permRaw,
+        permission: perm.name,
+        permissionPath: perm.extra,
+        permissionConfig: g(row, 'permissionConfig'),
+        subPermission: g(row, 'subPermission'),
+        issue: issue || 'Unspecified',
+        resolution: g(row, 'resolution') || 'None'
+      });
+    }
+    if (!records.length) throw new Error('CSV contained a header but no data rows.');
+
+    return {
+      records,
+      warnings,
+      meta: {
+        fileName: fileName || 'import.csv',
+        delimiter: delim,
+        headers: header,
+        rowCount: records.length,
+        fingerprint: HR.util.hash(text.length + '|' + records.length + '|' + text.slice(0, 4096))
+      }
+    };
+  }
+
+  HR.parse = { parse, parseDelimited, sniffDelim, splitParenthetical, parseBool };
+})(window.HR);

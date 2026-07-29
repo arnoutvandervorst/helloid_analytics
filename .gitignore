@@ -1,0 +1,9 @@
+# Reconciliation exports stay out of the repo — they carry account and person names.
+*.csv
+
+# Build output; build.py regenerates it.
+dist/
+
+# Session state and OS noise
+.remember/
+.DS_Store

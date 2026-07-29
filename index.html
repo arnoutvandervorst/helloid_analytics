@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HelloID Reconciliation Analytics</title>
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+
+<div id="drop-veil" hidden><div id="drop-veil-text"></div></div>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="mark-host"></span>
+    <div>
+      <strong id="topbar-title">Reconciliation Analytics</strong>
+      <span class="sub" id="topbar-sub"></span>
+    </div>
+  </div>
+  <div class="topbar-actions">
+    <label class="btn primary">
+      <span id="btn-import-label">Import CSV</span>
+      <input type="file" id="file-input" accept=".csv,text/csv" hidden>
+    </label>
+    <div class="select-wrap">
+      <label for="baseline-select" id="baseline-label">Baseline</label>
+      <select id="baseline-select"></select>
+    </div>
+    <select id="lang-select" title="Language"></select>
+    <button class="btn ghost" id="btn-theme" title="Toggle light/dark">◐</button>
+  </div>
+</header>
+
+<div class="shell">
+  <nav class="sidenav" id="sidenav">
+    <button data-view="overview" class="active"></button>
+    <button data-view="risk"></button>
+    <button data-view="cost"></button>
+    <button data-view="accounts"></button>
+    <button data-view="permissions"></button>
+    <button data-view="people"></button>
+    <button data-view="diff"></button>
+    <button data-view="snapshots"></button>
+    <button data-view="board"></button>
+    <button data-view="settings"></button>
+  </nav>
+  <main id="view-root">
+
+  </main>
+</div>
+
+<div id="drawer" class="drawer" hidden>
+  <div class="drawer-head">
+    <div id="drawer-title"></div>
+    <button class="btn ghost" id="drawer-close">✕</button>
+  </div>
+  <div id="drawer-body"></div>
+</div>
+<div id="drawer-scrim" hidden></div>
+<div id="tooltip" class="tooltip" hidden></div>
+<div id="toast" class="toast" hidden></div>
+
+<script src="js/i18n.js"></script>
+<script src="js/util.js"></script>
+<script src="js/parse.js"></script>
+<script src="js/config.js"></script>
+<script src="js/brand.js"></script>
+<script src="js/model.js"></script>
+<script src="js/risk.js"></script>
+<script src="js/findings.js"></script>
+<script src="js/cost.js"></script>
+<script src="js/diff.js"></script>
+<script src="js/store.js"></script>
+<script src="js/charts.js"></script>
+<script src="js/table.js"></script>
+<script src="js/mine.js"></script>
+<script src="js/views.js"></script>
+<script src="js/board.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
