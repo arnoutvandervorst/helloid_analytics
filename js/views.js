@@ -640,25 +640,9 @@
   }
 
   /* ================================================================= PEOPLE */
-  /** Accounts belonging to each vault person: HelloID's correlation first, then the
-      name matches, then whatever the reconciliation export already linked. */
+  /** Accounts belonging to each vault person, via the shared three-layer index. */
   function peopleIndex(m) {
-    const map = new Map();
-    const add = (person, account) => {
-      if (!map.has(person.personId)) map.set(person.personId, { person, accounts: [] });
-      const entry = map.get(person.personId);
-      if (!entry.accounts.includes(account)) entry.accounts.push(account);
-    };
-    const idx = HR.vault.accountIndex(m.vault);
-    for (const a of m.accountList) {
-      const hit = idx.get(a.userName.toLowerCase());
-      if (hit) add(hit.person, a);
-      else if (a.personRaw) {
-        const p = m.vault.byDisplayName.get(a.personRaw);
-        if (p) add(p, a);
-      }
-    }
-    if (m.correlation) m.correlation.matches.forEach(x => add(x.person, x.account));
+    const map = HR.correlate.personAccountIndex(m, m.vault, m.correlation);
     m.vault.persons.forEach(p => { if (!map.has(p.personId)) map.set(p.personId, { person: p, accounts: [] }); });
     return map;
   }
@@ -1193,6 +1177,49 @@
       })()
     ])));
 
+    /* ---- account-to-person matching, with the effect of the current numbers ---- */
+    (() => {
+      const c = cfg.correlation;
+      const m = HR.app.state.model;
+      const stats = (m && m.vault) ? HR.correlate.attributionStats(m, m.vault, m.correlation) : null;
+      const toggle = (key, labelKey) => {
+        const box = el('input', { type: 'checkbox', checked: c[key], onchange: e => c[key] = e.target.checked });
+        return el('label', { class: 'inline' }, [box, document.createTextNode(T(labelKey))]);
+      };
+      const weight = (key, labelKey) => {
+        const i = el('input', { type: 'number', value: c.weights[key], step: '5',
+          oninput: e => c.weights[key] = parseFloat(e.target.value) || 0 });
+        i.style.width = '80px';
+        return el('label', { class: 'inline' }, [document.createTextNode(T(labelKey)), i]);
+      };
+      const threshold = el('input', { type: 'number', value: c.strongThreshold, step: '5',
+        oninput: e => c.strongThreshold = parseFloat(e.target.value) || 0 });
+      threshold.style.width = '80px';
+
+      g.appendChild(card(T('st.matching'), T('st.matchingNote'), [
+        el('div', { class: 'row' }, [
+          toggle('useVaultCorrelation', 'st.mUseVault'),
+          toggle('useReconPerson', 'st.mUseRecon'),
+          toggle('useNameMatch', 'st.mUseName'),
+          el('label', { class: 'inline' }, [document.createTextNode(T('st.mThreshold')), threshold])
+        ]),
+        el('div', { class: 'row', style: 'margin-top:10px' }, [
+          weight('vaultCorrelated', 'st.wVaultCorrelated'),
+          weight('displayNameExact', 'st.wDisplayExact'),
+          weight('employeeIdInUsername', 'st.wEmployeeId'),
+          weight('displayNameContains', 'st.wDisplayContains'),
+          weight('surnameInUsername', 'st.wSurname'),
+          weight('firstAndSurnameInUsername', 'st.wFirstSurname'),
+          weight('initialBeforeSurname', 'st.wInitial')
+        ]),
+        stats ? el('p', { class: 'note', style: 'margin-top:10px', text: T('st.mStats', {
+          attributed: U.fmtInt(stats.attributed), total: U.fmtInt(stats.accounts),
+          vault: U.fmtInt(stats.byLayer.vault || 0), recon: U.fmtInt(stats.byLayer.recon || 0),
+          name: U.fmtInt(stats.byLayer.name || 0), left: U.fmtInt(stats.unattributed)
+        }) }) : el('p', { class: 'note', style: 'margin-top:10px', text: T('st.mNoVault') })
+      ]));
+    })();
+
     if (HR.app.state.model) {
       g.appendChild(card(T('rv.tester'), T('rv.testerNote'), regexTester(HR.app.state.model)));
     }
@@ -1312,9 +1339,21 @@
               : el('span', { class: 'sev critical', text: T('c.unowned') }) },
           { key: 'cls', label: T('c.class'), value: r => r.account.clsLabel },
           { key: 'rows', label: T('ex.cRows'), num: true, value: r => r.rows.length },
-          { key: 'groups', label: T('ex.cGroups'),
-            render: r => el('span', { class: 'trunc', title: U.uniq(r.permissions.map(p => p.name)).join(', '),
-              text: U.uniq(r.permissions.map(p => p.name)).join(', ') }) },
+          { key: 'groupCount', label: T('ex.cGroups'), num: true,
+            value: r => U.uniq(r.permissions.map(p => p.name)).length },
+          /* The full list goes to the export and the tooltip; the cell shows enough to
+             recognise the account without turning the row into a paragraph. */
+          { key: 'groups', label: T('ex.cSample'),
+            value: r => U.uniq(r.permissions.map(p => p.name)).join(', '),
+            render: r => {
+              const names = U.uniq(r.permissions.map(p => p.name));
+              const shown = names.slice(0, 2).join(', ');
+              const rest = names.length - 2;
+              return el('span', { class: 'nowrap-cell', title: names.join(', ') }, [
+                el('span', { class: 'nowrap-text', text: shown || '—' }),
+                rest > 0 ? el('span', { class: 'pill', text: T('ex.andMore', { n: rest }) }) : null
+              ]);
+            } },
           { key: 'risk', label: T('c.risk'), num: true, value: r => r.account.riskScore, render: r => scoreBar(r.account.riskScore) }
         ],
         rows: e.residueByAccount, pageSize: 20, exportName: 'unexplained-rows',

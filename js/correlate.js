@@ -29,7 +29,8 @@
   /* Person display names are "Name (externalId)". */
   const cleanPerson = s => String(s || '').replace(/\s*\(\d+\)\s*$/, '').trim();
 
-  function score(account, person) {
+  function score(account, person, cfg) {
+    const w = (cfg && cfg.weights) || HR.config.get().correlation.weights;
     const evidence = [];
     let points = 0;
 
@@ -39,16 +40,16 @@
     const perLetters = letters(perName);
 
     if (accLetters && accLetters === perLetters) {
-      points += 100;
+      points += w.displayNameExact;
       evidence.push('display name identical');
     } else if (accLetters && perLetters && (accLetters.includes(perLetters) || perLetters.includes(accLetters))) {
-      points += 55;
+      points += w.displayNameContains;
       evidence.push('display name contains the other');
     }
 
     /* An employee number inside the account name is as good as a key. */
     if (person.externalId && new RegExp('(^|[^0-9])' + person.externalId + '([^0-9]|$)').test(account.userName)) {
-      points += 90;
+      points += w.employeeIdInUsername;
       evidence.push('employee number in username');
     }
 
@@ -58,15 +59,15 @@
     const first = parts.length ? parts[0] : '';
     const user = letters(account.userName);
     if (surname.length > 3 && user.includes(surname)) {
-      points += 30;
+      points += w.surnameInUsername;
       evidence.push('surname in username');
       if (first && user.includes(first[0]) && user.indexOf(first[0]) < user.indexOf(surname)) {
-        points += 10;
+        points += w.initialBeforeSurname;
         evidence.push('initial before surname');
       }
     }
     if (first.length > 3 && surname.length > 3 && user.includes(first) && user.includes(surname)) {
-      points += 25;
+      points += w.firstAndSurnameInUsername;
       evidence.push('first name and surname in username');
     }
 
@@ -75,7 +76,7 @@
       strip(a.userName) === strip(account.userName) ||
       (a.upn && strip(a.upn).split('@')[0] === strip(account.userName)));
     if (correlated) {
-      points += 200;
+      points += w.vaultCorrelated;
       evidence.push('correlated in the vault');
     }
 
@@ -86,8 +87,16 @@
    * @returns {{matches:Array, ambiguous:Array, unmatched:Array, stats:Object}}
    */
   function matchUnowned(model, vault, opts) {
+    const cfg = HR.config.get().correlation;
     const now = (opts && opts.when) || new Date();
-    const STRONG = 90;
+    const STRONG = cfg.strongThreshold;
+    if (!cfg.useNameMatch) {
+      return { matches: [], ambiguous: [], unmatched: model.accountList.filter(a => a.orphan),
+        former: [], formerEnabled: [],
+        stats: { unowned: model.accountList.filter(a => a.orphan).length, matched: 0,
+          ambiguous: 0, unmatched: model.accountList.filter(a => a.orphan).length,
+          former: 0, formerEnabled: 0, formerCost: 0, disabled: true } };
+    }
 
     const unowned = model.accountList.filter(a => a.orphan);
     const persons = vault.persons;
@@ -101,7 +110,7 @@
     for (const account of unowned) {
       const scored = [];
       for (const person of persons) {
-        const s = score(account, person);
+        const s = score(account, person, cfg);
         if (s.points > 0) scored.push({ person, points: s.points, evidence: s.evidence });
       }
       scored.sort((a, b) => b.points - a.points);
@@ -150,6 +159,60 @@
   }
 
   /**
+   * Every account this analysis can attribute to a person, in one place.
+   *
+   * Three layers, strongest first: the correlation HelloID itself recorded in the vault,
+   * the person the reconciliation export already names on the row, and finally the scored
+   * name matches. A vault exported without Accounts[] has no first layer at all, which is
+   * common, so nothing downstream may depend on it alone.
+   */
+  function personAccountIndex(model, vault, correlation) {
+    const cfg = HR.config.get().correlation;
+    const map = new Map();
+    const attach = (person, account, how) => {
+      if (!map.has(person.personId)) map.set(person.personId, { person, accounts: [], how: new Map() });
+      const entry = map.get(person.personId);
+      if (!entry.accounts.includes(account)) { entry.accounts.push(account); entry.how.set(account.key, how); }
+    };
+
+    const idx = cfg.useVaultCorrelation ? HR.vault.accountIndex(vault) : new Map();
+    for (const a of model.accountList) {
+      const hit = idx.get(a.userName.toLowerCase());
+      if (hit) { attach(hit.person, a, 'vault correlation'); continue; }
+      if (cfg.useReconPerson && a.personRaw) {
+        const p = vault.byDisplayName.get(a.personRaw);
+        if (p) { attach(p, a, 'reconciliation person'); continue; }
+      }
+    }
+    if (cfg.useNameMatch && correlation) {
+      correlation.matches.forEach(m => attach(m.person, m.account, m.evidence.join(', ')));
+    }
+    return map;
+  }
+
+  /** How many accounts each layer accounted for — the number that makes tuning visible. */
+  function attributionStats(model, vault, correlation) {
+    const index = personAccountIndex(model, vault, correlation);
+    const layers = new Map();
+    let attributed = 0;
+    for (const entry of index.values()) {
+      for (const a of entry.accounts) {
+        attributed++;
+        const how = entry.how.get(a.key) || '—';
+        const layer = how === 'vault correlation' ? 'vault'
+          : how === 'reconciliation person' ? 'recon' : 'name';
+        layers.set(layer, (layers.get(layer) || 0) + 1);
+      }
+    }
+    return {
+      accounts: model.accountList.length,
+      attributed,
+      unattributed: model.accountList.length - attributed,
+      byLayer: Object.fromEntries(layers)
+    };
+  }
+
+  /**
    * Group every account this analysis can attribute to a person, and say which is the
    * person's main account and which are secondary — admin, service or function accounts
    * that exist alongside it.
@@ -159,24 +222,14 @@
    * belongs to someone who is sitting right there in the vault with a personal account.
    */
   function linkAccounts(model, vault, correlation) {
+    const index = personAccountIndex(model, vault, correlation);
     const byPerson = new Map();
-    const attach = (person, account, how) => {
-      if (!byPerson.has(person.personId)) byPerson.set(person.personId, { person, accounts: [] });
-      const entry = byPerson.get(person.personId);
-      if (!entry.accounts.some(x => x.account === account)) entry.accounts.push({ account, how });
-    };
-
-    const idx = HR.vault.accountIndex(vault);
-    for (const a of model.accountList) {
-      const hit = idx.get(a.userName.toLowerCase());
-      if (hit) { attach(hit.person, a, 'vault correlation'); continue; }
-      if (a.personRaw) {
-        const p = vault.byDisplayName.get(a.personRaw);
-        if (p) attach(p, a, 'reconciliation person');
-      }
+    for (const [id, entry] of index) {
+      byPerson.set(id, {
+        person: entry.person,
+        accounts: entry.accounts.map(a => ({ account: a, how: entry.how.get(a.key) }))
+      });
     }
-    /* Name matches bring in the accounts neither export links to anyone. */
-    if (correlation) correlation.matches.forEach(mm => attach(mm.person, mm.account, mm.evidence.join(', ')));
 
     /* The main account is the one that reads as a person rather than a role: not admin,
        service or test by class, and where possible the one HelloID itself correlated. */
@@ -220,5 +273,5 @@
     };
   }
 
-  HR.correlate = { matchUnowned, linkAccounts, score };
+  HR.correlate = { matchUnowned, linkAccounts, personAccountIndex, attributionStats, score };
 })(window.HR);

@@ -406,3 +406,9 @@ table.board-tbl .owner-cell { border-bottom: 1px solid #e3e2dc; min-width: 90px;
 .tone-warn { color: var(--serious); }
 .trunc-multi { color: var(--text-secondary); font-size: 12px; line-height: 1.5;
   max-height: 4.5em; overflow: auto; }
+
+/* A preview cell: the sample text truncates, the "+N more" counter never does. */
+.nowrap-cell { display: flex; align-items: center; gap: 6px; max-width: 320px; }
+.nowrap-cell .nowrap-text { flex: 1 1 auto; min-width: 0; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; }
+.nowrap-cell .pill { flex: 0 0 auto; }

@@ -162,7 +162,7 @@
          which turns group-level drift into per-person over- and under-provisioning. */
       if (vault) {
         model.evaluation = HR.evaluate.evaluateAll(ruleSet, vault, { includeDrafts: true });
-        model.provisioning = HR.compare.provisioning(model, ruleSet, vault, model.evaluation);
+        model.provisioning = HR.compare.provisioning(model, ruleSet, vault, model.evaluation, model.correlation);
       }
       model.findings = model.findings
         .concat(HR.findings.runComparison(model))

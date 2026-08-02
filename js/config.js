@@ -59,6 +59,28 @@
     minutesPerPrivilegedReview: 45
   };
 
+  /* --- account-to-person matching -------------------------------------------
+     A vault exported without Accounts[] carries no correlation at all, which is common,
+     so attribution falls back to the reconciliation export's own Person column and then
+     to scored name evidence. Every weight is exposed because naming conventions differ
+     per customer: where logins are surname+number, the surname rule carries the work;
+     where they are firstname.lastname, the display-name rules do. */
+  const DEFAULT_CORRELATION = {
+    strongThreshold: 90,          // points needed before a match is proposed at all
+    useVaultCorrelation: true,    // trust Accounts[] in the vault
+    useReconPerson: true,         // trust the Person column on the reconciliation row
+    useNameMatch: true,           // fall back to scored name evidence
+    weights: {
+      vaultCorrelated: 200,
+      displayNameExact: 100,
+      employeeIdInUsername: 90,
+      displayNameContains: 55,
+      surnameInUsername: 30,
+      firstAndSurnameInUsername: 25,
+      initialBeforeSurname: 10
+    }
+  };
+
   /* --- risk weights --------------------------------------------------------- */
   const DEFAULT_RISK = {
     issueWeights: {
@@ -85,6 +107,7 @@
     priceBook: DEFAULT_PRICE_BOOK,
     effort: DEFAULT_EFFORT,
     risk: DEFAULT_RISK,
+    correlation: DEFAULT_CORRELATION,
     rarityThreshold: 3,             // held by <= N accounts counts as rare
     skipReview: false,              // skip the configuration review on import
     severityBands: { critical: 70, high: 45, medium: 20 }

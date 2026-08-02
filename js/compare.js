@@ -164,17 +164,10 @@
      With a vault loaded the comparison stops being set-level. Rules can be evaluated
      against real people, so "who should hold this" becomes answerable and the drift
      splits per person rather than per group. */
-  function provisioning(model, ruleSet, vault, evaluation) {
-    const idx = HR.vault.accountIndex(vault);
-    const byPerson = new Map();
-
-    /* Tie each vault person to the accounts the reconciliation export knows about. */
-    for (const account of model.accountList) {
-      const hit = idx.get(account.userName.toLowerCase());
-      if (!hit) continue;
-      if (!byPerson.has(hit.person.personId)) byPerson.set(hit.person.personId, { person: hit.person, accounts: [] });
-      byPerson.get(hit.person.personId).accounts.push(account);
-    }
+  function provisioning(model, ruleSet, vault, evaluation, correlation) {
+    /* Not the vault's own correlation alone: plenty of exports carry no Accounts[] at
+       all, and then every per-person number would silently read zero. */
+    const byPerson = HR.correlate.personAccountIndex(model, vault, correlation);
 
     const rows = [];
     for (const [personId, entry] of byPerson) {
@@ -227,10 +220,11 @@
 
     /* Accounts the reconciliation export calls unowned while the vault has correlated
        them to a person: a correlation problem, not an ownership one. */
+    const vaultIdx = HR.vault.accountIndex(vault);
     const miscorrelated = model.accountList.filter(a => {
-      const hit = idx.get(a.userName.toLowerCase());
+      const hit = vaultIdx.get(a.userName.toLowerCase());
       return a.orphan && hit;
-    }).map(a => ({ account: a, person: idx.get(a.userName.toLowerCase()).person }));
+    }).map(a => ({ account: a, person: vaultIdx.get(a.userName.toLowerCase()).person }));
 
     return {
       rows,
