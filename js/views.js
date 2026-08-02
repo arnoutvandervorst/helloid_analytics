@@ -1042,6 +1042,7 @@
 
     if (!c) {
       f.appendChild(card(null, null, el('p', { text: T('ru.empty') })));
+      f.appendChild(el('div', { style: 'margin-top:14px' }, proposalsCard(m)));
       return f;
     }
 
@@ -1162,7 +1163,101 @@
       })));
     }
     if (g2.childNodes.length) f.appendChild(g2);
+    f.appendChild(el('div', { style: 'margin-top:14px' }, proposalsCard(m)));
     return f;
+  }
+
+  /** Mined bundles, presented as rules someone could actually write. */
+  function proposalsCard(m) {
+    const mined = HR.roles.mine(m);
+    if (!mined.proposals.length) {
+      return card(T('ro.title'), T('ro.note'), el('p', { class: 'note', text: T('ro.none') }));
+    }
+    const body = el('div');
+    body.appendChild(HR.table.make({
+      columns: [
+        { key: 'name', label: T('ro.cName'), value: p => p.suggestedName },
+        { key: 'groups', label: T('ro.cGroups'), num: true, value: p => p.perms.length },
+        { key: 'members', label: T('ro.cMembers'), num: true, value: p => p.support },
+        { key: 'cohesion', label: T('ro.cCohesion'), num: true, hint: T('ro.cCohesionHint'),
+          value: p => p.cohesion, render: p => U.fmtPct(p.cohesion, 0) },
+        { key: 'assignments', label: T('ro.cAssignments'), num: true, hint: T('ro.cAssignmentsHint'),
+          value: p => p.assignments },
+        { key: 'exceptions', label: T('ro.cExceptions'), num: true, hint: T('ro.cExceptionsHint'),
+          value: p => p.nearMiss.length, render: p => p.nearMiss.length || '—' },
+        { key: 'cost', label: T('c.totalMo'), num: true, value: p => p.monthlyCost,
+          render: p => p.monthlyCost ? U.fmtMoney(p.monthlyCost) : '—' },
+        { key: 'list', label: T('ro.cGroups'), sortable: false,
+          render: p => el('span', { class: 'trunc', title: p.perms.map(x => x.name).join(', '),
+            text: p.perms.map(x => x.name).join(', ') }) }
+      ],
+      rows: mined.proposals, pageSize: 15, exportName: 'proposed-rules',
+      initialSort: { key: 'assignments', dir: -1 },
+      search: (p, q) => (p.suggestedName + ' ' + p.perms.map(x => x.name).join(' ')).toLowerCase().includes(q),
+      onRowClick: p => drawerProposal(p, m)
+    }));
+    body.appendChild(el('div', { class: 'row', style: 'margin-top:10px' }, [
+      el('button', {
+        class: 'btn sm', text: T('ro.export'),
+        onclick: () => U.download('proposed-rules.csv',
+          HR.roles.toRulesCsv(mined.proposals, m.systemList[0] ? m.systemList[0].name : ''),
+          'text/csv;charset=utf-8')
+      }),
+      el('span', { class: 'note', text: T('ro.statsFoot', {
+        proposals: mined.stats.proposals, bundles: mined.stats.bundlesFound,
+        assignments: U.fmtInt(mined.stats.assignmentsCovered)
+      }) })
+    ]));
+    return card(T('ro.title'), T('ro.note'), body);
+  }
+
+  /** One proposal: its groups, who holds the whole set, and who is one short. */
+  function drawerProposal(p, m) {
+    const head = el('div', {}, [
+      el('h2', { text: p.suggestedName }),
+      el('div', { class: 'row' }, [
+        el('span', { class: 'pill', text: p.perms.length + ' ' + T('ro.cGroups').toLowerCase() }),
+        el('span', { class: 'pill', text: p.support + ' ' + T('ro.cMembers').toLowerCase() }),
+        el('span', { class: 'pill', text: T('ro.cCohesion') + ' ' + U.fmtPct(p.cohesion, 0) })
+      ])
+    ]);
+    const body = el('div', { class: 'stack' });
+    body.appendChild(el('p', { class: 'note', text: T('ro.conditionWarn') }));
+    body.appendChild(card(T('ro.drawerGroups'), null, HR.table.make({
+      columns: [
+        { key: 'name', label: T('ru.cGroup'), value: x => x.name },
+        { key: 'cat', label: T('c.category'), value: x => x.categoryLabel },
+        { key: 'holders', label: T('c.holders'), num: true, value: x => x.holderCount },
+        { key: 'cost', label: T('c.unitMo'), num: true, value: x => x.monthlyPrice || 0,
+          render: x => x.monthlyPrice ? U.fmtMoney(x.monthlyPrice) : '—' }
+      ], rows: p.perms, pageSize: 10, exportName: 'proposal-groups',
+      onRowClick: x => drawerPermission(x, m)
+    })));
+    body.appendChild(card(T('ro.drawerMembers'), T('dr.accountsN', { n: p.members.length }), HR.table.make({
+      columns: [
+        { key: 'userName', label: T('c.account') },
+        { key: 'personName', label: T('c.person'),
+          render: a => a.personRaw ? el('span', { text: a.personName }) : el('span', { class: 'sev critical', text: T('c.unowned') }) },
+        { key: 'permCount', label: T('c.perms'), num: true },
+        { key: 'riskScore', label: T('c.risk'), num: true, render: a => scoreBar(a.riskScore) }
+      ], rows: p.members, pageSize: 12, exportName: 'proposal-members',
+      onRowClick: a => drawerAccount(a)
+    })));
+    if (p.nearMiss.length) {
+      const permKeys = p.perms.map(x => x.key);
+      body.appendChild(card(T('ro.drawerExceptions'), T('dr.accountsN', { n: p.nearMiss.length }), HR.table.make({
+        columns: [
+          { key: 'userName', label: T('c.account') },
+          { key: 'missing', label: T('ro.cGroups'), sortable: false, render: a => {
+            const gap = p.perms.find(x => !a.permKeys.has(x.key));
+            return el('span', { class: 'sev medium', text: gap ? T('ro.missingGroup', { name: gap.name }) : '—' });
+          } },
+          { key: 'riskScore', label: T('c.risk'), num: true, render: a => scoreBar(a.riskScore) }
+        ], rows: p.nearMiss, pageSize: 12, exportName: 'proposal-exceptions',
+        onRowClick: a => drawerAccount(a)
+      })));
+    }
+    openDrawer(head, body);
   }
 
   /** One rule: its conditions, what it grants, and what reality says about each group. */

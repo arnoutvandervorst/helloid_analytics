@@ -45,7 +45,23 @@
         status: overEnt ? 'watch' : 'good', scale: accounts(overEnt) },
       { id: 'external', name: T('bd.th.external'), meaning: T('bd.th.external.m'),
         status: external ? 'watch' : 'good', scale: accounts(external) }
-    ];
+    ].concat(ruleTheme(m));
+  }
+
+  /* Only when a business-rule export was loaded alongside the reconciliation one. */
+  function ruleTheme(m) {
+    const c = m.comparison;
+    if (!c) return [];
+    const s = c.summary;
+    return [{
+      id: 'rules',
+      name: T('bd.th.rules2'),
+      meaning: T('bd.th.rules2.m'),
+      status: s.coverage > 0.75 ? 'good' : s.coverage > 0.4 ? 'watch' : 'bad',
+      scale: T('bd.th.rules2.scale', {
+        pct: U.fmtPct(s.coverage, 0), live: s.live, rules: s.rules
+      })
+    }];
   }
 
   /** Recommendations, ordered by urgency then by money returned. */
@@ -79,6 +95,18 @@
 
     const over = F('over-entitled');
     add(over, 'overent', over ? over.count * 0.5 : 0, 0, 'medium');
+
+    const c = m.comparison;
+    if (c && c.summary.unmanagedUnmodelled > 0) {
+      const eff = HR.config.get().effort;
+      out.push({
+        title: T('bd.ac.model'),
+        why: T('bd.ac.model.why', { share: U.fmtPct(c.summary.modelShare, 0) }),
+        hours: c.summary.unmodelledPermissions * (eff.minutesPerUnmanagedPermission / 60),
+        saving: 0,
+        severity: 'high'
+      });
+    }
 
     out.forEach(a => { a.cost = a.hours * eff.hourlyRate; });
     return out.sort((a, b) => U.severityRank(a.severity) - U.severityRank(b.severity) || b.saving - a.saving);
@@ -290,7 +318,8 @@
       paper.appendChild(page([
         el('h2', { class: 'sheet-h', text: T('bd.secMethod') }),
         el('p', { class: 'lead', text: T('bd.methodLead') }),
-        el('ul', { class: 'method' }, [1, 2, 3, 4, 5].map(i => el('li', { text: T('bd.method' + i) }))),
+        el('ul', { class: 'method' }, [1, 2, 3, 4, 5].map(i => el('li', { text: T('bd.method' + i) }))
+          .concat(m.comparison ? [el('li', { text: T('bd.method6') })] : [])),
         el('p', { class: 'footnote', text: T('bd.methodFoot') })
       ]));
     }

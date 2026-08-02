@@ -112,6 +112,32 @@ account names, and see the match count, a sample of hits, and a warning when the
 invalid or matches everything. Every rule row in Settings also shows its live match count
 against the loaded import.
 
+## Business rules
+
+Drop a HelloID business-rule export (`Name,EntitlementCount,PersonsLatestEvaluation,Categories,Status,Conditions,Entitlements`) on the same page — it routes by header, no second import button — and it is joined against the reconciliation export on distinguished path, falling back to system + name for systems that export none (Exchange Online, TOPdesk, Azure).
+
+Rules stack, so an entitlement counts as described when *any* rule grants it; there is no precedence to resolve. That splits drift into two problems with opposite fixes:
+
+| | Meaning | Fix |
+| --- | --- | --- |
+| A live rule grants it | The model is right, the rule is not reaching these people | Conditions or evaluation |
+| Only a draft rule grants it | The model exists, switched off | Publish it |
+| No rule grants it | Gap in the model | Write the rule |
+
+Five findings come out of the join: entitlements a rule grants that the target system does not have, draft rules already covering live drift, live rules that match nobody while their groups have holders, access no rule describes, and failed grants traced to the rule that should have delivered them.
+
+Conditions are parsed (`Department.ExternalId, one of`, `Custom.Vrijgesteld, not only`, `Time frame`) and shown, but **not evaluated** — deciding who matches needs personnel data neither export carries.
+
+## Proposed rules
+
+The backlog says which groups no rule describes; it does not say how to describe them, and one rule per group would be the wrong answer. `js/roles.js` mines frequent itemsets (apriori, level-wise with pruning) over account entitlement sets, restricted to the unmodelled groups, and proposes the bundles that accounts hold together.
+
+Two choices decide whether the output is useful rather than merely true: rank on **cohesion** (how often the rarest group in a bundle brings the rest with it) rather than frequency, since the most frequent bundles are the groups everyone has; and keep **maximal** bundles, capped per role family, since every subset of a frequent bundle is itself frequent.
+
+Each proposal carries its members, its exceptions (accounts holding all but one group — the rule either absorbs them or exposes them), the assignments it would bring under management, and its licence cost. Proposals export in the HelloID rule format so they can sit next to the real ones. The **condition is left empty on purpose**: which department or title should receive the bundle lives in HR data, and the member list is the evidence to write it from.
+
+Mining is cached per model, samples above 5,000 accounts, and raises its support floor with the population — 97 ms on the 5k export, ~50 ms at 50k and 200k.
+
 ## Performance
 
 Measured in Chrome on the real 5k-row export and on synthetic 50k/200k exports:
