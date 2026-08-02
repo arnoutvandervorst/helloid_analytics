@@ -11,6 +11,13 @@ Vault*.json
 # Build output; build.py regenerates it.
 dist/
 
+# Tenant credentials for helloid-export.py. Never commit; .env.example is the template.
+.env
+
+# Exports pulled from a live tenant.
+product-assignments.csv
+products.json
+
 # Deployment notes for a specific host: hostnames, users and internal addresses.
 deploy-local/
 DEPLOY-NUC.md

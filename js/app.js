@@ -20,6 +20,8 @@
     history: null,         // what HelloID did, when, why, and whether it worked
     catalogue: null,       // the entitlement catalogue: rules per entitlement, still in target?
     demo: null,            // set while showing the published fictional tenant
+    products: null,        // Service Automation product catalogue
+    assignments: null,     // who holds which product, and who approved it
     raw: {},               // the text of each companion import, so a refresh can restore it
     importedAt: {},        // when each was loaded — decisions rest on how old these are
     fileNames: {},         // the name each came in under, so a restore does not invent one
@@ -87,6 +89,7 @@
        file, a snapshot bundle or a vault export. */
     if (/^\s*[{[]/.test(text)) return importJsonFile(text, fileName);
     if (looksLikeRuleExport(text)) return importRules(text, fileName);
+    if (looksLikeAssignmentExport(text)) return importAssignments(text, fileName);
     const activityKind = looksLikeActivityExport(text);
     if (activityKind) return importActivity(text, fileName, activityKind);
 
@@ -102,7 +105,8 @@
 
     state.parsed = parsed;
     state.model = HR.model.build(parsed.records, { ruleSet: state.ruleSet, vault: state.vault,
-      granted: state.granted, history: state.history, catalogue: state.catalogue });
+      granted: state.granted, history: state.history, catalogue: state.catalogue,
+      products: state.products, assignments: state.assignments });
 
     const snap = HR.store.makeSnapshot(parsed, state.model);
     const dup = state.snapshots.find(s => s.fingerprint === parsed.meta.fingerprint);
@@ -145,12 +149,15 @@
       let peek = null;
       try { peek = JSON.parse(text); } catch (e) { return null; }
       if (HR.config.looksLikeSettings(peek)) return 'settings';
+      if (HR.config.looksLikeProductMap(peek)) return 'productmap';
       if (peek.kind === 'helloid-recon-snapshots' || Array.isArray(peek.snapshots)) return 'snapshots';
+      if (HR.products.looksLikeProducts(peek)) return 'products';
       return 'vault';
     }
     const header = headerOf(text);
     if (!header || !header.length) return null;
     if (HR.rules.looksLikeRules(header)) return 'rules';
+    if (HR.products.looksLikeAssignments(header)) return 'assignments';
     const activity = HR.activity.classify(header);
     if (activity) return activity;
     if (HR.parse.looksLikeRecon(header)) return 'recon';
@@ -179,7 +186,7 @@
 
   /** Drop a companion source without clearing the rest — each one stands on its own. */
   function clearSource(kind) {
-    if (!['rules', 'vault', 'granted', 'history', 'catalogue'].includes(kind)) return;
+    if (!['rules', 'vault', 'granted', 'history', 'catalogue', 'products', 'assignments'].includes(kind)) return;
     state[kind] = null;
     if (kind === 'rules') state.ruleSet = null;
     delete state.raw[kind];
@@ -232,6 +239,59 @@
     go('activity');
   }
 
+  function looksLikeAssignmentExport(text) {
+    try { return HR.products.looksLikeAssignments(headerOf(text)); } catch (e) { return false; }
+  }
+
+  /** Product assignments: requested, approved, held. */
+  async function importAssignments(text, fileName) {
+    let parsed;
+    try { parsed = HR.products.parseAssignments(text, fileName); }
+    catch (err) { U.toast(err.message, 7000); return; }
+
+    state.assignments = parsed;
+    state.raw.assignments = text;
+    state.importedAt.assignments = Date.now();
+    state.fileNames.assignments = fileName;
+    HR.store.saveContext({ assignments: text, importedAt: state.importedAt, fileNames: state.fileNames });
+    HR.usage.imported('assignments', parsed.meta.rowCount);
+    if (!state.model) {
+      U.toast(T('toast.assignmentsNoRecon', { n: U.fmtInt(parsed.meta.rowCount) }), 6000);
+      render();
+      return;
+    }
+    rebuild();
+    U.toast(T('toast.assignmentsLoaded', {
+      n: U.fmtInt(parsed.meta.rowCount), open: U.fmtInt(parsed.meta.openCount),
+      products: parsed.meta.products
+    }), 5000);
+    go('products');
+  }
+
+  /** The product catalogue: price, risk factor, time limit, return behaviour. */
+  async function importProducts(text, fileName) {
+    let parsed;
+    try { parsed = HR.products.parseProducts(text, fileName); }
+    catch (err) { U.toast(err.message, 7000); return; }
+
+    state.products = parsed;
+    state.raw.products = text;
+    state.importedAt.products = Date.now();
+    state.fileNames.products = fileName;
+    HR.store.saveContext({ products: text, importedAt: state.importedAt, fileNames: state.fileNames });
+    HR.usage.imported('products', parsed.meta.rowCount);
+    if (!state.model) {
+      U.toast(T('toast.productsNoRecon', { n: parsed.meta.rowCount }), 6000);
+      render();
+      return;
+    }
+    rebuild();
+    U.toast(T('toast.productsLoaded', {
+      n: parsed.meta.rowCount, tasks: parsed.meta.withActions
+    }), 5000);
+    go('products');
+  }
+
   function looksLikeRuleExport(text) {
     try {
       const firstLine = text.split(/\r?\n/, 1)[0] || '';
@@ -252,6 +312,15 @@
       } catch (err) { U.toast(err.message, 7000); }
       return;
     }
+    if (peek && HR.config.looksLikeProductMap(peek)) {
+      try {
+        const res = HR.config.importMap(text, { merge: true });
+        rebuild();
+        U.toast(T('toast.productMapImported', res), 5000);
+      } catch (err) { U.toast(err.message, 7000); }
+      return;
+    }
+    if (peek && HR.products.looksLikeProducts(peek)) return importProducts(text, fileName);
     if (peek && (peek.kind === 'helloid-recon-snapshots' || Array.isArray(peek.snapshots))) {
       try {
         const n = await HR.store.importJSON(text);
@@ -387,7 +456,8 @@
       state.baselineId = id;
       state.baselineSnapshot = snap;
       state.baselineModel = HR.model.build(snap.records, { ruleSet: state.ruleSet, vault: state.vault,
-        granted: state.granted, history: state.history, catalogue: state.catalogue });
+        granted: state.granted, history: state.history, catalogue: state.catalogue,
+      products: state.products, assignments: state.assignments });
       await recomputeDiff();
       if (!quiet) U.toast(T('toast.baselineSet', { name: snap.name }));
     }
@@ -406,7 +476,8 @@
     state.currentSnapshotId = id;
     state.parsed = { records: snap.records, meta: { fileName: snap.fileName, fingerprint: snap.fingerprint } };
     state.model = HR.model.build(snap.records, { ruleSet: state.ruleSet, vault: state.vault,
-      granted: state.granted, history: state.history, catalogue: state.catalogue });
+      granted: state.granted, history: state.history, catalogue: state.catalogue,
+      products: state.products, assignments: state.assignments });
     if (state.baselineId === id) await setBaseline(null);
     await recomputeDiff();
     updateTopbar();
@@ -417,7 +488,8 @@
   /** Re-run the whole pipeline after a settings change. */
   function rebuild() {
     const opts = { ruleSet: state.ruleSet, vault: state.vault,
-      granted: state.granted, history: state.history, catalogue: state.catalogue };
+      granted: state.granted, history: state.history, catalogue: state.catalogue,
+      products: state.products, assignments: state.assignments };
     if (state.parsed) state.model = HR.model.build(state.parsed.records, opts);
     if (state.baselineSnapshot) state.baselineModel = HR.model.build(state.baselineSnapshot.records, opts);
     recomputeDiff();
@@ -441,6 +513,8 @@
     if (state.granted) sources.push(T('src.granted') + ': ' + state.granted.meta.rowCount);
     if (state.history) sources.push(T('src.history') + ': ' + U.fmtInt(state.history.meta.rowCount));
     if (state.catalogue) sources.push(T('src.catalogue') + ': ' + U.fmtInt(state.catalogue.meta.rowCount));
+    if (state.products) sources.push(T('src.products') + ': ' + U.fmtInt(state.products.meta.rowCount));
+    if (state.assignments) sources.push(T('src.assignments') + ': ' + U.fmtInt(state.assignments.meta.rowCount));
 
     const parts = [
       T('app.sources', { n: sources.length }),
@@ -546,14 +620,15 @@
        depend on them — the People overview being the visible one. */
     const restoreContext = HR.store.loadContext().then(ctx => {
       if (!ctx) return;
-      state.raw = { rules: ctx.rules, vault: ctx.vault, granted: ctx.granted, history: ctx.history, catalogue: ctx.catalogue };
+      state.raw = { rules: ctx.rules, vault: ctx.vault, granted: ctx.granted, history: ctx.history,
+        catalogue: ctx.catalogue, products: ctx.products, assignments: ctx.assignments };
       /* Context saved before import times were tracked still has one useful timestamp:
          when it was written. Better than showing nothing for every restored file. */
       state.importedAt = ctx.importedAt || {};
       state.fileNames = ctx.fileNames || {};
       state.demo = ctx.demo || null;
       const named = (k, fallback) => state.fileNames[k] || fallback;
-      ['rules', 'vault', 'granted', 'history', 'catalogue'].forEach(k => {
+      ['rules', 'vault', 'granted', 'history', 'catalogue', 'products', 'assignments'].forEach(k => {
         if (ctx[k] && !state.importedAt[k]) state.importedAt[k] = ctx.savedAt || null;
       });
       try { if (ctx.rules) state.ruleSet = HR.rules.parse(ctx.rules, named('rules', 'rules.csv')); } catch (e) { /* stale */ }
@@ -561,6 +636,8 @@
       try { if (ctx.granted) state.granted = HR.activity.parse(ctx.granted, named('granted', 'entitlements.csv')); } catch (e) { /* stale */ }
       try { if (ctx.history) state.history = HR.activity.parse(ctx.history, named('history', 'historicactions.csv')); } catch (e) { /* stale */ }
       try { if (ctx.catalogue) state.catalogue = HR.activity.parse(ctx.catalogue, named('catalogue', 'entitlements.csv')); } catch (e) { /* stale */ }
+      try { if (ctx.products) state.products = HR.products.parseProducts(ctx.products, named('products', 'products.json')); } catch (e) { /* stale */ }
+      try { if (ctx.assignments) state.assignments = HR.products.parseAssignments(ctx.assignments, named('assignments', 'product-assignments.csv')); } catch (e) { /* stale */ }
     });
 
     restoreContext.then(() => refreshSnapshots()).then(async () => {

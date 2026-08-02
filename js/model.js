@@ -151,6 +151,8 @@
     const granted = opts && opts.granted;
     const history = opts && opts.history;
     const catalogue = opts && opts.catalogue;
+    const products = opts && opts.products;
+    const assignments = opts && opts.assignments;
     if (catalogue) model.catalogue = catalogue;
     if (granted) model.granted = granted;
     if (history) model.history = history;
@@ -183,6 +185,26 @@
         .sort((a, b) => HR.util.severityRank(a.severity) - HR.util.severityRank(b.severity) ||
           (b.impactMonthly || 0) - (a.impactMonthly || 0) || b.count - a.count);
     }
+    if (assignments || products) {
+      /* Service Automation: what people requested and were given, which the
+         reconciliation export never mentions. */
+      if (products) model.products = products;
+      if (assignments) {
+        model.assignments = assignments;
+        model.productHolders = HR.products.linkHolders(assignments, model, vault, model.correlation);
+      }
+      if (products) {
+        model.productMatch = HR.products.matchProducts(products, assignments, model,
+          model.productHolders, granted, HR.config.get().products);
+      }
+      if (assignments) {
+        /* Only the confirmed map explains anything; proposals stay proposals. */
+        model.productMapping = HR.products.applyMapping(model, assignments,
+          model.productHolders, HR.config.getMap());
+        model.findings = model.findings.concat(HR.findings.runProducts(model));
+      }
+    }
+
     /* Runs last: every other input is an ingredient of an explanation. */
     model.explanation = HR.explain.build(model);
     model.findings = model.findings.concat(HR.findings.runExplanation(model));

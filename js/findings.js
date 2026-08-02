@@ -685,6 +685,207 @@
     }
   ];
 
+
+  /* ------------------------------------------------------- Service Automation */
+  const PRODUCT_RULES = [
+    /* The control the approval workflow exists to provide, bypassed by the requester. */
+    function selfApproved(m) {
+      const hits = m.assignments.rows.filter(a => a.selfApproved);
+      if (!hits.length) return null;
+      return Object.assign({
+        id: 'product-self-approved', severity: 'high', category: T('fi.cat.process'),
+        entities: hits.slice(0, 80).map(a => ({
+          type: 'product', key: a.id, label: a.productName,
+          detail: T('fi.product-self-approved.detail', {
+            user: a.userName, date: a.approvedAt ? U.fmtDate(a.approvedAt).split(',')[0] : '\u2014' })
+        })),
+        impactMonthly: 0
+      }, prose('product-self-approved', {
+        n: hits.length, users: new Set(hits.map(a => a.userName)).size
+      }));
+    },
+
+    /* Ownership that outlived its own time limit: HelloID knows the duration and the
+       assignment is still open past it. */
+    function pastOwnershipDuration(m) {
+      const now = Date.now();
+      const hits = [];
+      for (const a of m.assignments.open) {
+        const p = m.products && m.products.byName.get(a.productName.toLowerCase());
+        /* Only where the limit converts to whole days; an ambiguous unit is not a
+           basis for telling somebody their access is overdue. */
+        if (!p || !p.hasTimeLimit || !p.ownershipDays) continue;
+        const start = a.approvedAt || a.requestedAt;
+        if (!start) continue;
+        const days = Math.round((now - start) / 86400000);
+        if (days > p.ownershipDays) hits.push({ a, p, days });
+      }
+      if (!hits.length) return null;
+      hits.sort((x, y) => y.days - x.days);
+      return Object.assign({
+        id: 'product-past-duration', severity: 'high', category: T('fi.cat.process'),
+        entities: hits.slice(0, 80).map(h => ({
+          type: 'product', key: h.a.id, label: h.a.productName,
+          detail: T('fi.product-past-duration.detail', {
+            user: h.a.userName, days: U.fmtInt(h.days), limit: U.fmtInt(h.p.ownershipDays) })
+        })),
+        impactMonthly: 0
+      }, prose('product-past-duration', { n: hits.length }));
+    },
+
+    /* Held for years with nothing recorded since. Not wrong by itself — but it is the
+       set nobody has looked at, and the export says how long. */
+    function heldLong(m) {
+      const cfg = HR.config.get().products || {};
+      const limit = cfg.staleDays || 730;
+      const now = Date.now();
+      const hits = m.assignments.open.filter(a => {
+        const start = a.approvedAt || a.requestedAt;
+        return start && (now - start) / 86400000 > limit;
+      });
+      if (!hits.length) return null;
+      const oldest = hits.reduce((max, a) => {
+        const d = Math.round((now - (a.approvedAt || a.requestedAt)) / 86400000);
+        return d > max ? d : max;
+      }, 0);
+      return Object.assign({
+        id: 'product-long-held', severity: 'medium', category: T('fi.cat.hygiene'),
+        entities: hits.slice(0, 80).map(a => ({
+          type: 'product', key: a.id, label: a.productName,
+          detail: T('fi.product-long-held.detail', {
+            user: a.userName,
+            years: U.fmtNum(((now - (a.approvedAt || a.requestedAt)) / 31557600000), 1) })
+        })),
+        impactMonthly: 0
+      }, prose('product-long-held', {
+        n: hits.length, total: m.assignments.open.length,
+        limit: limit, years: U.fmtNum(oldest / 365.25, 1)
+      }));
+    },
+
+    /* A product that does not return when the user is disabled keeps whatever it granted
+       after the person is gone — and the reconciliation cannot tell you which ones. */
+    function noReturnOnDisable(m) {
+      if (!m.products) return null;
+      const hits = m.assignments.open.filter(a => {
+        const p = m.products.byName.get(a.productName.toLowerCase());
+        return p && !p.returnOnUserDisable;
+      });
+      if (!hits.length) return null;
+      const products = U.uniq(hits.map(a => a.productName));
+      return Object.assign({
+        id: 'product-no-return-on-disable', severity: 'medium', category: T('fi.cat.process'),
+        entities: products.slice(0, 80).map(name => ({
+          type: 'product', key: name, label: name,
+          detail: T('fi.product-no-return-on-disable.detail', {
+            n: hits.filter(a => a.productName === name).length })
+        })),
+        impactMonthly: 0
+      }, prose('product-no-return-on-disable', { n: hits.length, products: products.length }));
+    },
+
+    /* HelloID's own risk factor, applied to who actually holds the thing. */
+    function riskyHolders(m) {
+      if (!m.products) return null;
+      const cfg = HR.config.get().products || {};
+      const floor = cfg.riskFactorFloor || 7;
+      const hits = m.assignments.open.filter(a => {
+        const p = m.products.byName.get(a.productName.toLowerCase());
+        return p && p.riskFactor >= floor;
+      });
+      if (!hits.length) return null;
+      return Object.assign({
+        id: 'product-high-risk', severity: 'high', category: T('fi.cat.access'),
+        entities: hits.slice(0, 80).map(a => {
+          const p = m.products.byName.get(a.productName.toLowerCase());
+          return {
+            type: 'product', key: a.id, label: a.productName,
+            detail: T('fi.product-high-risk.detail', { user: a.userName, risk: p.riskFactor })
+          };
+        }),
+        impactMonthly: 0
+      }, prose('product-high-risk', {
+        n: hits.length, people: new Set(hits.map(a => a.userName)).size, floor: floor
+      }));
+    },
+
+    /* Someone left, and their self-service holdings did not. */
+    function heldByFormerEmployee(m) {
+      if (!m.productHolders || !m.vault) return null;
+      const now = new Date();
+      const hits = [];
+      for (const a of m.assignments.open) {
+        const link = m.productHolders.byUser.get(a.userName.toLowerCase());
+        if (!link || !link.person) continue;
+        const life = HR.vault.lifecycle(link.person, now);
+        if (life.state === 'past') hits.push({ a, person: link.person, days: life.days });
+      }
+      if (!hits.length) return null;
+      return Object.assign({
+        id: 'product-holder-left', severity: 'critical', category: T('fi.cat.access'),
+        entities: hits.slice(0, 80).map(h => ({
+          type: 'product', key: h.a.id, label: h.a.productName,
+          detail: T('fi.product-holder-left.detail', {
+            person: h.person.displayName, days: U.fmtInt(h.days) })
+        })),
+        impactMonthly: 0
+      }, prose('product-holder-left', {
+        n: hits.length, people: new Set(hits.map(h => h.person.personId)).size
+      }));
+    },
+
+    /* Assignments whose holder cannot be tied to a person at all: the products are held
+       by a login this analysis cannot place. */
+    function unlinkedHolders(m) {
+      if (!m.productHolders) return null;
+      const stats = m.productHolders.stats;
+      if (!stats.unlinked) return null;
+      const unlinked = Array.from(m.assignments.byUser.keys())
+        .filter(u => !m.productHolders.byUser.has(u));
+      return Object.assign({
+        id: 'product-unlinked-holder', severity: 'low', category: T('fi.cat.dataQuality'),
+        entities: unlinked.slice(0, 80).map(u => ({
+          type: 'product', key: u, label: u,
+          detail: T('fi.product-unlinked-holder.detail', {
+            n: (m.assignments.byUser.get(u) || []).length })
+        })),
+        impactMonthly: 0
+      }, prose('product-unlinked-holder', { n: unlinked.length, total: stats.users }));
+    },
+
+    /* No approver recorded. Auto-approval is a legitimate configuration; not being able
+       to tell it apart from an unrecorded one is the finding. */
+    function approvalUnrecorded(m) {
+      const hits = m.assignments.rows.filter(a => !a.approvedBy);
+      if (!hits.length || hits.length === m.assignments.rows.length && m.assignments.rows.length < 5) return null;
+      return Object.assign({
+        id: 'product-approval-unrecorded', severity: 'info', category: T('fi.cat.dataQuality'),
+        entities: U.uniq(hits.map(a => a.productName)).slice(0, 80).map(name => ({
+          type: 'product', key: name, label: name,
+          detail: T('fi.product-approval-unrecorded.detail', {
+            n: hits.filter(a => a.productName === name).length })
+        })),
+        impactMonthly: 0
+      }, prose('product-approval-unrecorded', {
+        n: hits.length, total: m.assignments.rows.length,
+        share: U.fmtPct(hits.length / m.assignments.rows.length, 0)
+      }));
+    }
+  ];
+
+  function runProducts(model) {
+    const out = [];
+    for (const rule of PRODUCT_RULES) {
+      let f = null;
+      try { f = rule(model); } catch (e) { console.error('product rule failed:', rule.name, e); }
+      if (!f) continue;
+      if (f.count == null) f.count = f.entities.length;
+      f.annualImpact = (f.impactMonthly || 0) * 12;
+      out.push(f);
+    }
+    return out;
+  }
+
   function runCatalogue(model) {
     const out = [];
     for (const rule of CATALOGUE_RULES) {
@@ -773,7 +974,7 @@
     return out;
   }
 
-  HR.findings = { run, runComparison, runVault, runCorrelation, runExplanation, runActivity,
+  HR.findings = { run, runComparison, runVault, runCorrelation, runExplanation, runActivity, runProducts,
     runCatalogue, RULES, COMPARISON_RULES, VAULT_RULES, CORRELATION_RULES, EXPLANATION_RULES,
     ACTIVITY_RULES, CATALOGUE_RULES };
 })(window.HR);

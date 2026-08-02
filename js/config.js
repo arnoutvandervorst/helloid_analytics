@@ -100,6 +100,20 @@
     accountCap: 100                 // account scores clamp here
   };
 
+  /* --- Service Automation ---------------------------------------------------
+     HelloID records no link between a product and the entitlement it hands out; the
+     link only exists in whatever a product's tasks do. So the tool proposes matches by
+     name and this map holds the ones a human confirmed. It is settings, not data: it
+     describes a tenant's conventions and survives every re-import. */
+  const DEFAULT_PRODUCTS = {
+    minName: 0.5,                   // token-similarity floor for proposing a match
+    minOverlap: 0.5,                // holder-set overlap that corroborates a proposal
+    topN: 3,                        // proposals kept per product
+    staleDays: 730,                 // open assignment older than this is worth a look
+    riskFactorFloor: 7,             // HelloID's own risk factor, at which we report holders
+    map: {}                         // product name -> [{ system, permission, source }]
+  };
+
   const DEFAULTS = {
     currency: 'EUR',
     categories: DEFAULT_CATEGORIES,
@@ -108,6 +122,7 @@
     effort: DEFAULT_EFFORT,
     risk: DEFAULT_RISK,
     correlation: DEFAULT_CORRELATION,
+    products: DEFAULT_PRODUCTS,
     rarityThreshold: 3,             // held by <= N accounts counts as rare
     skipReview: false,              // skip the configuration review on import
     severityBands: { critical: 70, high: 45, medium: 20 }
@@ -237,12 +252,68 @@
     return {
       categories: current.categories.length,
       classes: current.accountClasses.length,
-      prices: current.priceBook.length
+      prices: current.priceBook.length,
+      products: Object.keys((current.products || {}).map || {}).length
     };
   }
 
   const looksLikeSettings = data => !!data && data.kind === FILE_KIND;
 
+  /* --- the product map, as its own file ------------------------------------
+     Settings travel per analyst; this map travels per tenant, and is the sort of thing
+     one person works out and the rest of a team should not have to redo. */
+  const MAP_KIND = 'helloid-analytics-product-map';
+
+  function getMap() {
+    const cfg = load();
+    if (!cfg.products) cfg.products = clone(DEFAULT_PRODUCTS);
+    if (!cfg.products.map) cfg.products.map = {};
+    return cfg.products.map;
+  }
+
+  function setMapping(productName, entries) {
+    const map = getMap();
+    if (!entries || !entries.length) delete map[productName];
+    else map[productName] = entries;
+    save();
+    return map;
+  }
+
+  function exportMap() {
+    return JSON.stringify({
+      kind: MAP_KIND, version: 1, exportedAt: new Date().toISOString(), map: getMap()
+    }, null, 2);
+  }
+
+  function exportMapCsv() {
+    const rows = [];
+    const map = getMap();
+    Object.keys(map).sort().forEach(product =>
+      map[product].forEach(e => rows.push({
+        Product: product, System: e.system || '', Entitlement: e.permission || '',
+        Source: e.source || 'manual'
+      })));
+    return HR.util.toCSV(rows, ['Product', 'System', 'Entitlement', 'Source']);
+  }
+
+  function importMap(text, opts) {
+    let data;
+    try { data = JSON.parse(text); }
+    catch (e) { throw new Error('Product map is not valid JSON: ' + e.message); }
+    if (!data || data.kind !== MAP_KIND || !data.map) {
+      throw new Error('Not a product map (expected kind "' + MAP_KIND + '").');
+    }
+    const cfg = load();
+    if (!cfg.products) cfg.products = clone(DEFAULT_PRODUCTS);
+    cfg.products.map = (opts && opts.merge)
+      ? Object.assign({}, cfg.products.map || {}, data.map) : data.map;
+    save(cfg);
+    return { products: Object.keys(cfg.products.map).length };
+  }
+
+  const looksLikeProductMap = data => !!data && data.kind === MAP_KIND;
+
   HR.config = { get: load, save, reset, DEFAULTS, categoryFor, accountClassFor, priceFor,
-    severityOf, clone, labelOf, exportJson, importJson, looksLikeSettings, FILE_KIND };
+    severityOf, clone, labelOf, exportJson, importJson, looksLikeSettings, FILE_KIND,
+    getMap, setMapping, exportMap, exportMapCsv, importMap, looksLikeProductMap, MAP_KIND };
 })(window.HR);

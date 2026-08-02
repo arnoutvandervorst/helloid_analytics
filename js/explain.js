@@ -18,7 +18,7 @@
 (function (HR) {
   'use strict';
 
-  const U = HR.util;
+  const U = HR.util, T = (k, p) => HR.i18n.t(k, p);
 
   const STRENGTH = { strong: 3, likely: 2, weak: 1 };
 
@@ -115,6 +115,22 @@
     }
 
     function explainPermissionUnmanaged(account, perm, record) {
+      /* Requested and approved through Service Automation. Ranked below HelloID's own
+         granted export because the product-to-entitlement link is a human assertion
+         rather than something HelloID states. */
+      if (model.productMapping && account.personRaw) {
+        const hit = model.productMapping.lookup(account.personRaw, perm.key);
+        if (hit) {
+          const a = hit.assignment;
+          return { kind: 'product-assignment', strength: 'likely', params: {
+            product: hit.product,
+            date: a.approvedAt || a.requestedAt
+              ? U.fmtDate(a.approvedAt || a.requestedAt).split(',')[0] : '\u2014',
+            approver: a.approvedBy || T('ex.noApprover')
+          } };
+        }
+      }
+
       /* The reconciliation row carries spellings the activity export may not: the
          permission's configuration and its sub-permission. Both are offered to the
          lookup, because tenants split the same entitlement across those fields
