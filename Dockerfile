@@ -8,6 +8,8 @@ COPY index.html /usr/share/nginx/html/
 COPY css/ /usr/share/nginx/html/css/
 COPY js/ /usr/share/nginx/html/js/
 COPY assets/ /usr/share/nginx/html/assets/
+# Generated fiction (make-demo-set.py). The only exports that may be served.
+COPY demo/ /usr/share/nginx/html/demo/
 
 # Deliberately absent: *.csv, vault*.json and dist/. Exports carry account, person and
 # contract data and have no business on a public host.

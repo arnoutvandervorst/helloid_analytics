@@ -1,4 +1,6 @@
-# Exports never enter the image.
+# Exports never enter the image. The generated demo set is the exception: it is
+# fiction, and the hosted copy is useless without it.
+!demo/
 *.csv
 vault*.json
 Vault*.json

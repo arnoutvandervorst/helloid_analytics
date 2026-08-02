@@ -278,6 +278,22 @@
     return el('div', { class: 'card slot' + (st ? ' filled' : '') }, [head, body, actions]);
   }
 
+  /* Somewhere to try the thing before handing it a real tenant export. */
+  function demoCard() {
+    const on = HR.demo.isOn();
+    const m = HR.app.demoAvailable();
+    return card(T('demo.title'), on ? T('demo.badge') : null, [
+      el('p', { class: 'note', text: on ? T('demo.onNote') : T('demo.offNote') }),
+      m && !on ? el('p', { class: 'note', text: T('demo.contents', {
+        n: m.files.length, date: m.generatedOn || '\u2014' }) }) : null,
+      el('div', { class: 'slot-actions' }, [
+        on
+          ? el('button', { class: 'btn danger', text: T('demo.exit'), onclick: () => HR.demo.exit() })
+          : el('button', { class: 'btn primary', text: T('demo.load'), onclick: () => HR.demo.load() })
+      ])
+    ], on ? 'demo-card' : '');
+  }
+
   function sourcesView() {
     const f = document.createDocumentFragment();
     f.appendChild(el('div', { class: 'view-head' }, [
@@ -287,6 +303,7 @@
       ])
     ]));
 
+    if (HR.demo.isOn() || HR.app.demoAvailable()) f.appendChild(demoCard());
     f.appendChild(el('div', { class: 'grid g3' }, SOURCE_SLOTS.map(sourceSlot)));
 
     /* Not sources of truth about the tenant — settings and snapshot bundles are this

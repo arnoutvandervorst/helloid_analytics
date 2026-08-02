@@ -430,3 +430,23 @@ table.board-tbl .owner-cell { border-bottom: 1px solid #e3e2dc; min-width: 90px;
 .sev.none { color: var(--text-secondary); } .sev.none::before { background: var(--muted); }
 .pill.ok { color: var(--good-ink); border-color: var(--good); }
 .pill.muted { color: var(--text-secondary); }
+
+/* Demo mode has to be impossible to miss and impossible to print away. */
+.demo-banner {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 8px 16px; border-bottom: 1px solid var(--warning);
+  background: color-mix(in srgb, var(--warning) 16%, var(--surface-1));
+  color: var(--text-primary); font-size: 13px;
+}
+.demo-banner strong { letter-spacing: .04em; }
+.demo-banner span { color: var(--text-secondary); flex: 1 1 auto; }
+.card.demo-card { border-color: var(--warning); }
+.demo-strip {
+  display: flex; gap: 10px; align-items: baseline; margin-bottom: 14px;
+  padding: 8px 12px; border: 1px solid var(--warning); border-radius: 6px;
+  background: color-mix(in srgb, var(--warning) 12%, transparent); font-size: 12px;
+}
+@media print {
+  .demo-banner { display: none; }          /* the strip inside the paper prints instead */
+  .demo-strip { border-color: #000; background: none; }
+}

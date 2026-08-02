@@ -16,6 +16,23 @@ Serve it from a laptop, a NUC or any static host — it is plain files, with no 
 no CDN and no back end. Wherever it runs, the exports are read and analysed in the browser
 that opened the page: they are never uploaded to the host serving it.
 
+## Demo data
+
+`make-demo-set.py` writes a fictional organisation into `demo/`: six exports describing
+the same invented people, so the vault, the rules and the activity files actually join.
+Where that directory is published, the Imports view offers to load all six in one click.
+While it is loaded, a banner sits above every view and every page of the board report
+carries a printed mark, because a PDF outlives the tab it came from.
+
+```bash
+python3 make-demo-set.py                 # -> demo/*.csv, demo/vault.json, demo/manifest.json
+python3 make-demo-set.py --rows 20000    # a larger tenant
+```
+
+Everything in it is invented — names from a fixed word list, employee numbers counting up
+from 500000, avo.local as the domain. It is the only CSV/JSON the shipped nginx config is
+allowed to serve; every other export path is denied.
+
 ## Run it
 
 ```bash

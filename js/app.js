@@ -19,6 +19,7 @@
     granted: null,         // what HelloID believes is granted right now
     history: null,         // what HelloID did, when, why, and whether it worked
     catalogue: null,       // the entitlement catalogue: rules per entitlement, still in target?
+    demo: null,            // set while showing the published fictional tenant
     raw: {},               // the text of each companion import, so a refresh can restore it
     importedAt: {},        // when each was loaded — decisions rest on how old these are
     fileNames: {},         // the name each came in under, so a restore does not invent one
@@ -28,6 +29,7 @@
 
   /* ------------------------------------------------------------- rendering */
   function render() {
+    applyChromeBanner();
     const root = document.getElementById('view-root');
     root.innerHTML = '';
     const worksEmpty = state.view === 'settings' || state.view === 'snapshots' || state.view === 'sources';
@@ -45,6 +47,17 @@
     document.querySelectorAll('.sidenav button').forEach(b =>
       b.classList.toggle('active', b.dataset.view === state.view));
     root.scrollTop = 0;
+  }
+
+  /* The banner is chrome, but it has to survive a re-render of the view it sits above. */
+  function applyChromeBanner() {
+    const host = document.getElementById('demo-host');
+    if (!host) return;
+    const wanted = !!state.demo;
+    if (wanted === !!host.firstChild) return;
+    host.innerHTML = '';
+    const b = HR.demo.banner();
+    if (b) host.appendChild(b);
   }
 
   function emptyState(root) {
@@ -68,7 +81,8 @@
   }
 
   /* ---------------------------------------------------------------- import */
-  async function importText(text, fileName) {
+  async function importText(text, fileName, opts) {
+    opts = opts || {};
     /* One drop zone: route by what the file says it is. JSON is either a settings
        file, a snapshot bundle or a vault export. */
     if (/^\s*[{[]/.test(text)) return importJsonFile(text, fileName);
@@ -115,7 +129,7 @@
     /* First look at a new export: show what the settings do and do not describe about
        it, with rules mined from its own naming, before any number is presented. */
     HR.usage.imported('reconciliation', parsed.records.length);
-    state.review = HR.config.get().skipReview ? null : HR.mine.suggest(state.model);
+    state.review = (opts.quiet || HR.config.get().skipReview) ? null : HR.mine.suggest(state.model);
     go(state.review ? 'review' : 'overview');
   }
 
@@ -324,6 +338,7 @@
      the local server workflow. The hosted copy serves no CSV at all (and denies the
      extension), so offering it there is a button that can only fail. */
   let sampleFile = undefined;
+  let demoManifest = null;
   async function findSample() {
     if (sampleFile !== undefined) return sampleFile;
     sampleFile = null;
@@ -458,6 +473,10 @@
     document.querySelectorAll('.sidenav button[data-view]').forEach(btn => {
       btn.textContent = T('nav.' + btn.dataset.view);
     });
+    const host = document.getElementById('demo-host');
+    host.innerHTML = '';
+    const b = HR.demo.banner();
+    if (b) host.appendChild(b);
     updateTopbar();
   }
 
@@ -477,6 +496,7 @@
     HR.brand.detectAuto().then(found => { HR.brand.apply(); if (found) render(); });
     /* Repaint once we know whether a sample is reachable, the same way the logo does. */
     findSample().then(name => { if (name && (state.view === 'sources' || !state.model)) render(); });
+    HR.demo.available().then(m => { demoManifest = m; if (m && state.view === 'sources') render(); });
     HR.brand.apply();
     applyChrome();
 
@@ -531,6 +551,7 @@
          when it was written. Better than showing nothing for every restored file. */
       state.importedAt = ctx.importedAt || {};
       state.fileNames = ctx.fileNames || {};
+      state.demo = ctx.demo || null;
       const named = (k, fallback) => state.fileNames[k] || fallback;
       ['rules', 'vault', 'granted', 'history', 'catalogue'].forEach(k => {
         if (ctx[k] && !state.importedAt[k]) state.importedAt[k] = ctx.savedAt || null;
@@ -557,6 +578,7 @@
   const REPO_URL = 'https://github.com/arnoutvandervorst/helloid_analytics';
 
   HR.app = { REPO_URL, state, go, rebuild, loadSnapshot, setBaseline, refreshSnapshots, importText, render, applyChrome,
-    importFileAs, clearSource, detectKind, loadSample, findSample, sampleName: () => sampleFile || null };
+    importFileAs, clearSource, detectKind, loadSample, findSample, sampleName: () => sampleFile || null,
+    demoAvailable: () => demoManifest };
   document.addEventListener('DOMContentLoaded', init);
 })(window.HR);

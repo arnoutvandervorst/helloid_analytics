@@ -375,6 +375,9 @@ class DemoSet:
                            'FinishedOn', 'Origins', 'Result'])]
 
         def row(person, system, ent, op, when, result, origins):
+            # Nothing HelloID has already done can carry a future date; the chained
+            # revoke/re-grant offsets below would otherwise walk past today.
+            when = min(when, self.today - timedelta(hours=1))
             finished = when + timedelta(seconds=rnd.randint(1, 90))
             lines.append(csv_line([person, system, ent, op, us_stamp(when), us_stamp(finished),
                                    '|'.join(origins), result]))

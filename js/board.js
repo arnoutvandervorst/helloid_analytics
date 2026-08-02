@@ -120,7 +120,15 @@
 
   /* --------------------------------------------------------------- render */
 
-  const page = (children, cls) => el('section', { class: 'sheet ' + (cls || '') }, children);
+  const page = (children, cls) => el('section', { class: 'sheet ' + (cls || '') },
+    (HR.demo.isOn() ? [demoStrip()] : []).concat(children));
+
+  /* On every page rather than the cover alone: a board pack gets split, and a single
+     forwarded page must still say the figures on it describe nobody. */
+  const demoStrip = () => el('div', { class: 'demo-strip' }, [
+    el('strong', { text: T('demo.badge') }),
+    el('span', { text: T('demo.printNote', { date: (HR.app.state.demo || {}).generatedOn || '\u2014' }) })
+  ]);
 
   function statusPill(status) {
     const label = T(status === 'good' ? 'bd.good' : status === 'watch' ? 'bd.watch' : 'bd.bad');
