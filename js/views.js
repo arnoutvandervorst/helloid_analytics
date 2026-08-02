@@ -753,15 +753,24 @@
    * and how much access it accounts for. Narrow at the top because everyone is one
    * group; wider below because each level divides it further.
    */
+  /* Below half the organisation it is not a floor, so the slider does not go there. */
+  const BASELINE_SLIDER_MIN = 0.5;
+
   /** Why there is no baseline, with the ceiling that decides it. */
   function baselineEmptyText(m, P) {
     const b = P.baseline;
     const widest = b && b.widest;
     const name = widest ? ((m.permissions.get(widest.ent) || {}).name || widest.ent) : null;
     if (!widest) return T('py.baselineNoData');
-    return T('py.baselineEmpty', {
+    /* The slider stops at 50%: below that a "baseline" is a rule most people would not
+       match, which is not a baseline. So when the ceiling is under the slider's floor,
+       telling somebody to lower the threshold sends them after something they cannot
+       reach — the answer there is more data, not a looser bar. */
+    const key = widest.coverage < BASELINE_SLIDER_MIN ? 'py.baselineUnreachable' : 'py.baselineEmpty';
+    return T(key, {
       threshold: U.fmtPct(b.threshold, 0),
       widest: U.fmtPct(widest.coverage, 0),
+      floor: U.fmtPct(BASELINE_SLIDER_MIN, 0),
       name: name
     });
   }
@@ -1053,7 +1062,7 @@
     const slider = () => {
       const value = b.threshold;
       const out = el('span', { class: 'mono', text: U.fmtPct(value, 0) });
-      const input = el('input', { type: 'range', min: 0.5, max: 1, step: 0.01, value: value });
+      const input = el('input', { type: 'range', min: BASELINE_SLIDER_MIN, max: 1, step: 0.01, value: value });
       input.addEventListener('input', e => { out.textContent = U.fmtPct(+e.target.value, 0); });
       input.addEventListener('change', e => {
         const c = HR.config.get();
