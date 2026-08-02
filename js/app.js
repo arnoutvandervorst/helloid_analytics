@@ -447,6 +447,9 @@
     document.getElementById('btn-import-label').textContent = T('app.import');
     document.getElementById('baseline-label').textContent = T('app.baseline');
     document.getElementById('btn-theme').title = T('app.theme');
+    const repo = document.getElementById('link-repo');
+    repo.textContent = T('app.repo');
+    repo.title = T('app.repoTitle');
     const ls = document.getElementById('lang-select');
     ls.title = T('app.language');
     ls.value = HR.i18n.lang;
@@ -550,7 +553,9 @@
     });
   }
 
-  HR.app = { state, go, rebuild, loadSnapshot, setBaseline, refreshSnapshots, importText, render, applyChrome,
+  const REPO_URL = 'https://github.com/arnoutvandervorst/helloid_analytics';
+
+  HR.app = { REPO_URL, state, go, rebuild, loadSnapshot, setBaseline, refreshSnapshots, importText, render, applyChrome,
     importFileAs, clearSource, detectKind, loadSample, findSample, sampleName: () => sampleFile || null };
   document.addEventListener('DOMContentLoaded', init);
 })(window.HR);

@@ -1,8 +1,16 @@
 # HelloID Analytics
 
-A local, dependency-free dashboard for HelloID reconciliation exports. Drop a
-`ReconciliationReport.csv` on the page and it builds the account ↔ entitlement ↔ person
-graph, scores risk, prices the licence drift, and diffs the run against any earlier import.
+A local, dependency-free dashboard for HelloID exports. Drop a `ReconciliationReport.csv`
+on the page and it builds the account ↔ entitlement ↔ person graph, scores risk, prices the
+licence drift, and diffs the run against any earlier import.
+
+Five more exports attach to it, each in its own import slot, and each one answers questions
+the reconciliation alone cannot: the **vault** (people and contracts) makes rule conditions
+evaluable and separates leavers from unowned accounts; the **business rules** split
+entitlements into modelled, draft-only and unmodelled; **granted entitlements** and
+**historic actions** distinguish "granted outside HelloID" from "granted by HelloID and not
+recorded", and turn a missing entitlement into a failed grant on a date; the **entitlement
+catalogue** names what HelloID still lists that the target system no longer has.
 
 Nothing leaves the browser: no build step, no CDN, no network calls.
 
@@ -14,9 +22,11 @@ Nothing leaves the browser: no build step, no CDN, no network calls.
 
 Opening `index.html` (or the bundled single file) directly from disk also works, but
 browsers give `file://` pages an opaque origin, so snapshots cannot be persisted and the
-"load the export from this folder" button is blocked. Over http both work.
+sample loader is hidden. Over http both work.
 
-Import by dragging a CSV anywhere onto the page, or via **Import CSV**.
+**Import** in the top bar opens a slot per export — what it is, what it unlocks, where in
+HelloID it comes from, and whether it is loaded. A slot only accepts its own kind of file.
+Dragging a file anywhere onto the page still routes it on content.
 
 No reconciliation export is committed to this repository — they carry account and person
 names, so `*.csv` is gitignored. Drop your own export in this folder and the "load the export

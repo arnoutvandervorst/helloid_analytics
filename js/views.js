@@ -299,6 +299,12 @@
     ]));
 
     f.appendChild(el('p', { class: 'note', style: 'margin-top:12px', text: T('src.privacy') }));
+    /* Whoever hits a file this tool reads wrongly is the only one who can say so. */
+    f.appendChild(el('p', { class: 'note', style: 'margin-top:4px' }, [
+      document.createTextNode(T('src.repoNote') + ' '),
+      el('a', { href: HR.app.REPO_URL + '/issues/new', target: '_blank', rel: 'noopener noreferrer',
+        text: T('src.repoLink') })
+    ]));
     return f;
   }
 

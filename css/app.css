@@ -116,6 +116,7 @@ em { font-style: normal; color: var(--text-primary); font-weight: 600; }
 .btn.primary:hover { filter: brightness(1.08); }
 .btn.ghost { background: transparent; border-color: transparent; color: var(--text-secondary); }
 .btn.sm { padding: 3px 8px; font-size: 12px; }
+a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 .btn.danger { color: var(--critical); border-color: var(--critical); background: transparent; }
 select, input[type=text], input[type=number], input[type=search] {
   font-family: inherit; font-size: 13px; padding: 5px 8px; border-radius: 8px;
