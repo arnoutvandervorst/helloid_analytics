@@ -14,6 +14,7 @@
     snapshots: [],
     diff: null,
     review: null,          // pending configuration proposals for the current import
+    ruleSet: null,         // parsed HelloID business-rule export, when one is loaded
     view: 'overview',
     params: {}
   };
@@ -55,13 +56,16 @@
 
   /* ---------------------------------------------------------------- import */
   async function importText(text, fileName) {
+    /* One drop zone, two exports: route by what the header says this file is. */
+    if (looksLikeRuleExport(text)) return importRules(text, fileName);
+
     let parsed;
     try { parsed = HR.parse.parse(text, fileName); }
     catch (err) { U.toast(err.message, 6000); return; }
     if (parsed.warnings.length) U.toast(parsed.warnings[0], 5000);
 
     state.parsed = parsed;
-    state.model = HR.model.build(parsed.records);
+    state.model = HR.model.build(parsed.records, { ruleSet: state.ruleSet });
 
     const snap = HR.store.makeSnapshot(parsed, state.model);
     const dup = state.snapshots.find(s => s.fingerprint === parsed.meta.fingerprint);
@@ -89,6 +93,32 @@
        it, with rules mined from its own naming, before any number is presented. */
     state.review = HR.config.get().skipReview ? null : HR.mine.suggest(state.model);
     go(state.review ? 'review' : 'overview');
+  }
+
+  function looksLikeRuleExport(text) {
+    try {
+      const firstLine = text.split(/\r?\n/, 1)[0] || '';
+      const header = HR.parse.parseDelimited(firstLine + '\n', HR.parse.sniffDelim(text))[0] || [];
+      return HR.rules.looksLikeRules(header);
+    } catch (e) { return false; }
+  }
+
+  /** Business rules attach to whatever reconciliation export is loaded. */
+  async function importRules(text, fileName) {
+    let ruleSet;
+    try { ruleSet = HR.rules.parse(text, fileName); }
+    catch (err) { U.toast(err.message, 7000); return; }
+    if (ruleSet.warnings.length) U.toast(ruleSet.warnings[0], 5000);
+
+    state.ruleSet = ruleSet;
+    if (!state.model) {
+      U.toast(T('toast.rulesNoRecon', { n: ruleSet.rules.length }), 6000);
+      render();
+      return;
+    }
+    rebuild();
+    U.toast(T('toast.rulesLoaded', { n: ruleSet.rules.length }));
+    go('rules');
   }
 
   function handleFile(file) {
@@ -137,7 +167,7 @@
       if (!snap) { U.toast(T('toast.snapNotFound')); return; }
       state.baselineId = id;
       state.baselineSnapshot = snap;
-      state.baselineModel = HR.model.build(snap.records);
+      state.baselineModel = HR.model.build(snap.records, { ruleSet: state.ruleSet });
       await recomputeDiff();
       if (!quiet) U.toast(T('toast.baselineSet', { name: snap.name }));
     }
@@ -155,7 +185,7 @@
     if (!snap) { U.toast(T('toast.snapNotFound')); return; }
     state.currentSnapshotId = id;
     state.parsed = { records: snap.records, meta: { fileName: snap.fileName, fingerprint: snap.fingerprint } };
-    state.model = HR.model.build(snap.records);
+    state.model = HR.model.build(snap.records, { ruleSet: state.ruleSet });
     if (state.baselineId === id) await setBaseline(null);
     await recomputeDiff();
     updateTopbar();
@@ -165,8 +195,9 @@
 
   /** Re-run the whole pipeline after a settings change. */
   function rebuild() {
-    if (state.parsed) state.model = HR.model.build(state.parsed.records);
-    if (state.baselineSnapshot) state.baselineModel = HR.model.build(state.baselineSnapshot.records);
+    const opts = { ruleSet: state.ruleSet };
+    if (state.parsed) state.model = HR.model.build(state.parsed.records, opts);
+    if (state.baselineSnapshot) state.baselineModel = HR.model.build(state.baselineSnapshot.records, opts);
     recomputeDiff();
     updateTopbar();
     render();

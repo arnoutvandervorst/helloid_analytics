@@ -1023,6 +1023,197 @@
     return f;
   }
 
+  /* ==================================================== BUSINESS RULES ==== */
+  /* The rule export next to the reconciliation export: what the model says should be
+     granted, against what the target system hands out. */
+  function rulesView(m) {
+    const f = document.createDocumentFragment();
+    const c = m.comparison;
+
+    f.appendChild(el('div', { class: 'view-head' }, [
+      el('div', {}, [
+        el('h1', { text: T('ru.title') }),
+        el('p', { text: T('ru.lead') })
+      ]),
+      c ? el('button', { class: 'btn sm', text: T('ru.clear'), onclick: () => {
+        HR.app.state.ruleSet = null; HR.app.rebuild(); U.toast(T('toast.rulesCleared'));
+      } }) : null
+    ]));
+
+    if (!c) {
+      f.appendChild(card(null, null, el('p', { text: T('ru.empty') })));
+      return f;
+    }
+
+    const s = c.summary;
+    const k = el('div', { class: 'grid g4' });
+    k.append(
+      tile(T('ru.kpiRules'), U.fmtInt(s.rules), T('ru.kpiRulesFoot', { live: s.live, draft: s.draft }), { small: true }),
+      tile(T('ru.kpiCoverage'), U.fmtPct(s.coverage, 0),
+        T('ru.kpiCoverageFoot', { modelled: s.modelledPermissions, total: s.permissions }),
+        { small: true, severity: s.coverage > 0.75 ? 'good' : s.coverage > 0.4 ? 'medium' : 'high' }),
+      tile(T('ru.kpiUnmodelled'), U.fmtInt(s.unmanagedUnmodelled),
+        T('ru.kpiUnmodelledFoot', { share: U.fmtPct(s.modelShare, 0) }),
+        { small: true, severity: s.modelShare > 0.5 ? 'high' : 'medium' }),
+      tile(T('ru.kpiStale'), U.fmtInt(s.staleCount),
+        T('ru.kpiStaleFoot', { n: c.staleEntitlements.length }),
+        { small: true, severity: s.staleCount ? 'high' : 'good' })
+    );
+    f.appendChild(k);
+
+    /* ---- the split that decides where the work goes ---- */
+    f.appendChild(el('div', { class: 'grid', style: 'margin-top:14px' },
+      card(T('ru.split'), T('ru.splitNote'), [
+        C.stackedBar([
+          { label: T('ru.splitModelled'), value: s.unmanagedModelled, color: C.slot(3) },
+          { label: T('ru.splitDraft'), value: s.unmanagedDraft, color: C.STATUS.warning },
+          { label: T('ru.splitUnmodelled'), value: s.unmanagedUnmodelled, color: C.STATUS.critical }
+        ]),
+        el('p', { class: 'note', text: T('ru.splitFoot') })
+      ])));
+
+    /* ---- every rule, against reality ---- */
+    f.appendChild(el('div', { style: 'margin-top:14px' }, card(T('ru.rulesTable'), T('ru.rulesTableNote'), HR.table.make({
+      columns: [
+        { key: 'name', label: T('ru.cName'), value: r => r.rule.name },
+        { key: 'status', label: T('ru.cStatus'), value: r => r.rule.status,
+          render: r => el('span', { class: 'pill' + (r.live ? '' : ' removed'), text: r.rule.status }) },
+        { key: 'persons', label: T('ru.cPersons'), num: true, hint: T('ru.cPersonsHint'),
+          value: r => r.rule.personsEvaluated == null ? -1 : r.rule.personsEvaluated,
+          render: r => r.rule.personsEvaluated == null ? '—' : U.fmtInt(r.rule.personsEvaluated) },
+        { key: 'ent', label: T('ru.cEnt'), num: true, value: r => r.matched.length,
+          render: r => U.fmtInt(r.matched.length) + (r.accountEntitlements.length ? ' + ' + T('ru.accountEnt') : '') },
+        { key: 'stale', label: T('ru.cStale'), num: true, hint: T('ru.cStaleHint'), value: r => r.stale.length,
+          render: r => r.stale.length ? el('span', { class: 'sev high', text: String(r.stale.length) }) : '—' },
+        { key: 'holders', label: T('ru.cHolders'), num: true, hint: T('ru.cHoldersHint'), value: r => r.holderCount },
+        { key: 'unmanaged', label: T('ru.cUnmanaged'), num: true, value: r => r.unmanagedRows },
+        { key: 'scope', label: T('ru.cScope'),
+          value: r => r.rule.scopingConditions.map(x => x.facet).join(', '),
+          render: r => el('span', { class: 'trunc', title: r.rule.scopingConditions.map(x => x.raw).join(' · '),
+            text: r.rule.scopingConditions.map(x => x.facet).join(', ') || '—' }) }
+      ],
+      rows: c.perRule, pageSize: 25, exportName: 'business-rules',
+      initialSort: { key: 'unmanaged', dir: -1 },
+      search: (r, q) => (r.rule.name + ' ' + r.rule.raw.conditions).toLowerCase().includes(q),
+      filters: [
+        { key: 'status', label: T('ru.cStatus'),
+          options: U.uniq(c.perRule.map(r => r.rule.status)).map(v => ({ value: v, label: v })),
+          match: (r, v) => r.rule.status === v },
+        { key: 'issue', label: T('ru.cFlag'), options: [
+          { value: 'stale', label: T('ru.cStale') },
+          { value: 'empty', label: T('ru.cPersons') + ' = 0' }
+        ], match: (r, v) => v === 'stale' ? r.stale.length > 0 : r.rule.personsEvaluated === 0 }
+      ],
+      onRowClick: r => drawerRule(r, m)
+    }))));
+
+    /* ---- the backlog: groups nothing describes ---- */
+    f.appendChild(el('div', { style: 'margin-top:14px' }, card(T('ru.backlog'), T('ru.backlogNote'), HR.table.make({
+      columns: [
+        { key: 'name', label: T('ru.cGroup'), value: r => r.perm.name },
+        { key: 'cat', label: T('c.category'), value: r => r.perm.categoryLabel },
+        { key: 'rows', label: T('ru.cRows'), num: true, value: r => r.unmanagedRows },
+        { key: 'holders', label: T('c.holders'), num: true, value: r => r.perm.holderCount },
+        { key: 'cost', label: T('c.totalMo'), num: true, value: r => r.perm.monthlyTotal || 0,
+          render: r => r.perm.monthlyTotal ? U.fmtMoney(r.perm.monthlyTotal) : '—' },
+        { key: 'risk', label: T('c.risk'), num: true, value: r => r.perm.riskScore, render: r => scoreBar(r.perm.riskScore) }
+      ],
+      rows: c.unmodelled, pageSize: 25, exportName: 'unmodelled-groups',
+      initialSort: { key: 'rows', dir: -1 },
+      search: (r, q) => r.perm.name.toLowerCase().includes(q),
+      onRowClick: r => drawerPermission(r.perm, m)
+    }))));
+
+    const g2 = el('div', { class: 'grid g2', style: 'margin-top:14px' });
+
+    if (c.staleEntitlements.length) {
+      const rows = c.staleEntitlements.flatMap(h => h.stale.map(e => ({ rule: h.rule, ent: e })));
+      g2.appendChild(card(T('ru.staleTable'), T('ru.staleTableNote'), HR.table.make({
+        columns: [
+          { key: 'rule', label: T('ru.cRule'), value: r => r.rule.name },
+          { key: 'ent', label: T('ru.cEntitlement'), value: r => r.ent.name },
+          { key: 'system', label: T('c.system'), value: r => r.ent.system }
+        ], rows, pageSize: 12, exportName: 'stale-entitlements'
+      })));
+    }
+
+    if (c.missingAttribution.length) {
+      g2.appendChild(card(T('ru.attribution'), T('ru.attributionNote'), HR.table.make({
+        columns: [
+          { key: 'account', label: T('ru.cAccount'), value: r => r.userName },
+          { key: 'perm', label: T('c.permission'), value: r => r.permission },
+          { key: 'rule', label: T('ru.cRule'), value: r => r.rules.map(x => x.name).join(', '),
+            render: r => r.rules.length
+              ? el('span', { text: r.rules.map(x => x.name).join(', ') })
+              : el('span', { class: 'sev medium', text: T('ru.noRule') }) }
+        ], rows: c.missingAttribution, pageSize: 12, exportName: 'failed-grants'
+      })));
+    }
+
+    if (c.overlapping.length) {
+      g2.appendChild(card(T('ru.overlap'), T('ru.overlapNote'), HR.table.make({
+        columns: [
+          { key: 'name', label: T('ru.cGroup'), value: r => r.perm.name },
+          { key: 'n', label: T('ru.cRuleCount'), num: true, value: r => r.rules.length },
+          { key: 'rules', label: T('ru.cRule'), value: r => r.rules.map(x => x.name).join(', '),
+            render: r => el('span', { class: 'trunc', title: r.rules.map(x => x.name).join(', '),
+              text: r.rules.map(x => x.name).join(', ') }) }
+        ], rows: c.overlapping, pageSize: 12, exportName: 'overlapping-rules'
+      })));
+    }
+    if (g2.childNodes.length) f.appendChild(g2);
+    return f;
+  }
+
+  /** One rule: its conditions, what it grants, and what reality says about each group. */
+  function drawerRule(row, m) {
+    const r = row.rule;
+    const head = el('div', {}, [
+      el('h2', { text: r.name }),
+      el('div', { class: 'row' }, [
+        el('span', { class: 'pill' + (row.live ? '' : ' removed'), text: r.status }),
+        el('span', { class: 'pill', text: T('ru.cPersons') + ': ' + (r.personsEvaluated == null ? '—' : r.personsEvaluated) }),
+        el('span', { class: 'pill', text: T('ru.cHolders') + ': ' + row.holderCount })
+      ])
+    ]);
+    const body = el('div', { class: 'stack' });
+    body.appendChild(dl([
+      [T('ru.cStatus'), r.status],
+      [T('c.category'), r.categories.join(', ') || '—'],
+      [T('c.system'), r.systems.join(', ') || '—'],
+      [T('ru.cUnmanaged'), U.fmtInt(row.unmanagedRows)],
+      [T('dr.monthlyCost'), row.monthlyCost ? U.fmtMoney(row.monthlyCost) : '—']
+    ]));
+
+    body.appendChild(card(T('ru.cScope'), null, el('ul', { class: 'clean' },
+      r.conditions.map(cd => el('li', {}, [
+        el('strong', { text: cd.facet }),
+        cd.operator ? el('span', { class: 'pill', text: cd.operator }) : null,
+        el('span', { class: 'note', text: ' ' + cd.values.join(', ') })
+      ])))));
+
+    body.appendChild(card(T('ru.cEnt'), T('dr.groupsN', { n: row.matched.length }), HR.table.make({
+      columns: [
+        { key: 'name', label: T('ru.cGroup'), value: x => x.perm.name },
+        { key: 'holders', label: T('c.holders'), num: true, value: x => x.perm.holderCount },
+        { key: 'unmanaged', label: T('ru.cUnmanaged'), num: true,
+          value: x => x.perm.issues[m.ISSUE_PERM_UNMANAGED] || 0 },
+        { key: 'risk', label: T('c.risk'), num: true, value: x => x.perm.riskScore }
+      ], rows: row.matched, pageSize: 12, exportName: 'rule-' + r.name,
+      onRowClick: x => drawerPermission(x.perm, m)
+    })));
+
+    if (row.stale.length) {
+      body.appendChild(card(T('ru.staleTable'), T('ru.staleTableNote'),
+        el('ul', { class: 'clean' }, row.stale.map(e => el('li', { text: e.raw })))));
+    }
+    if (row.accountEntitlements.length) {
+      body.appendChild(card(T('ru.accountEnt'), null,
+        el('ul', { class: 'clean' }, row.accountEntitlements.map(e => el('li', { text: e.raw })))));
+    }
+    openDrawer(head, body);
+  }
+
   /* ============================================== CONFIGURATION REVIEW ==== */
   /* Shown once per import (unless switched off): what the current settings do and do
      not describe about this particular export, plus rules mined from its own naming. */
@@ -1346,6 +1537,7 @@
   HR.views = {
     board: (m, params) => HR.board.view(m, params),
     review: reviewView,
+    rules: rulesView,
     overview, risk: riskView, cost: costView, accounts: accountsView,
     permissions: permissionsView, people: peopleView, diff: diffView,
     snapshots: snapshotsView, settings: settingsView,

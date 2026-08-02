@@ -13,7 +13,7 @@
   const accountKey = (system, userName) => system + KEY_SEP + userName;
   const permissionKey = (system, name) => system + KEY_SEP + name;
 
-  function build(records) {
+  function build(records, opts) {
     const cfg = HR.config.get();
     const accounts = new Map();
     const permissions = new Map();
@@ -143,6 +143,17 @@
     HR.risk.score(model);         // adds risk fields to accounts/permissions + model.risk
     HR.cost.compute(model);       // adds model.cost
     model.findings = HR.findings.run(model);
+
+    /* A business-rule export turns "unmanaged" into two different problems, so the
+       comparison runs before the summary and contributes its own findings. */
+    const ruleSet = opts && opts.ruleSet;
+    if (ruleSet) {
+      model.comparison = HR.compare.compare(model, ruleSet);
+      model.findings = model.findings
+        .concat(HR.findings.runComparison(model))
+        .sort((a, b) => HR.util.severityRank(a.severity) - HR.util.severityRank(b.severity) ||
+          (b.impactMonthly || 0) - (a.impactMonthly || 0) || b.count - a.count);
+    }
     model.summary = summarise(model);
     return model;
   }

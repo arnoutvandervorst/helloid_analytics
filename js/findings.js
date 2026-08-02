@@ -261,5 +261,110 @@
       b.count - a.count);
   }
 
-  HR.findings = { run, RULES };
+
+  /* ---------------------------------------------------------------------------
+     Comparison findings — only produced when a business-rule export is loaded.
+     These are the ones that say what to do to the rules themselves. */
+  const COMPARISON_RULES = [
+    function staleEntitlements(m) {
+      const c = m.comparison;
+      const hits = c.staleEntitlements;
+      if (!hits.length) return null;
+      const total = U.sum(hits, h => h.stale.length);
+      return Object.assign({
+        id: 'rule-stale-entitlement', severity: 'high', category: T('fi.cat.rules'),
+        entities: hits.flatMap(h => h.stale.map(e => ({
+          type: 'rule', key: h.rule.name, label: h.rule.name,
+          detail: T('fi.rule-stale-entitlement.detail', { ent: e.name, system: e.system || '—' })
+        }))),
+        impactMonthly: 0
+      }, prose('rule-stale-entitlement', { n: total, r: hits.length }));
+    },
+
+    function draftRulesCoveringDrift(m) {
+      const c = m.comparison;
+      const hits = c.draftWithHolders;
+      if (!hits.length) return null;
+      const rows = U.sum(hits, h => h.unmanagedRows);
+      return Object.assign({
+        id: 'rule-draft-live', severity: 'high', category: T('fi.cat.rules'),
+        entities: hits.map(h => ({
+          type: 'rule', key: h.rule.name, label: h.rule.name,
+          detail: T('fi.rule-draft-live.detail', {
+            status: h.rule.status, holders: h.holderCount, rows: h.unmanagedRows
+          })
+        })),
+        impactMonthly: 0
+      }, prose('rule-draft-live', { n: hits.length, rows: rows }));
+    },
+
+    function rulesMatchingNobody(m) {
+      const c = m.comparison;
+      const hits = c.deadLive.filter(h => h.holderCount > 0);
+      if (!hits.length) return null;
+      return Object.assign({
+        id: 'rule-evaluates-empty', severity: 'medium', category: T('fi.cat.rules'),
+        entities: hits.map(h => ({
+          type: 'rule', key: h.rule.name, label: h.rule.name,
+          detail: T('fi.rule-evaluates-empty.detail', {
+            holders: h.holderCount,
+            scope: h.rule.scopingConditions.map(s => s.facet).join(', ') || '—'
+          })
+        })),
+        impactMonthly: 0
+      }, prose('rule-evaluates-empty', { n: hits.length }));
+    },
+
+    function unmodelledDrift(m) {
+      const c = m.comparison;
+      const hits = c.unmodelled.filter(u => u.unmanagedRows > 0);
+      if (!hits.length) return null;
+      return Object.assign({
+        id: 'rule-unmodelled', severity: 'high', category: T('fi.cat.rules'),
+        entities: hits.slice(0, 60).map(u => ({
+          type: 'permission', key: u.perm.key, label: u.perm.name,
+          detail: T('fi.rule-unmodelled.detail', {
+            rows: u.unmanagedRows, holders: u.perm.holderCount,
+            cost: u.perm.monthlyTotal ? U.fmtMoney(u.perm.monthlyTotal) + '/mo' : '—'
+          })
+        })),
+        impactMonthly: U.sum(hits, u => u.perm.monthlyTotal || 0)
+      }, prose('rule-unmodelled', {
+        n: hits.length,
+        rows: U.sum(hits, u => u.unmanagedRows),
+        share: U.fmtPct(c.summary.modelShare, 0)
+      }));
+    },
+
+    function failedGrantsWithRule(m) {
+      const hits = m.comparison.missingAttribution.filter(x => x.rules.length);
+      if (!hits.length) return null;
+      return Object.assign({
+        id: 'rule-grant-not-delivered', severity: 'high', category: T('fi.cat.rules'),
+        entities: hits.map(x => ({
+          type: 'account', key: HR.model.accountKey(m.systemList[0] ? m.systemList[0].name : '', x.userName),
+          label: x.userName,
+          detail: T('fi.rule-grant-not-delivered.detail', {
+            perm: x.permission, rule: x.rules.map(r => r.name).join(', ')
+          })
+        })),
+        impactMonthly: 0
+      }, prose('rule-grant-not-delivered', { n: hits.length }));
+    }
+  ];
+
+  function runComparison(model) {
+    const out = [];
+    for (const rule of COMPARISON_RULES) {
+      let f = null;
+      try { f = rule(model); } catch (e) { console.error('comparison rule failed:', rule.name, e); }
+      if (!f) continue;
+      if (f.count == null) f.count = f.entities.length;
+      f.annualImpact = (f.impactMonthly || 0) * 12;
+      out.push(f);
+    }
+    return out;
+  }
+
+  HR.findings = { run, runComparison, RULES, COMPARISON_RULES };
 })(window.HR);
