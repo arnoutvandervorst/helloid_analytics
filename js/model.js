@@ -150,8 +150,11 @@
     const vault = opts && opts.vault;
     const granted = opts && opts.granted;
     const history = opts && opts.history;
+    const catalogue = opts && opts.catalogue;
+    if (catalogue) model.catalogue = catalogue;
     if (granted) model.granted = granted;
     if (history) model.history = history;
+    if (catalogue) model.findings = model.findings.concat(HR.findings.runCatalogue(model));
     if (granted || history) {
       /* What HelloID granted, and what it tried to do — the evidence that separates
          "outside the identity system" from "the identity system put it there". */

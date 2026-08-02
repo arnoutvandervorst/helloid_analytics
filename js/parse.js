@@ -132,6 +132,12 @@
     return { name: m[1].trim(), extra: m[2].trim() };
   }
 
+  /** Header-only check, so a file can be routed without parsing 50k rows first. */
+  function looksLikeRecon(header) {
+    const map = mapHeaders(header.map(h => String(h || '').trim()));
+    return map.accountUserName != null && map.issue != null;
+  }
+
   /**
    * Parse raw CSV text into normalised records.
    * @returns {{records:Array, meta:Object, warnings:Array<string>}}
@@ -197,5 +203,5 @@
     };
   }
 
-  HR.parse = { parse, parseDelimited, sniffDelim, splitParenthetical, parseBool, decode };
+  HR.parse = { parse, parseDelimited, sniffDelim, splitParenthetical, parseBool, decode, looksLikeRecon };
 })(window.HR);

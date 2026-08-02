@@ -418,3 +418,14 @@ table.board-tbl .owner-cell { border-bottom: 1px solid #e3e2dc; min-width: 90px;
   background: var(--surface-1); border-radius: var(--radius); padding: 10px 14px;
   font-size: 13px; color: var(--text-secondary); margin-bottom: 14px; }
 .notice strong { color: var(--text-primary); }
+
+/* Import slots: one card per source, so "is the vault loaded?" is answerable at a glance. */
+.slot { display: flex; flex-direction: column; gap: 10px; }
+.slot-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.slot-head strong { flex: 1 1 auto; }
+.slot-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: auto; padding-top: 4px; }
+.slot .ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.slot.filled { border-color: var(--good); }
+.sev.none { color: var(--text-secondary); } .sev.none::before { background: var(--muted); }
+.pill.ok { color: var(--good-ink); border-color: var(--good); }
+.pill.muted { color: var(--text-secondary); }

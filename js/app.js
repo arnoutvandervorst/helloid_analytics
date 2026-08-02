@@ -18,8 +18,10 @@
     vault: null,           // parsed HelloID Vault export: persons, contracts, attributes
     granted: null,         // what HelloID believes is granted right now
     history: null,         // what HelloID did, when, why, and whether it worked
+    catalogue: null,       // the entitlement catalogue: rules per entitlement, still in target?
     raw: {},               // the text of each companion import, so a refresh can restore it
     importedAt: {},        // when each was loaded — decisions rest on how old these are
+    fileNames: {},         // the name each came in under, so a restore does not invent one
     view: 'overview',
     params: {}
   };
@@ -28,7 +30,8 @@
   function render() {
     const root = document.getElementById('view-root');
     root.innerHTML = '';
-    if (!state.model && state.view !== 'settings' && state.view !== 'snapshots') { emptyState(root); return; }
+    const worksEmpty = state.view === 'settings' || state.view === 'snapshots' || state.view === 'sources';
+    if (!state.model && !worksEmpty) { emptyState(root); return; }
     const fn = HR.views[state.view] || HR.views.overview;
     try {
       root.appendChild(fn(state.model, state.params));
@@ -48,7 +51,10 @@
     root.appendChild(el('section', { class: 'empty-state' }, [
       el('h1', { text: T('empty.title') }),
       el('p', { text: T('empty.body') }),
-      el('p', {}, el('button', { class: 'btn', text: T('empty.sample'), onclick: loadSample })),
+      el('p', {}, [
+        el('button', { class: 'btn primary', text: T('empty.sources'), onclick: () => go('sources') }),
+        el('button', { class: 'btn', text: T('empty.sample'), onclick: loadSample, style: 'margin-left:8px' })
+      ]),
       el('p', { class: 'hint', text: T('empty.columns') })
     ]));
   }
@@ -57,6 +63,7 @@
     state.view = view; state.params = params || {};
     location.hash = view;
     render();
+    HR.usage.view(view);
   }
 
   /* ---------------------------------------------------------------- import */
@@ -70,12 +77,17 @@
 
     let parsed;
     try { parsed = HR.parse.parse(text, fileName); }
-    catch (err) { U.toast(err.message, 6000); return; }
+    catch (err) {
+      /* Falling through to the reconciliation parser made every unrecognised export
+         look like a broken reconciliation export. Say what is actually supported. */
+      U.toast(T('toast.unknownFormat', { headers: (headerOf(text) || []).slice(0, 6).join(', ') }), 10000);
+      return;
+    }
     if (parsed.warnings.length) U.toast(parsed.warnings[0], 5000);
 
     state.parsed = parsed;
     state.model = HR.model.build(parsed.records, { ruleSet: state.ruleSet, vault: state.vault,
-      granted: state.granted, history: state.history });
+      granted: state.granted, history: state.history, catalogue: state.catalogue });
 
     const snap = HR.store.makeSnapshot(parsed, state.model);
     const dup = state.snapshots.find(s => s.fingerprint === parsed.meta.fingerprint);
@@ -101,8 +113,66 @@
 
     /* First look at a new export: show what the settings do and do not describe about
        it, with rules mined from its own naming, before any number is presented. */
+    HR.usage.imported('reconciliation', parsed.records.length);
     state.review = HR.config.get().skipReview ? null : HR.mine.suggest(state.model);
     go(state.review ? 'review' : 'overview');
+  }
+
+  /**
+   * What kind of file is this, without parsing all of it.
+   *
+   * The import panel offers a slot per source, and a slot has to be able to say "that is
+   * a vault export, not a rule export" before it loads anything — dropping a file into
+   * the wrong slot should be refused, not silently filed somewhere else.
+   */
+  function detectKind(text) {
+    if (/^\s*[{[]/.test(text)) {
+      let peek = null;
+      try { peek = JSON.parse(text); } catch (e) { return null; }
+      if (HR.config.looksLikeSettings(peek)) return 'settings';
+      if (peek.kind === 'helloid-recon-snapshots' || Array.isArray(peek.snapshots)) return 'snapshots';
+      return 'vault';
+    }
+    const header = headerOf(text);
+    if (!header || !header.length) return null;
+    if (HR.rules.looksLikeRules(header)) return 'rules';
+    const activity = HR.activity.classify(header);
+    if (activity) return activity;
+    if (HR.parse.looksLikeRecon(header)) return 'recon';
+    return null;
+  }
+
+  /** Import into a named slot: refuse anything that is demonstrably a different export. */
+  function importFileAs(file, expected) {
+    if (!file) return;
+    readFile(file, (text, encoding) => {
+      const kind = detectKind(text);
+      if (!kind) {
+        U.toast(T('toast.unknownFormat', { headers: (headerOf(text) || []).slice(0, 6).join(', ') }), 10000);
+        return;
+      }
+      if (expected && kind !== expected) {
+        U.toast(T('toast.slotMismatch', { expected: T('src.' + expected), got: T('src.' + kind) }), 9000);
+        return;
+      }
+      if (encoding !== 'utf-8' && encoding !== 'utf-8 (BOM)') {
+        U.toast(T('toast.encoding', { encoding: encoding }), 4000);
+      }
+      importText(text, file.name);
+    });
+  }
+
+  /** Drop a companion source without clearing the rest — each one stands on its own. */
+  function clearSource(kind) {
+    if (!['rules', 'vault', 'granted', 'history', 'catalogue'].includes(kind)) return;
+    state[kind] = null;
+    if (kind === 'rules') state.ruleSet = null;
+    delete state.raw[kind];
+    delete state.importedAt[kind];
+    delete state.fileNames[kind];
+    HR.store.saveContext({ [kind]: null, importedAt: state.importedAt, fileNames: state.fileNames });
+    if (state.model) rebuild(); else render();
+    U.toast(T('toast.sourceCleared', { kind: T('src.' + kind) }), 4000);
   }
 
   function headerOf(text) {
@@ -125,15 +195,22 @@
     state[parsed.kind] = parsed;
     state.raw[parsed.kind] = text;
     state.importedAt[parsed.kind] = Date.now();
-    HR.store.saveContext({ [parsed.kind]: text, importedAt: state.importedAt });
+    state.fileNames[parsed.kind] = fileName;
+    HR.store.saveContext({ [parsed.kind]: text, importedAt: state.importedAt, fileNames: state.fileNames });
 
     if (parsed.empty) {
       U.toast(T('toast.activityEmpty', { kind: T('act.kind.' + parsed.kind) }), 6000);
     } else if (parsed.kind === 'history') {
       U.toast(T('toast.historyLoaded', { n: U.fmtInt(parsed.meta.rowCount), days: parsed.meta.days }), 5000);
+    } else if (parsed.kind === 'catalogue') {
+      U.toast(T('toast.catalogueLoaded', {
+        n: U.fmtInt(parsed.meta.rowCount), gone: U.fmtInt(parsed.meta.orphanedCount),
+        unruled: U.fmtInt(parsed.meta.unruledCount)
+      }), 6000);
     } else {
       U.toast(T('toast.grantedLoaded', { n: U.fmtInt(parsed.meta.rowCount) }), 5000);
     }
+    HR.usage.imported(parsed.kind, parsed.meta.rowCount);
     if (!state.model) { render(); return; }
     rebuild();
     go('activity');
@@ -180,12 +257,14 @@
     state.vault = vault;
     state.raw.vault = text;
     state.importedAt.vault = Date.now();
-    HR.store.saveContext({ vault: text, importedAt: state.importedAt });
+    state.fileNames.vault = fileName;
+    HR.store.saveContext({ vault: text, importedAt: state.importedAt, fileNames: state.fileNames });
     if (!state.model) {
       U.toast(T('toast.vaultNoRecon', { n: vault.persons.length }), 6000);
       render();
       return;
     }
+    HR.usage.imported('vault', vault.persons.length);
     rebuild();
     U.toast(T('toast.vaultLoaded', {
       n: vault.persons.length, c: vault.meta.contractCount
@@ -203,31 +282,36 @@
     state.ruleSet = ruleSet;
     state.raw.rules = text;
     state.importedAt.rules = Date.now();
-    HR.store.saveContext({ rules: text, importedAt: state.importedAt });
+    state.fileNames.rules = fileName;
+    HR.store.saveContext({ rules: text, importedAt: state.importedAt, fileNames: state.fileNames });
     if (!state.model) {
       U.toast(T('toast.rulesNoRecon', { n: ruleSet.rules.length }), 6000);
       render();
       return;
     }
+    HR.usage.imported('rules', ruleSet.rules.length);
     rebuild();
     U.toast(T('toast.rulesLoaded', { n: ruleSet.rules.length }));
     go('rules');
   }
 
+  function readFile(file, then) {
+    const reader = new FileReader();
+    /* Decode from bytes rather than trusting readAsText: a UTF-16 export would
+       otherwise parse into mangled names instead of failing. */
+    reader.onload = () => { const d = HR.parse.decode(reader.result); then(d.text, d.encoding); };
+    reader.onerror = () => U.toast(T('toast.readFail'));
+    reader.readAsArrayBuffer(file);
+  }
+
   function handleFile(file) {
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      /* Decode from bytes rather than trusting readAsText: a UTF-16 export would
-         otherwise parse into mangled names instead of failing. */
-      const { text, encoding } = HR.parse.decode(reader.result);
+    readFile(file, (text, encoding) => {
       if (encoding !== 'utf-8' && encoding !== 'utf-8 (BOM)') {
         U.toast(T('toast.encoding', { encoding: encoding }), 4000);
       }
       importText(text, file.name);
-    };
-    reader.onerror = () => U.toast(T('toast.readFail'));
-    reader.readAsArrayBuffer(file);
+    });
   }
 
   /* No export ships with the repo, so try the usual names: whatever the user dropped
@@ -269,7 +353,7 @@
       state.baselineId = id;
       state.baselineSnapshot = snap;
       state.baselineModel = HR.model.build(snap.records, { ruleSet: state.ruleSet, vault: state.vault,
-        granted: state.granted, history: state.history });
+        granted: state.granted, history: state.history, catalogue: state.catalogue });
       await recomputeDiff();
       if (!quiet) U.toast(T('toast.baselineSet', { name: snap.name }));
     }
@@ -288,7 +372,7 @@
     state.currentSnapshotId = id;
     state.parsed = { records: snap.records, meta: { fileName: snap.fileName, fingerprint: snap.fingerprint } };
     state.model = HR.model.build(snap.records, { ruleSet: state.ruleSet, vault: state.vault,
-      granted: state.granted, history: state.history });
+      granted: state.granted, history: state.history, catalogue: state.catalogue });
     if (state.baselineId === id) await setBaseline(null);
     await recomputeDiff();
     updateTopbar();
@@ -299,7 +383,7 @@
   /** Re-run the whole pipeline after a settings change. */
   function rebuild() {
     const opts = { ruleSet: state.ruleSet, vault: state.vault,
-      granted: state.granted, history: state.history };
+      granted: state.granted, history: state.history, catalogue: state.catalogue };
     if (state.parsed) state.model = HR.model.build(state.parsed.records, opts);
     if (state.baselineSnapshot) state.baselineModel = HR.model.build(state.baselineSnapshot.records, opts);
     recomputeDiff();
@@ -322,6 +406,7 @@
     if (state.vault) sources.push(T('src.vault') + ': ' + state.vault.persons.length);
     if (state.granted) sources.push(T('src.granted') + ': ' + state.granted.meta.rowCount);
     if (state.history) sources.push(T('src.history') + ': ' + U.fmtInt(state.history.meta.rowCount));
+    if (state.catalogue) sources.push(T('src.catalogue') + ': ' + U.fmtInt(state.catalogue.meta.rowCount));
 
     const parts = [
       T('app.sources', { n: sources.length }),
@@ -366,6 +451,7 @@
 
     // Detection is async: repaint once the shipped logo turns up, or the first
     // render would keep the placeholder until the next navigation.
+    HR.usage.start();
     HR.brand.detectAuto().then(found => { HR.brand.apply(); if (found) render(); });
     HR.brand.apply();
     applyChrome();
@@ -415,17 +501,20 @@
        depend on them — the People overview being the visible one. */
     const restoreContext = HR.store.loadContext().then(ctx => {
       if (!ctx) return;
-      state.raw = { rules: ctx.rules, vault: ctx.vault, granted: ctx.granted, history: ctx.history };
+      state.raw = { rules: ctx.rules, vault: ctx.vault, granted: ctx.granted, history: ctx.history, catalogue: ctx.catalogue };
       /* Context saved before import times were tracked still has one useful timestamp:
          when it was written. Better than showing nothing for every restored file. */
       state.importedAt = ctx.importedAt || {};
-      ['rules', 'vault', 'granted', 'history'].forEach(k => {
+      state.fileNames = ctx.fileNames || {};
+      const named = (k, fallback) => state.fileNames[k] || fallback;
+      ['rules', 'vault', 'granted', 'history', 'catalogue'].forEach(k => {
         if (ctx[k] && !state.importedAt[k]) state.importedAt[k] = ctx.savedAt || null;
       });
-      try { if (ctx.rules) state.ruleSet = HR.rules.parse(ctx.rules, 'rules.csv'); } catch (e) { /* stale */ }
-      try { if (ctx.vault) state.vault = HR.vault.parse(ctx.vault, 'vault.json'); } catch (e) { /* stale */ }
-      try { if (ctx.granted) state.granted = HR.activity.parse(ctx.granted, 'entitlements.csv'); } catch (e) { /* stale */ }
-      try { if (ctx.history) state.history = HR.activity.parse(ctx.history, 'historicactions.csv'); } catch (e) { /* stale */ }
+      try { if (ctx.rules) state.ruleSet = HR.rules.parse(ctx.rules, named('rules', 'rules.csv')); } catch (e) { /* stale */ }
+      try { if (ctx.vault) state.vault = HR.vault.parse(ctx.vault, named('vault', 'vault.json')); } catch (e) { /* stale */ }
+      try { if (ctx.granted) state.granted = HR.activity.parse(ctx.granted, named('granted', 'entitlements.csv')); } catch (e) { /* stale */ }
+      try { if (ctx.history) state.history = HR.activity.parse(ctx.history, named('history', 'historicactions.csv')); } catch (e) { /* stale */ }
+      try { if (ctx.catalogue) state.catalogue = HR.activity.parse(ctx.catalogue, named('catalogue', 'entitlements.csv')); } catch (e) { /* stale */ }
     });
 
     restoreContext.then(() => refreshSnapshots()).then(async () => {
@@ -440,6 +529,7 @@
     });
   }
 
-  HR.app = { state, go, rebuild, loadSnapshot, setBaseline, refreshSnapshots, importText, render, applyChrome };
+  HR.app = { state, go, rebuild, loadSnapshot, setBaseline, refreshSnapshots, importText, render, applyChrome,
+    importFileAs, clearSource, detectKind, loadSample };
   document.addEventListener('DOMContentLoaded', init);
 })(window.HR);

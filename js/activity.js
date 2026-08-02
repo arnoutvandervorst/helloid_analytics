@@ -21,6 +21,10 @@
 
   const GRANTED_HEADERS = ['person', 'system', 'entitlementname', 'lastchangedon'];
   const HISTORY_HEADERS = ['person', 'system', 'entitlementname', 'operation', 'createdon', 'result'];
+  /* A fourth shape: the entitlement catalogue, one row per entitlement rather than per
+     person, carrying HelloID's own count of the rules that grant it and whether the
+     entitlement still exists in the target system. */
+  const CATALOGUE_HEADERS = ['systemdisplayname', 'entitlementdisplayname', 'rulescount', 'intargetsystem'];
 
   const normHeader = h => String(h || '').toLowerCase().replace(/[^a-z]/g, '');
 
@@ -29,6 +33,7 @@
     const has = list => list.every(h => cols.includes(h));
     if (has(HISTORY_HEADERS)) return 'history';
     if (has(GRANTED_HEADERS)) return 'granted';
+    if (has(CATALOGUE_HEADERS)) return 'catalogue';
     return null;
   }
 
@@ -56,6 +61,8 @@
     const col = {};
     header.forEach((h, i) => { col[normHeader(h)] = i; });
     const get = (row, key) => col[key] == null ? '' : (row[col[key]] || '').trim();
+
+    if (kind === 'catalogue') return buildCatalogue(grid, col, fileName, text);
 
     const rows = [];
     for (let i = 1; i < grid.length; i++) {
@@ -93,6 +100,47 @@
     }
 
     return kind === 'history' ? buildHistory(rows, fileName, text) : buildGranted(rows, fileName, text);
+  }
+
+  /* ---------------------------------------------------------------- catalogue */
+  function buildCatalogue(grid, col, fileName, text) {
+    const get = (row, key) => col[key] == null ? '' : (row[col[key]] || '').trim();
+    const rows = [];
+    for (let i = 1; i < grid.length; i++) {
+      const r = grid[i];
+      const name = get(r, 'entitlementdisplayname');
+      if (!name) continue;
+      const ent = HR.parse.splitParenthetical(name);
+      const inTarget = String(get(r, 'intargetsystem')).trim().toLowerCase();
+      rows.push({
+        i: rows.length,
+        system: get(r, 'systemdisplayname') || 'Unknown system',
+        entitlementRaw: name,
+        entitlement: ent.name,
+        path: ent.extra,
+        rulesCount: parseInt(get(r, 'rulescount'), 10) || 0,
+        /* False here is HelloID telling us the entitlement it knows about is gone from
+           the target system — the same thing the rule comparison infers, stated outright. */
+        inTargetSystem: inTarget === 'true' || inTarget === '1' || inTarget === 'ja',
+        isAccount: /^account$/i.test(ent.name)
+      });
+    }
+    const orphaned = rows.filter(r => !r.inTargetSystem);
+    const unruled = rows.filter(r => r.rulesCount === 0 && !r.isAccount);
+    return {
+      kind: 'catalogue',
+      rows, orphaned, unruled,
+      empty: rows.length === 0,
+      meta: {
+        fileName: fileName || 'entitlements.csv',
+        rowCount: rows.length,
+        systems: new Set(rows.map(r => r.system)).size,
+        orphanedCount: orphaned.length,
+        unruledCount: unruled.length,
+        ruled: rows.length - unruled.length,
+        fingerprint: U.hash(text.length + '|' + rows.length + '|' + text.slice(0, 4096))
+      }
+    };
   }
 
   /* ------------------------------------------------------------------ granted */

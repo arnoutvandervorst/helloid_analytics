@@ -156,7 +156,7 @@
       field('bd.prepared', 'preparedBy', 'bd.preparedPh'),
       field('bd.date', 'date'),
       el('span', { class: 'spacer' }),
-      el('button', { class: 'btn primary', text: T('bd.exportPdf'), onclick: () => window.print() }),
+      el('button', { class: 'btn primary', text: T('bd.exportPdf'), onclick: () => { HR.usage.exported('pdf-print'); window.print(); } }),
       el('span', { class: 'note', text: T('bd.printHint') })
     );
     f.appendChild(controls);

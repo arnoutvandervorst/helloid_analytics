@@ -119,6 +119,11 @@
       detail: st.granted.empty ? T('act.grantedEmpty') : T('src.grantedDetail', { n: U.fmtInt(st.granted.meta.rowCount) }),
       file: st.granted.meta.fileName
     });
+    if (st.catalogue) rows.push({
+      kind: T('src.catalogue'), loaded: st.importedAt.catalogue, dataDate: null,
+      detail: T('src.catalogueDetail', { n: U.fmtInt(st.catalogue.meta.rowCount), gone: st.catalogue.meta.orphanedCount }),
+      file: st.catalogue.meta.fileName, loadedOnly: true
+    });
     if (st.history) rows.push({
       kind: T('src.history'), loaded: st.importedAt.history,
       dataDate: st.history.meta.to ? +st.history.meta.to : null,
@@ -163,8 +168,137 @@
 
     return card(T('src.title'), T('src.note'), [
       table,
+      el('p', { style: 'margin-top:10px' },
+        el('button', { class: 'btn ghost', text: T('src.manage'), onclick: () => HR.app.go('sources') })),
       notes.length ? el('p', { class: 'note', style: 'margin-top:10px', text: notes.join(' ') }) : null
     ].filter(Boolean));
+  }
+
+
+  /* ================================================================= SOURCES
+
+     One import button routing on content was fine while there was one export. There
+     are six now, they arrive at different moments from different screens in HelloID,
+     and "did the vault load?" became a question the UI could not answer. So each
+     source gets its own slot: what it is, what it unlocks, whether it is loaded, how
+     old it is, and one button that only accepts that kind of file.                */
+
+  const SOURCE_SLOTS = [
+    { kind: 'recon',     accept: '.csv', required: true },
+    { kind: 'vault',     accept: '.json' },
+    { kind: 'rules',     accept: '.csv' },
+    { kind: 'granted',   accept: '.csv' },
+    { kind: 'history',   accept: '.csv' },
+    { kind: 'catalogue', accept: '.csv' }
+  ];
+
+  function slotState(kind) {
+    const st = HR.app.state;
+    switch (kind) {
+      case 'recon': {
+        if (!st.model) return null;
+        const snap = st.snapshots.find(x => x.id === st.currentSnapshotId);
+        return {
+          file: snap ? snap.fileName : (st.parsed ? st.parsed.meta.fileName : '—'),
+          loaded: snap ? snap.importedAt : null,
+          detail: T('src.reconDetail', { rows: U.fmtInt(st.model.summary.rows), accounts: st.model.summary.accounts })
+        };
+      }
+      case 'rules':
+        return st.ruleSet && { file: st.ruleSet.meta.fileName, loaded: st.importedAt.rules,
+          detail: T('src.rulesDetail', { n: st.ruleSet.rules.length,
+            live: st.ruleSet.rules.filter(r => r.status === 'published' || r.status === 'enabled').length }) };
+      case 'vault':
+        return st.vault && { file: st.vault.meta.fileName, loaded: st.importedAt.vault,
+          detail: T('src.vaultDetail', { n: st.vault.persons.length, c: st.vault.meta.contractCount }) };
+      case 'granted':
+        return st.granted && { file: st.granted.meta.fileName, loaded: st.importedAt.granted,
+          detail: st.granted.empty ? T('act.grantedEmpty')
+            : T('src.grantedDetail', { n: U.fmtInt(st.granted.meta.rowCount) }) };
+      case 'history':
+        return st.history && { file: st.history.meta.fileName, loaded: st.importedAt.history,
+          detail: T('src.historyDetail', { n: U.fmtInt(st.history.meta.rowCount), days: st.history.meta.days }) };
+      case 'catalogue':
+        return st.catalogue && { file: st.catalogue.meta.fileName, loaded: st.importedAt.catalogue,
+          detail: T('src.catalogueDetail', { n: U.fmtInt(st.catalogue.meta.rowCount),
+            gone: st.catalogue.meta.orphanedCount }) };
+      default: return null;
+    }
+  }
+
+  /** A file input that only ever hands its file to one slot. */
+  function pickButton(label, accept, cls, onFile) {
+    const wrap = el('label', { class: 'btn ' + (cls || '') });
+    const input = el('input', { type: 'file', accept: accept, hidden: true });
+    input.addEventListener('change', e => { onFile(e.target.files[0]); e.target.value = ''; });
+    wrap.append(document.createTextNode(label), input);
+    return wrap;
+  }
+
+  function sourceSlot(slot) {
+    const st = slotState(slot.kind);
+    const days = st && st.loaded ? Math.round((Date.now() - st.loaded) / 86400000) : null;
+
+    const head = el('div', { class: 'slot-head' }, [
+      el('span', { class: 'sev ' + (st ? 'good' : (slot.required ? 'high' : 'none')) }),
+      el('strong', { text: T('src.' + slot.kind) }),
+      el('span', { class: 'pill ' + (st ? 'ok' : 'muted'),
+        text: st ? T('src.slotLoaded') : (slot.required ? T('src.slotRequired') : T('src.slotOptional')) })
+    ]);
+
+    const body = st
+      ? el('div', {}, [
+          el('div', { class: 'mono ellipsis', text: st.file }),
+          el('div', { class: 'note', text: st.detail }),
+          el('div', { class: 'note', text: st.loaded
+            ? (days === 0 ? T('src.today') : T('src.daysAgo', { n: U.fmtInt(days) })) + ' · ' + U.fmtDate(st.loaded)
+            : T('src.noDate') })
+        ])
+      : el('div', {}, [
+          el('div', { class: 'note', text: T('src.slot.' + slot.kind + '.unlocks') }),
+          el('div', { class: 'note', text: T('src.slot.' + slot.kind + '.where') })
+        ]);
+
+    const actions = el('div', { class: 'slot-actions' }, [
+      pickButton(st ? T('src.replace') : T('src.choose'), slot.accept, st ? '' : 'primary',
+        f => HR.app.importFileAs(f, slot.kind)),
+      st && slot.kind !== 'recon'
+        ? el('button', { class: 'btn ghost', text: T('src.remove'),
+            onclick: () => HR.app.clearSource(slot.kind) })
+        : null,
+      st && slot.kind === 'recon'
+        ? el('button', { class: 'btn ghost', text: T('src.manageSnaps'),
+            onclick: () => HR.app.go('snapshots') })
+        : null
+    ].filter(Boolean));
+
+    return el('div', { class: 'card slot' + (st ? ' filled' : '') }, [head, body, actions]);
+  }
+
+  function sourcesView() {
+    const f = document.createDocumentFragment();
+    f.appendChild(el('div', { class: 'view-head' }, [
+      el('div', {}, [
+        el('h1', { text: T('src.pageTitle') }),
+        el('p', { text: T('src.pageLead') })
+      ])
+    ]));
+
+    f.appendChild(el('div', { class: 'grid g3' }, SOURCE_SLOTS.map(sourceSlot)));
+
+    /* Not sources of truth about the tenant — settings and snapshot bundles are this
+       tool's own files — so they sit apart from the slots above. */
+    f.appendChild(card(T('src.otherTitle'), null, [
+      el('p', { class: 'note', text: T('src.otherNote') }),
+      el('div', { class: 'slot-actions' }, [
+        pickButton(T('src.settingsFile'), '.json', '', f2 => HR.app.importFileAs(f2, 'settings')),
+        pickButton(T('src.snapshotBundle'), '.json', '', f2 => HR.app.importFileAs(f2, 'snapshots')),
+        el('button', { class: 'btn ghost', text: T('empty.sample'), onclick: () => HR.app.loadSample() })
+      ])
+    ]));
+
+    f.appendChild(el('p', { class: 'note', style: 'margin-top:12px', text: T('src.privacy') }));
+    return f;
   }
 
   /* ================================================================ OVERVIEW */
@@ -403,7 +537,8 @@
       el('span', { class: 'spacer' }),
       el('button', {
         class: 'btn sm', text: T('rk.exportReport'),
-        onclick: () => U.download('reconciliation-report.md', buildReport(m), 'text/markdown;charset=utf-8')
+        onclick: () => { HR.usage.exported('markdown-report');
+          U.download('reconciliation-report.md', buildReport(m), 'text/markdown;charset=utf-8'); }
       }),
       el('button', {
         class: 'btn sm', text: T('rk.exportFindings'), onclick: () => {
@@ -2282,7 +2417,7 @@
     activity: activityView,
     overview, risk: riskView, cost: costView, accounts: accountsView,
     permissions: permissionsView, people: peopleView, diff: diffView,
-    snapshots: snapshotsView, settings: settingsView,
+    snapshots: snapshotsView, settings: settingsView, sources: sourcesView,
     openDrawer, closeDrawer, drawerAccount, drawerPermission, drawerPerson, card, tile
   };
 })(window.HR);

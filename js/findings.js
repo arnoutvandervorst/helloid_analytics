@@ -654,6 +654,50 @@
     }
   ];
 
+  const CATALOGUE_RULES = [
+    function entitlementsGoneFromTarget(m) {
+      const hits = m.catalogue.orphaned;
+      if (!hits.length) return null;
+      return Object.assign({
+        id: 'catalogue-not-in-target', severity: 'high', category: T('fi.cat.dataQuality'),
+        entities: hits.slice(0, 80).map(r => ({
+          type: 'permission', key: HR.model.permissionKey(r.system, r.entitlement), label: r.entitlement,
+          detail: T('fi.catalogue-not-in-target.detail', { system: r.system, rules: r.rulesCount })
+        })),
+        impactMonthly: 0
+      }, prose('catalogue-not-in-target', { n: hits.length }));
+    },
+
+    function entitlementsWithoutRules(m) {
+      const hits = m.catalogue.unruled;
+      if (!hits.length) return null;
+      return Object.assign({
+        id: 'catalogue-no-rule', severity: 'medium', category: T('fi.cat.rules'),
+        entities: hits.slice(0, 80).map(r => ({
+          type: 'permission', key: HR.model.permissionKey(r.system, r.entitlement), label: r.entitlement,
+          detail: T('fi.catalogue-no-rule.detail', { system: r.system })
+        })),
+        impactMonthly: 0
+      }, prose('catalogue-no-rule', {
+        n: hits.length, total: m.catalogue.rows.length,
+        share: U.fmtPct(m.catalogue.rows.length ? hits.length / m.catalogue.rows.length : 0, 0)
+      }));
+    }
+  ];
+
+  function runCatalogue(model) {
+    const out = [];
+    for (const rule of CATALOGUE_RULES) {
+      let f = null;
+      try { f = rule(model); } catch (e) { console.error('catalogue rule failed:', rule.name, e); }
+      if (!f) continue;
+      if (f.count == null) f.count = f.entities.length;
+      f.annualImpact = (f.impactMonthly || 0) * 12;
+      out.push(f);
+    }
+    return out;
+  }
+
   function runActivity(model) {
     const out = [];
     for (const rule of ACTIVITY_RULES) {
@@ -730,5 +774,6 @@
   }
 
   HR.findings = { run, runComparison, runVault, runCorrelation, runExplanation, runActivity,
-    RULES, COMPARISON_RULES, VAULT_RULES, CORRELATION_RULES, EXPLANATION_RULES, ACTIVITY_RULES };
+    runCatalogue, RULES, COMPARISON_RULES, VAULT_RULES, CORRELATION_RULES, EXPLANATION_RULES,
+    ACTIVITY_RULES, CATALOGUE_RULES };
 })(window.HR);

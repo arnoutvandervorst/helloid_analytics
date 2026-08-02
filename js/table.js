@@ -47,6 +47,7 @@
           o.columns.forEach(c => out[c.label] = raw(c, r));
           return out;
         });
+        HR.usage.exported('csv:' + (o.exportName || 'table'));
         U.download((o.exportName || 'export') + '.csv', U.toCSV(rows), 'text/csv;charset=utf-8');
       }
     }));

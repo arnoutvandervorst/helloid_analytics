@@ -7,8 +7,13 @@ services:
     restart: unless-stopped
     ports:
       - "127.0.0.1:3458:80"
+    volumes:
+      # Usage statistics outlive a rebuild; nothing in here identifies anyone.
+      - ./logs:/var/log/nginx
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost/healthz"]
+      # localhost resolves to ::1 first inside the container and nginx listens on
+      # IPv4 only, which fails as "connection refused" while the service is fine.
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/healthz"]
       interval: 30s
       timeout: 3s
       retries: 3
