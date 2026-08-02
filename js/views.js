@@ -792,7 +792,12 @@
         el('span', { class: 'pyr-attr',
           text: b.attr ? (T('py.attr.' + b.attr) || b.attr) : T('py.everyone') }),
         el('span', { class: 'pyr-groups',
-          text: b.level === 0 ? T('py.oneGroup') : T('py.groups', { n: U.fmtInt(b.groups) }) }),
+          /* An empty baseline is a threshold decision, not an absence of data, and
+             greying the band out said neither. */
+          text: b.level === 0
+            ? (b.rules ? T('py.oneGroup')
+              : T('py.baselineEmpty', { threshold: U.fmtPct(P.baseline ? P.baseline.threshold : 0.9, 0) }))
+            : T('py.groups', { n: U.fmtInt(b.groups) }) }),
         el('span', { class: 'pyr-rules' + (b.rules ? '' : ' none'),
           text: b.rules
             ? T('py.rulesHereGrants', { n: U.fmtInt(b.rules), grants: U.fmtInt(b.grants) })

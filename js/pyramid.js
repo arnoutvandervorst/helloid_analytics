@@ -96,9 +96,7 @@
     const grants = [];
     for (const [ent, holders] of tally) {
       const coverage = people.length ? holders / people.length : 0;
-      if (coverage < threshold || coverage >= 1) {
-        if (coverage < threshold) continue;
-      }
+      if (coverage < threshold) continue;
       grants.push({ ent, holders, coverage, missing: people.filter(p => !p.ents.has(ent)) });
     }
     grants.sort((a, b) => b.coverage - a.coverage);

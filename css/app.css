@@ -143,6 +143,10 @@ main { padding: 20px 24px 60px; min-width: 0; }
    each view means a new block is never flush against the one above it by omission;
    margins collapse, so a block that sets its own larger margin still wins. */
 #view-root > * + * { margin-top: 14px; }
+/* The same inside a card: a table under a paragraph, a nested card under a grid. The
+   heading keeps its own tighter spacing so it stays attached to what it names. */
+.card > * + * { margin-top: 12px; }
+.card > h2 + *, .card > h3 + * { margin-top: 8px; }
 .empty-state { max-width: 620px; margin: 8vh auto; text-align: center; }
 .empty-state .hint { color: var(--muted); font-size: 12px; margin-top: 24px; }
 
