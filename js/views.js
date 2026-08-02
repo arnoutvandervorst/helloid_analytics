@@ -943,7 +943,22 @@
 
   function pyramidView(m) {
     const f = document.createDocumentFragment();
-    if (!m.vault) { f.appendChild(partialNotice(['vault'])); return f; }
+    if (!m.vault) {
+      const note = partialNotice(['vault']);
+      if (note) f.appendChild(note);
+      f.appendChild(card(T('py.title'), null, [
+        el('p', { text: T('py.needsVault') }),
+        el('div', { class: 'slot-actions' }, [
+          el('button', { class: 'btn primary', text: T('py.goImport'),
+            onclick: () => HR.app.go('sources') }),
+          el('button', { class: 'btn', text: T('py.goBundles'),
+            onclick: () => HR.app.go('rules') })
+        ])
+      ]));
+      /* The fallback, in the view that would otherwise be empty. */
+      f.appendChild(proposalsCard(m));
+      return f;
+    }
 
     let P;
     try { P = HR.pyramid.build(m); } catch (e) { P = null; }
@@ -2651,7 +2666,7 @@
       const note = partialNotice(['rules']);
       if (note) f.appendChild(note);
       f.appendChild(card(null, null, el('p', { text: T('ru.empty') })));
-      f.appendChild(el('div', { style: 'margin-top:14px' }, proposalsCard(m)));
+      f.appendChild(miningCard(m));
       return f;
     }
 
@@ -2772,8 +2787,51 @@
       })));
     }
     if (g2.childNodes.length) f.appendChild(g2);
-    f.appendChild(el('div', { style: 'margin-top:14px' }, proposalsCard(m)));
+    f.appendChild(miningCard(m));
     return f;
+  }
+
+  /**
+   * Where proposals come from depends on what is loaded.
+   *
+   * Without a vault, the only thing to mine is which entitlements travel together —
+   * real bundles, but nothing says who should get them, so every proposal still needs a
+   * human to invent its condition. With a vault, the organisation's own attributes are
+   * available and the pyramid mines rules that already carry their condition. Both in
+   * one place, pointing at each other, so it is clear which one is the fallback.
+   */
+  function miningCard(m) {
+    if (!m.vault) {
+      const card1 = proposalsCard(m);
+      card1.appendChild(el('p', { class: 'note', style: 'margin-top:10px' }, [
+        document.createTextNode(T('ro.withoutVault') + ' '),
+        el('a', { href: '#sources', text: T('ro.loadVault'),
+          onclick: e => { e.preventDefault(); HR.app.go('sources'); } })
+      ]));
+      return card1;
+    }
+
+    let P = null;
+    try { P = HR.pyramid.build(m); } catch (e) { /* falls back to the bundle card below */ }
+    if (!P || P.unavailable) return proposalsCard(m);
+
+    const s2 = P.summary;
+    return card(T('ro.pyramidTitle'), T('ro.pyramidNote'), [
+      el('p', { text: T('ro.pyramidLead', {
+        rules: U.fmtInt(s2.rules + s2.combos),
+        levels: P.levels.map(l => T('py.attr.' + l) || l).join(' \u203a ') || T('py.noLevels'),
+        coverage: U.fmtPct(s2.coverage, 0)
+      }) }),
+      el('div', { class: 'slot-actions' }, [
+        el('button', { class: 'btn primary', text: T('ro.openPyramid'),
+          onclick: () => HR.app.go('pyramid') }),
+        el('button', { class: 'btn', text: T('py.export'), onclick: () => {
+          U.download('pyramid-rules.csv', HR.pyramid.toRulesCsv(m, P), 'text/csv');
+          HR.usage.exported('pyramid-rules');
+        } })
+      ]),
+      el('p', { class: 'note', style: 'margin-top:10px', text: T('ro.bundlesSecondary') })
+    ]);
   }
 
   /** Mined bundles, presented as rules someone could actually write. */
