@@ -1806,7 +1806,7 @@
         { key: 'name', label: T('c.person'), value: r => r.person.displayName },
         { key: 'externalId', label: T('c.employeeId'), value: r => r.person.externalId },
         { key: 'state', label: T('pp.state'), value: r => r.life.state,
-          render: r => el('span', { class: 'sev ' + STATE_SEV[r.life.state], text: T('pp.state' + r.life.state.charAt(0).toUpperCase() + r.life.state.slice(1)) }) },
+          render: r => el('span', { class: 'sev ' + STATE_SEV[r.life.state], text: stateLabel(r.life.state) }) },
         { key: 'offset', label: T('pp.offset'), num: true, hint: T('pp.offsetHint'),
           value: r => r.life.state === 'past' ? -(r.life.days || 0) : (r.life.days == null ? 1e9 : r.life.days),
           render: r => offsetText(r.life) },

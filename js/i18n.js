@@ -2262,7 +2262,7 @@ window.HR = window.HR || {};
     'pp.state': 'Status',
     'pp.stateFuture': 'toekomstig',
     'pp.stateCurrent': 'actief',
-    'pp.statePast': 'vertrokken',
+    'pp.statePast': 'verlopen',
     'pp.stateUnknown': 'geen contract',
     'pp.offset': 'Timing',
     'pp.offsetHint': 'Dagen tot de eerste start, tot het laatste einde, of sinds het laatste einde',
