@@ -753,6 +753,19 @@
    * and how much access it accounts for. Narrow at the top because everyone is one
    * group; wider below because each level divides it further.
    */
+  /** Why there is no baseline, with the ceiling that decides it. */
+  function baselineEmptyText(m, P) {
+    const b = P.baseline;
+    const widest = b && b.widest;
+    const name = widest ? ((m.permissions.get(widest.ent) || {}).name || widest.ent) : null;
+    if (!widest) return T('py.baselineNoData');
+    return T('py.baselineEmpty', {
+      threshold: U.fmtPct(b.threshold, 0),
+      widest: U.fmtPct(widest.coverage, 0),
+      name: name
+    });
+  }
+
   function pyramidDiagram(m, P) {
     const levels = P.levels;
     const bands = [];
@@ -795,8 +808,7 @@
           /* An empty baseline is a threshold decision, not an absence of data, and
              greying the band out said neither. */
           text: b.level === 0
-            ? (b.rules ? T('py.oneGroup')
-              : T('py.baselineEmpty', { threshold: U.fmtPct(P.baseline ? P.baseline.threshold : 0.9, 0) }))
+            ? (b.rules ? T('py.oneGroup') : baselineEmptyText(m, P))
             : T('py.groups', { n: U.fmtInt(b.groups) }) }),
         el('span', { class: 'pyr-rules' + (b.rules ? '' : ' none'),
           text: b.rules
@@ -1057,9 +1069,9 @@
       /* Saying "no baseline" without saying why invites the wrong conclusion: on a
          reconciliation export alone there cannot be one. */
       return card(T('py.blTitle'), T('py.blNote'), [
-        el('p', { text: m.granted && !m.granted.empty
-          ? T('py.blNoneWithGranted', { threshold: U.fmtPct(b.threshold, 0) })
-          : T('py.blNoneReconOnly', { threshold: U.fmtPct(b.threshold, 0) }) }),
+        el('p', { text: baselineEmptyText(m, P) }),
+        el('p', { class: 'note', text: m.granted && !m.granted.empty
+          ? T('py.blNoneWithGranted') : T('py.blNoneReconOnly') }),
         slider()
       ]);
     }

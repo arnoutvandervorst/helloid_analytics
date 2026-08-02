@@ -94,8 +94,12 @@
     for (const person of people) for (const ent of person.ents) tally.set(ent, (tally.get(ent) || 0) + 1);
 
     const grants = [];
+    let widest = null;
     for (const [ent, holders] of tally) {
       const coverage = people.length ? holders / people.length : 0;
+      /* The ceiling, whether or not anything clears the bar: "nothing qualifies" is not
+         actionable, "the most widely held thing reaches 47%" is. */
+      if (!widest || coverage > widest.coverage) widest = { ent, holders, coverage };
       if (coverage < threshold) continue;
       grants.push({ ent, holders, coverage, missing: people.filter(p => !p.ents.has(ent)) });
     }
@@ -112,7 +116,7 @@
       .sort((a, b) => b.missing.length - a.missing.length);
 
     return {
-      grants, outside,
+      grants, outside, widest,
       threshold,
       members: people,
       summary: {
