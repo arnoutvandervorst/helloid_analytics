@@ -456,9 +456,10 @@
     HR.brand.apply();
     applyChrome();
 
-    document.getElementById('file-input').addEventListener('change', e => {
-      handleFile(e.target.files[0]); e.target.value = '';
-    });
+    /* One picker for six kinds of export could not say which file it wanted. The button
+       now opens the Imports view, where each source has its own slot; dropping a file
+       anywhere on the page still routes it on content. */
+    document.getElementById('btn-import').addEventListener('click', () => go('sources'));
     document.getElementById('baseline-select').addEventListener('change', e => setBaseline(e.target.value));
     document.getElementById('drawer-close').addEventListener('click', HR.views.closeDrawer);
     document.getElementById('drawer-scrim').addEventListener('click', HR.views.closeDrawer);

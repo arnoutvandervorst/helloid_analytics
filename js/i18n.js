@@ -10,7 +10,7 @@ window.HR = window.HR || {};
     /* ---- shell ---- */
     'app.title': 'HelloID Analytics',
     'app.noData': 'no data loaded',
-    'app.import': 'Import file',
+    'app.import': 'Import',
     'app.baseline': 'Baseline',
     'app.baselineNone': 'none',
     'app.theme': 'Toggle light/dark',
@@ -502,7 +502,7 @@ window.HR = window.HR || {};
     'st.ruleMatches': '{n} in this import',
 
     'empty.title': 'Import a HelloID reconciliation export',
-    'empty.body': 'Drag the CSV anywhere on this page, or use Import CSV in the top bar. Everything is processed in your browser — nothing is uploaded.',
+    'empty.body': 'Open Imports for a slot per HelloID export, or drag a file anywhere on this page. Everything is processed in your browser — nothing is uploaded.',
     'empty.sample': 'Load the export from this folder',
     'empty.columns': 'Expected columns: System, Person, AccountDisplayName, AccountUserName, AccountEnabled, PermissionDisplayName, PermissionConfigurationDisplayName, SubPermissionDisplayName, Issue, Resolution.',
 
@@ -1221,7 +1221,7 @@ window.HR = window.HR || {};
   const NL = {
     'app.title': 'HelloID Analytics',
     'app.noData': 'geen data geladen',
-    'app.import': 'Bestand importeren',
+    'app.import': 'Importeren',
     'app.baseline': 'Nulmeting',
     'app.baselineNone': 'geen',
     'app.theme': 'Licht/donker wisselen',
@@ -1713,7 +1713,7 @@ window.HR = window.HR || {};
     'st.ruleMatches': '{n} in deze import',
 
     'empty.title': 'Importeer een HelloID-reconciliatie-export',
-    'empty.body': 'Sleep de CSV ergens op deze pagina, of gebruik CSV importeren bovenin. Alles wordt in je browser verwerkt — er gaat niets naar buiten.',
+    'empty.body': 'Open Imports voor een vak per HelloID-export, of sleep een bestand ergens op deze pagina. Alles wordt in je browser verwerkt — er gaat niets naar buiten.',
     'empty.sample': 'Laad de export uit deze map',
     'empty.columns': 'Verwachte kolommen: System, Person, AccountDisplayName, AccountUserName, AccountEnabled, PermissionDisplayName, PermissionConfigurationDisplayName, SubPermissionDisplayName, Issue, Resolution.',
 
