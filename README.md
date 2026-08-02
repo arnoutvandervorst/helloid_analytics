@@ -1,4 +1,4 @@
-# HelloID Reconciliation Analytics
+# HelloID Analytics
 
 A local, dependency-free dashboard for HelloID reconciliation exports. Drop a
 `ReconciliationReport.csv` on the page and it builds the account ↔ entitlement ↔ person
@@ -88,6 +88,16 @@ bundle by `build.py`. Anything uploaded under **Settings → Report branding** i
 the browser as a data URI, which is what makes it survive into the printed PDF. Each slot
 falls back to the next; with none at all the app shows a neutral gradient tile. The same
 panel sets the product name shown in the title bar.
+
+## Hosting it
+
+`Dockerfile` + `docker-compose.yml` serve the folder from nginx on loopback, fronted by a
+Cloudflare tunnel — see `DEPLOY-NUC.md`. Only `index.html`, `css/`, `js/` and `assets/`
+enter the image; `.dockerignore` keeps exports out and nginx returns 403 for `.csv`/`.json`
+outside `/assets/` in case one is ever copied onto the host.
+
+Nothing needs protecting server-side: the page ships no data, makes no network calls, and
+every visitor starts empty and drags in their own exports.
 
 ## Configuration review on import
 

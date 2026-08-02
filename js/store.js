@@ -5,8 +5,11 @@
   'use strict';
 
   const DB_NAME = 'helloid-recon';
-  const DB_VERSION = 1;
+  const DB_VERSION = 2;
   const STORE = 'snapshots';
+  /* The vault, the rules and the activity exports describe the tenant rather than a
+     single reconciliation run, so they outlive any one snapshot and are kept apart. */
+  const CONTEXT = 'context';
 
   let dbPromise = null;
   let memory = new Map();
@@ -24,6 +27,9 @@
           const os = db.createObjectStore(STORE, { keyPath: 'id' });
           os.createIndex('importedAt', 'importedAt');
         }
+        if (!db.objectStoreNames.contains(CONTEXT)) {
+          db.createObjectStore(CONTEXT, { keyPath: 'id' });
+        }
       };
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error);
@@ -32,10 +38,10 @@
     return dbPromise;
   }
 
-  function tx(mode, fn) {
+  function tx(mode, fn, storeName) {
     return open().then(db => new Promise((resolve, reject) => {
-      const t = db.transaction(STORE, mode);
-      const os = t.objectStore(STORE);
+      const t = db.transaction(storeName || STORE, mode);
+      const os = t.objectStore(storeName || STORE);
       let result;
       try { result = fn(os); } catch (e) { reject(e); return; }
       t.oncomplete = () => resolve(result && result.result !== undefined ? result.result : result);
@@ -76,6 +82,29 @@
     try { await tx('readwrite', os => os.clear()); } catch (e) { /* memory only */ }
   }
 
+  /* Raw text is kept rather than the parsed object: re-parsing costs milliseconds and
+     avoids any question about what survives structured cloning. */
+  let contextMemory = null;
+
+  async function saveContext(ctx) {
+    contextMemory = Object.assign({}, contextMemory, ctx, { id: 'current', savedAt: Date.now() });
+    try { await tx('readwrite', os => os.put(contextMemory), CONTEXT); return { persisted: true }; }
+    catch (e) { usingMemory = true; return { persisted: false, error: e }; }
+  }
+
+  async function loadContext() {
+    try {
+      const stored = await tx('readonly', os => os.get('current'), CONTEXT);
+      if (stored) contextMemory = stored;
+    } catch (e) { /* memory only */ }
+    return contextMemory;
+  }
+
+  async function clearContext() {
+    contextMemory = null;
+    try { await tx('readwrite', os => os.delete('current'), CONTEXT); } catch (e) { /* memory only */ }
+  }
+
   function stripHeavy(s) {
     const { records, ...rest } = s;
     return { ...rest, rowCount: rest.rowCount ?? (records ? records.length : 0) };
@@ -112,5 +141,6 @@
     return snaps.length;
   }
 
-  HR.store = { list, get, put, remove, clear, makeSnapshot, exportAll, importJSON, isMemory };
+  HR.store = { list, get, put, remove, clear, makeSnapshot, exportAll, importJSON, isMemory,
+    saveContext, loadContext, clearContext };
 })(window.HR);

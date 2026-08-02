@@ -1,0 +1,9 @@
+# Exports never enter the image.
+*.csv
+vault*.json
+Vault*.json
+*-vault.json
+dist/
+.git/
+.remember/
+.DS_Store

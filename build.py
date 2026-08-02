@@ -18,7 +18,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 DIST = ROOT / 'dist'
 VERSION = '1.0.0'
-NAME = 'reconciliation-analytics'
+NAME = 'helloid-analytics'
 
 FOLDER_FILES = [
     'index.html', 'README.md', 'serve.sh', 'devserve.py', 'build.py',

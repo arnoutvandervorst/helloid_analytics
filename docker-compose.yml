@@ -1,0 +1,14 @@
+# ANALYTICS_HOSTNAME
+# Same pattern as familyplanner (3456) and reischeck (3457): the container listens on
+# loopback only, and the existing cloudflared tunnel "viga" fronts it with TLS.
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3458:80"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/healthz"]
+      interval: 30s
+      timeout: 3s
+      retries: 3

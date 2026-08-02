@@ -2,6 +2,56 @@
 (function (HR) {
   'use strict';
 
+  /**
+   * Decode a file into text before any parsing happens.
+   *
+   * Reading everything as UTF-8 is wrong often enough to matter: Windows PowerShell 5.1
+   * writes UTF-16LE from Export-Csv by default, and older tooling still emits CP1252.
+   * Both produce a file that parses "successfully" into mangled names, which is worse
+   * than failing outright — so the encoding is detected rather than assumed.
+   *
+   * @param {ArrayBuffer|Uint8Array} buffer
+   * @returns {{text:string, encoding:string}}
+   */
+  function decode(buffer) {
+    const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
+
+    /* A byte-order mark settles it outright. */
+    if (bytes.length >= 3 && bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF) {
+      return { text: new TextDecoder('utf-8').decode(bytes.subarray(3)), encoding: 'utf-8 (BOM)' };
+    }
+    if (bytes.length >= 2 && bytes[0] === 0xFF && bytes[1] === 0xFE) {
+      return { text: new TextDecoder('utf-16le').decode(bytes.subarray(2)), encoding: 'utf-16le (BOM)' };
+    }
+    if (bytes.length >= 2 && bytes[0] === 0xFE && bytes[1] === 0xFF) {
+      return { text: new TextDecoder('utf-16be').decode(bytes.subarray(2)), encoding: 'utf-16be (BOM)' };
+    }
+
+    /* No BOM: UTF-16 text is full of NUL bytes, and which half of each pair they land in
+       gives away the byte order. ASCII-heavy CSV makes this reliable. */
+    const sample = bytes.subarray(0, Math.min(bytes.length, 4096));
+    let nullEven = 0, nullOdd = 0;
+    for (let i = 0; i < sample.length; i++) {
+      if (sample[i] === 0) { if (i % 2) nullOdd++; else nullEven++; }
+    }
+    const nulls = nullEven + nullOdd;
+    if (nulls > sample.length / 8) {
+      const le = nullOdd >= nullEven;
+      return {
+        text: new TextDecoder(le ? 'utf-16le' : 'utf-16be').decode(bytes),
+        encoding: le ? 'utf-16le' : 'utf-16be'
+      };
+    }
+
+    /* Otherwise assume UTF-8, but verify: a strict decode that throws means the file is
+       a single-byte encoding, and CP1252 is the one these exports come in. */
+    try {
+      return { text: new TextDecoder('utf-8', { fatal: true }).decode(bytes), encoding: 'utf-8' };
+    } catch (e) {
+      return { text: new TextDecoder('windows-1252').decode(bytes), encoding: 'windows-1252' };
+    }
+  }
+
   /** RFC4180 parser: quoted fields, embedded delimiters/newlines, CRLF, BOM. */
   function parseDelimited(text, delim) {
     if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
@@ -147,5 +197,5 @@
     };
   }
 
-  HR.parse = { parse, parseDelimited, sniffDelim, splitParenthetical, parseBool };
+  HR.parse = { parse, parseDelimited, sniffDelim, splitParenthetical, parseBool, decode };
 })(window.HR);

@@ -579,6 +579,94 @@
     }
   ];
 
+  const ACTIVITY_RULES = [
+    function failedActions(m) {
+      const h = m.history;
+      if (!h || !h.failed.length) return null;
+      const byEnt = U.by(h.failed, r => r.entitlement);
+      return Object.assign({
+        id: 'activity-failed', severity: 'high', category: T('fi.cat.provisioning'),
+        entities: Array.from(byEnt.entries())
+          .sort((a, b) => b[1].length - a[1].length)
+          .map(([name, list]) => ({
+            type: 'permission', key: HR.model.permissionKey(list[0].system, name), label: name,
+            detail: T('fi.activity-failed.detail', {
+              n: list.length, op: U.uniq(list.map(r => r.operation)).join('/'),
+              last: list[list.length - 1].createdOn ? U.fmtDate(list[list.length - 1].createdOn).split(',')[0] : '—'
+            })
+          })),
+        impactMonthly: 0
+      }, prose('activity-failed', { n: h.failed.length, ent: byEnt.size }));
+    },
+
+    function blockedActions(m) {
+      const h = m.history;
+      if (!h || !h.blocked.length) return null;
+      const byPerson = U.by(h.blocked, r => r.personRaw);
+      return Object.assign({
+        id: 'activity-blocked', severity: 'medium', category: T('fi.cat.provisioning'),
+        entities: Array.from(byPerson.entries())
+          .sort((a, b) => b[1].length - a[1].length).slice(0, 60)
+          .map(([person, list]) => ({
+            type: 'person', key: person, label: person || '—',
+            detail: T('fi.activity-blocked.detail', {
+              n: list.length, origins: U.uniq(list.flatMap(r => r.origins)).join(', ')
+            })
+          })),
+        impactMonthly: 0
+      }, prose('activity-blocked', { n: h.blocked.length, p: byPerson.size }));
+    },
+
+    function churningEntitlements(m) {
+      const h = m.history;
+      if (!h || !h.churn.length) return null;
+      return Object.assign({
+        id: 'activity-churn', severity: 'medium', category: T('fi.cat.rules'),
+        entities: h.churn.slice(0, 60).map(c => ({
+          type: 'permission',
+          key: HR.model.permissionKey(c.sample.system, c.sample.entitlement),
+          label: c.sample.entitlement,
+          detail: T('fi.activity-churn.detail', { person: c.sample.personRaw, n: c.flips })
+        })),
+        impactMonthly: 0
+      }, prose('activity-churn', { n: h.churn.length }));
+    },
+
+    function grantedButAbsent(m) {
+      const g = m.granted;
+      if (!g || g.empty) return null;
+      const missing = [];
+      for (const r of g.rows) {
+        const account = m.accountList.find(a => a.personRaw === r.personRaw);
+        if (!account) continue;
+        const perm = m.permissions.get(HR.model.permissionKey(r.system, r.entitlement));
+        if (!perm || !account.permKeys.has(perm.key)) missing.push({ row: r, account: account });
+      }
+      if (!missing.length) return null;
+      return Object.assign({
+        id: 'activity-granted-absent', severity: 'high', category: T('fi.cat.provisioning'),
+        entities: missing.slice(0, 60).map(x => ({
+          type: 'account', key: x.account.key, label: x.account.userName,
+          detail: T('fi.activity-granted-absent.detail', { ent: x.row.entitlement })
+        })),
+        impactMonthly: 0
+      }, prose('activity-granted-absent', { n: missing.length }));
+    }
+  ];
+
+  function runActivity(model) {
+    const out = [];
+    for (const rule of ACTIVITY_RULES) {
+      let f = null;
+      try { f = rule(model); } catch (e) { console.error('activity rule failed:', rule.name, e); }
+      if (!f) continue;
+      if (f.count == null) f.count = f.entities.length;
+      f.annualImpact = (f.impactMonthly || 0) * 12;
+      out.push(f);
+    }
+    return out;
+  }
+
   const EXPLANATION_RULES = [
     function unexplainedRows(m) {
       const e = m.explanation;
@@ -641,6 +729,6 @@
     return out;
   }
 
-  HR.findings = { run, runComparison, runVault, runCorrelation, runExplanation,
-    RULES, COMPARISON_RULES, VAULT_RULES, CORRELATION_RULES, EXPLANATION_RULES };
+  HR.findings = { run, runComparison, runVault, runCorrelation, runExplanation, runActivity,
+    RULES, COMPARISON_RULES, VAULT_RULES, CORRELATION_RULES, EXPLANATION_RULES, ACTIVITY_RULES };
 })(window.HR);

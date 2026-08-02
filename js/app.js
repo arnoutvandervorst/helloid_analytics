@@ -16,6 +16,10 @@
     review: null,          // pending configuration proposals for the current import
     ruleSet: null,         // parsed HelloID business-rule export, when one is loaded
     vault: null,           // parsed HelloID Vault export: persons, contracts, attributes
+    granted: null,         // what HelloID believes is granted right now
+    history: null,         // what HelloID did, when, why, and whether it worked
+    raw: {},               // the text of each companion import, so a refresh can restore it
+    importedAt: {},        // when each was loaded — decisions rest on how old these are
     view: 'overview',
     params: {}
   };
@@ -61,6 +65,8 @@
        file, a snapshot bundle or a vault export. */
     if (/^\s*[{[]/.test(text)) return importJsonFile(text, fileName);
     if (looksLikeRuleExport(text)) return importRules(text, fileName);
+    const activityKind = looksLikeActivityExport(text);
+    if (activityKind) return importActivity(text, fileName, activityKind);
 
     let parsed;
     try { parsed = HR.parse.parse(text, fileName); }
@@ -68,7 +74,8 @@
     if (parsed.warnings.length) U.toast(parsed.warnings[0], 5000);
 
     state.parsed = parsed;
-    state.model = HR.model.build(parsed.records, { ruleSet: state.ruleSet, vault: state.vault });
+    state.model = HR.model.build(parsed.records, { ruleSet: state.ruleSet, vault: state.vault,
+      granted: state.granted, history: state.history });
 
     const snap = HR.store.makeSnapshot(parsed, state.model);
     const dup = state.snapshots.find(s => s.fingerprint === parsed.meta.fingerprint);
@@ -96,6 +103,40 @@
        it, with rules mined from its own naming, before any number is presented. */
     state.review = HR.config.get().skipReview ? null : HR.mine.suggest(state.model);
     go(state.review ? 'review' : 'overview');
+  }
+
+  function headerOf(text) {
+    try {
+      const firstLine = text.split(/\r?\n/, 1)[0] || '';
+      return HR.parse.parseDelimited(firstLine + '\n', HR.parse.sniffDelim(text))[0] || [];
+    } catch (e) { return []; }
+  }
+
+  function looksLikeActivityExport(text) {
+    try { return HR.activity.classify(headerOf(text)); } catch (e) { return null; }
+  }
+
+  /** Entitlements granted and historic actions: what HelloID granted, and what it did. */
+  async function importActivity(text, fileName, kind) {
+    let parsed;
+    try { parsed = HR.activity.parse(text, fileName); }
+    catch (err) { U.toast(err.message, 7000); return; }
+
+    state[parsed.kind] = parsed;
+    state.raw[parsed.kind] = text;
+    state.importedAt[parsed.kind] = Date.now();
+    HR.store.saveContext({ [parsed.kind]: text, importedAt: state.importedAt });
+
+    if (parsed.empty) {
+      U.toast(T('toast.activityEmpty', { kind: T('act.kind.' + parsed.kind) }), 6000);
+    } else if (parsed.kind === 'history') {
+      U.toast(T('toast.historyLoaded', { n: U.fmtInt(parsed.meta.rowCount), days: parsed.meta.days }), 5000);
+    } else {
+      U.toast(T('toast.grantedLoaded', { n: U.fmtInt(parsed.meta.rowCount) }), 5000);
+    }
+    if (!state.model) { render(); return; }
+    rebuild();
+    go('activity');
   }
 
   function looksLikeRuleExport(text) {
@@ -137,6 +178,9 @@
     if (vault.warnings.length) U.toast(vault.warnings[0], 5000);
 
     state.vault = vault;
+    state.raw.vault = text;
+    state.importedAt.vault = Date.now();
+    HR.store.saveContext({ vault: text, importedAt: state.importedAt });
     if (!state.model) {
       U.toast(T('toast.vaultNoRecon', { n: vault.persons.length }), 6000);
       render();
@@ -157,6 +201,9 @@
     if (ruleSet.warnings.length) U.toast(ruleSet.warnings[0], 5000);
 
     state.ruleSet = ruleSet;
+    state.raw.rules = text;
+    state.importedAt.rules = Date.now();
+    HR.store.saveContext({ rules: text, importedAt: state.importedAt });
     if (!state.model) {
       U.toast(T('toast.rulesNoRecon', { n: ruleSet.rules.length }), 6000);
       render();
@@ -170,9 +217,17 @@
   function handleFile(file) {
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = () => importText(String(reader.result), file.name);
+    reader.onload = () => {
+      /* Decode from bytes rather than trusting readAsText: a UTF-16 export would
+         otherwise parse into mangled names instead of failing. */
+      const { text, encoding } = HR.parse.decode(reader.result);
+      if (encoding !== 'utf-8' && encoding !== 'utf-8 (BOM)') {
+        U.toast(T('toast.encoding', { encoding: encoding }), 4000);
+      }
+      importText(text, file.name);
+    };
     reader.onerror = () => U.toast(T('toast.readFail'));
-    reader.readAsText(file);
+    reader.readAsArrayBuffer(file);
   }
 
   /* No export ships with the repo, so try the usual names: whatever the user dropped
@@ -184,7 +239,7 @@
       try {
         const res = await fetch(name);
         if (!res.ok) continue;
-        const text = await res.text();
+        const text = HR.parse.decode(await res.arrayBuffer()).text;
         if (/^\s*</.test(text)) continue;          // a 404 page, not a CSV
         importText(text, name);
         return;
@@ -213,7 +268,8 @@
       if (!snap) { U.toast(T('toast.snapNotFound')); return; }
       state.baselineId = id;
       state.baselineSnapshot = snap;
-      state.baselineModel = HR.model.build(snap.records, { ruleSet: state.ruleSet, vault: state.vault });
+      state.baselineModel = HR.model.build(snap.records, { ruleSet: state.ruleSet, vault: state.vault,
+        granted: state.granted, history: state.history });
       await recomputeDiff();
       if (!quiet) U.toast(T('toast.baselineSet', { name: snap.name }));
     }
@@ -231,7 +287,8 @@
     if (!snap) { U.toast(T('toast.snapNotFound')); return; }
     state.currentSnapshotId = id;
     state.parsed = { records: snap.records, meta: { fileName: snap.fileName, fingerprint: snap.fingerprint } };
-    state.model = HR.model.build(snap.records, { ruleSet: state.ruleSet, vault: state.vault });
+    state.model = HR.model.build(snap.records, { ruleSet: state.ruleSet, vault: state.vault,
+      granted: state.granted, history: state.history });
     if (state.baselineId === id) await setBaseline(null);
     await recomputeDiff();
     updateTopbar();
@@ -241,7 +298,8 @@
 
   /** Re-run the whole pipeline after a settings change. */
   function rebuild() {
-    const opts = { ruleSet: state.ruleSet, vault: state.vault };
+    const opts = { ruleSet: state.ruleSet, vault: state.vault,
+      granted: state.granted, history: state.history };
     if (state.parsed) state.model = HR.model.build(state.parsed.records, opts);
     if (state.baselineSnapshot) state.baselineModel = HR.model.build(state.baselineSnapshot.records, opts);
     recomputeDiff();
@@ -336,7 +394,24 @@
       if (v && HR.views[v] && v !== state.view) { state.view = v; state.params = {}; render(); }
     });
 
-    refreshSnapshots().then(async () => {
+    /* A reload used to lose the vault and the rules, which quietly downgraded views that
+       depend on them — the People overview being the visible one. */
+    const restoreContext = HR.store.loadContext().then(ctx => {
+      if (!ctx) return;
+      state.raw = { rules: ctx.rules, vault: ctx.vault, granted: ctx.granted, history: ctx.history };
+      /* Context saved before import times were tracked still has one useful timestamp:
+         when it was written. Better than showing nothing for every restored file. */
+      state.importedAt = ctx.importedAt || {};
+      ['rules', 'vault', 'granted', 'history'].forEach(k => {
+        if (ctx[k] && !state.importedAt[k]) state.importedAt[k] = ctx.savedAt || null;
+      });
+      try { if (ctx.rules) state.ruleSet = HR.rules.parse(ctx.rules, 'rules.csv'); } catch (e) { /* stale */ }
+      try { if (ctx.vault) state.vault = HR.vault.parse(ctx.vault, 'vault.json'); } catch (e) { /* stale */ }
+      try { if (ctx.granted) state.granted = HR.activity.parse(ctx.granted, 'entitlements.csv'); } catch (e) { /* stale */ }
+      try { if (ctx.history) state.history = HR.activity.parse(ctx.history, 'historicactions.csv'); } catch (e) { /* stale */ }
+    });
+
+    restoreContext.then(() => refreshSnapshots()).then(async () => {
       const v = location.hash.replace('#', '');
       if (v && HR.views[v]) state.view = v;
       if (state.snapshots.length) {

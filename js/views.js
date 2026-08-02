@@ -43,6 +43,19 @@
     return el('span', { class: 'delta ' + dir + (inverse ? ' inverse' : ''), text: arrow + ' ' + txt, title: T('df.vsBaseline') });
   }
 
+  /**
+   * Say plainly when a view is working from part of the picture. A number computed from
+   * the reconciliation export alone is not wrong, but it answers a narrower question than
+   * the reader assumes, and the fix is one drag-and-drop away.
+   */
+  function partialNotice(missing) {
+    if (!missing.length) return null;
+    return el('div', { class: 'notice' }, [
+      el('strong', { text: T('nx.partial') }),
+      el('span', { text: ' ' + missing.map(k => T('nx.needs.' + k)).join(' ') })
+    ]);
+  }
+
   function bandPill(band) { return el('span', { class: 'sev ' + band, text: T('c.' + band) }); }
 
   function scoreBar(score) {
@@ -67,6 +80,93 @@
     return b ? b.summary[key] : null;
   };
 
+  /**
+   * What this analysis is standing on, and how old it is.
+   *
+   * Every number downstream is only as current as the file it came from, and the files
+   * arrive separately: a reconciliation from last month next to a vault from this morning
+   * describes two different organisations. Only some exports carry a date of their own —
+   * where none exists, that is said rather than guessed at.
+   */
+  function sourcesCard(m) {
+    const st = HR.app.state;
+    const now = Date.now();
+    const days = ts => ts ? Math.round((now - ts) / 86400000) : null;
+    const rows = [];
+
+    const snapshot = st.snapshots.find(x => x.id === st.currentSnapshotId);
+    rows.push({
+      kind: T('src.recon'), loaded: snapshot ? snapshot.importedAt : null,
+      dataDate: null,
+      detail: T('src.reconDetail', { rows: U.fmtInt(m.summary.rows), accounts: m.summary.accounts }),
+      file: snapshot ? snapshot.fileName : (st.parsed ? st.parsed.meta.fileName : '—'),
+      loadedOnly: true
+    });
+    if (st.ruleSet) rows.push({
+      kind: T('src.rules'), loaded: st.importedAt.rules, dataDate: null,
+      detail: T('src.rulesDetail', { n: st.ruleSet.rules.length,
+        live: st.ruleSet.rules.filter(r => r.status === 'published' || r.status === 'enabled').length }),
+      file: st.ruleSet.meta.fileName, loadedOnly: true
+    });
+    if (st.vault) rows.push({
+      kind: T('src.vault'), loaded: st.importedAt.vault, dataDate: null,
+      detail: T('src.vaultDetail', { n: st.vault.persons.length, c: st.vault.meta.contractCount }),
+      file: st.vault.meta.fileName, loadedOnly: true
+    });
+    if (st.granted) rows.push({
+      kind: T('src.granted'), loaded: st.importedAt.granted,
+      dataDate: st.granted.meta.lastChange ? +st.granted.meta.lastChange : null,
+      detail: st.granted.empty ? T('act.grantedEmpty') : T('src.grantedDetail', { n: U.fmtInt(st.granted.meta.rowCount) }),
+      file: st.granted.meta.fileName
+    });
+    if (st.history) rows.push({
+      kind: T('src.history'), loaded: st.importedAt.history,
+      dataDate: st.history.meta.to ? +st.history.meta.to : null,
+      detail: T('src.historyDetail', { n: U.fmtInt(st.history.meta.rowCount), days: st.history.meta.days }),
+      file: st.history.meta.fileName
+    });
+
+    /* The spread between the newest and oldest evidence is what makes a comparison lie. */
+    const dataDates = rows.map(r => r.dataDate).filter(Boolean);
+    const loadDates = rows.map(r => r.loaded).filter(Boolean);
+    const spreadDays = loadDates.length > 1
+      ? Math.round((Math.max.apply(null, loadDates) - Math.min.apply(null, loadDates)) / 86400000) : 0;
+    const oldest = dataDates.length ? Math.min.apply(null, dataDates) : null;
+
+    const missing = [];
+    if (!st.ruleSet) missing.push(T('src.rules'));
+    if (!st.vault) missing.push(T('src.vault'));
+    if (!st.history) missing.push(T('src.history'));
+    if (!st.granted) missing.push(T('src.granted'));
+
+    const table = HR.table.make({
+      columns: [
+        { key: 'kind', label: T('src.cKind'), value: r => r.kind },
+        { key: 'file', label: T('src.cFile'), value: r => r.file },
+        { key: 'detail', label: T('src.cContents'), value: r => r.detail },
+        { key: 'dataDate', label: T('src.cDataDate'), value: r => r.dataDate || 0,
+          render: r => r.dataDate
+            ? el('span', { text: U.fmtDate(r.dataDate).split(',')[0] })
+            : el('span', { class: 'note', text: T('src.noDate') }) },
+        { key: 'loaded', label: T('src.cLoaded'), value: r => r.loaded || 0,
+          render: r => r.loaded
+            ? el('span', { text: T('src.daysAgo', { n: U.fmtInt(days(r.loaded)) }) })
+            : el('span', { class: 'note', text: '—' }) }
+      ],
+      rows, pageSize: 10, exportName: 'sources'
+    });
+
+    const notes = [];
+    if (spreadDays > 7) notes.push(T('src.spread', { n: spreadDays }));
+    if (oldest && days(oldest) > 30) notes.push(T('src.stale', { n: U.fmtInt(days(oldest)) }));
+    if (missing.length) notes.push(T('src.missing', { list: missing.join(', ') }));
+
+    return card(T('src.title'), T('src.note'), [
+      table,
+      notes.length ? el('p', { class: 'note', style: 'margin-top:10px', text: notes.join(' ') }) : null
+    ].filter(Boolean));
+  }
+
   /* ================================================================ OVERVIEW */
   function overview(m) {
     const f = document.createDocumentFragment();
@@ -77,6 +177,8 @@
         el('p', { text: T('ov.lead', { rows: U.fmtInt(s.rows), accounts: s.accounts, perms: s.permissions, systems: s.systems }) })
       ])
     ]));
+
+    f.appendChild(el('div', { class: 'grid', style: 'margin-bottom:14px' }, sourcesCard(m)));
 
     const kpis = el('div', { class: 'grid g4' });
     kpis.append(
@@ -668,7 +770,11 @@
         : T('pp.lead') })
     ])));
 
-    if (!hasVault) return peopleFromRecon(m, f);
+    if (!hasVault) {
+      const note = partialNotice(['vault']);
+      if (note) f.appendChild(note);
+      return peopleFromRecon(m, f);
+    }
 
     const index = peopleIndex(m);
     const rows = Array.from(index.values()).map(entry => {
@@ -1269,6 +1375,122 @@
     return f;
   }
 
+  /* ========================================================= ACTIVITY ==== */
+  /* What HelloID granted and what it did: the record of its own actions, which is the
+     only evidence that separates "the identity system never touched this" from "it tried
+     and could not". */
+  function activityView(m) {
+    const f = document.createDocumentFragment();
+    const h = m.history, g = m.granted;
+
+    f.appendChild(el('div', { class: 'view-head' }, el('div', {}, [
+      el('h1', { text: T('act.title') }),
+      el('p', { text: T('act.lead') })
+    ])));
+
+    if (!h && !g) {
+      f.appendChild(card(null, null, el('p', { text: T('act.empty') })));
+      return f;
+    }
+
+    const k = el('div', { class: 'grid g4' });
+    k.append(
+      tile(T('act.kpiActions'), h ? U.fmtInt(h.meta.rowCount) : '—',
+        h ? T('act.kpiActionsFoot', { days: h.meta.days,
+          from: h.meta.from ? U.fmtDate(h.meta.from).split(',')[0] : '—',
+          to: h.meta.to ? U.fmtDate(h.meta.to).split(',')[0] : '—' }) : '', { small: true }),
+      tile(T('act.kpiFailed'), h ? U.fmtInt(h.meta.failedCount) : '—', T('act.kpiFailedFoot'),
+        { small: true, severity: h && h.meta.failedCount ? 'high' : 'good' }),
+      tile(T('act.kpiBlocked'), h ? U.fmtInt(h.meta.blockedCount) : '—', T('act.kpiBlockedFoot'),
+        { small: true, severity: h && h.meta.blockedCount ? 'medium' : 'good' }),
+      tile(T('act.kpiGranted'), g ? U.fmtInt(g.meta.rowCount) : '—',
+        g && g.empty ? T('act.grantedEmpty') : T('act.kpiGrantedFoot', { p: g ? g.meta.persons : 0 }),
+        { small: true, severity: g && g.empty ? 'medium' : 'good' })
+    );
+    f.appendChild(k);
+
+    if (h) {
+      const gr = el('div', { class: 'grid g2', style: 'margin-top:14px' });
+
+      /* Grants and revokes per day: the shape of how the tenant actually moves. */
+      const labels = h.timeline.map(d => d.day.slice(5));
+      gr.appendChild(card(T('act.timeline'), T('act.timelineNote'), C.line([
+        { label: T('act.opGrant'), color: C.slot(3), points: h.timeline.map((d, i) => ({ x: i, y: d.grant })) },
+        { label: T('act.opRevoke'), color: C.slot(2), points: h.timeline.map((d, i) => ({ x: i, y: d.revoke })) },
+        { label: T('act.opFailed'), color: C.STATUS.critical, points: h.timeline.map((d, i) => ({ x: i, y: d.failed })) }
+      ], labels, { height: 220 })));
+
+      gr.appendChild(card(T('act.origins'), T('act.originsNote'), C.barList(
+        h.origins.map(([name, n], i) => ({ label: name, value: n, color: C.slot((i % 8) + 1) })),
+        { valueLabel: T('act.cActions') })));
+      f.appendChild(gr);
+
+      const gr2 = el('div', { class: 'grid g2', style: 'margin-top:14px' });
+      gr2.appendChild(card(T('act.operations'), null, C.stackedBar(
+        Object.entries(h.operations).map(([op, n], i) => ({ label: op, value: n, color: C.slot((i % 8) + 1) })))));
+      gr2.appendChild(card(T('act.results'), null, C.stackedBar(
+        Object.entries(h.results).map(([res, n]) => ({
+          label: res, value: n,
+          color: /succeed/i.test(res) ? C.STATUS.good : /fail/i.test(res) ? C.STATUS.critical : C.STATUS.warning
+        })))));
+      f.appendChild(gr2);
+
+      if (h.failed.length) {
+        f.appendChild(el('div', { style: 'margin-top:14px' }, card(T('act.failures'), T('act.failuresNote'),
+          HR.table.make({
+            columns: [
+              { key: 'person', label: T('c.person'), value: r => r.personRaw },
+              { key: 'entitlement', label: T('ru.cEntitlement'), value: r => r.entitlement },
+              { key: 'operation', label: T('act.cOperation'), value: r => r.operation },
+              { key: 'result', label: T('act.cResult'), value: r => r.result,
+                render: r => el('span', { class: 'sev critical', text: r.result }) },
+              { key: 'when', label: T('act.cWhen'), value: r => r.createdOn ? +r.createdOn : 0,
+                render: r => r.createdOn ? U.fmtDate(r.createdOn) : '—' },
+              { key: 'origins', label: T('act.cOrigins'), value: r => r.origins.join(', ') }
+            ],
+            rows: h.failed, pageSize: 20, exportName: 'failed-actions',
+            initialSort: { key: 'when', dir: -1 },
+            search: (r, q) => (r.personRaw + ' ' + r.entitlement).toLowerCase().includes(q)
+          }))));
+      }
+
+      if (h.churn.length) {
+        f.appendChild(el('div', { style: 'margin-top:14px' }, card(T('act.churn'), T('act.churnNote'),
+          HR.table.make({
+            columns: [
+              { key: 'person', label: T('c.person'), value: c => c.sample.personRaw },
+              { key: 'entitlement', label: T('ru.cEntitlement'), value: c => c.sample.entitlement },
+              { key: 'flips', label: T('act.cFlips'), num: true, value: c => c.flips },
+              { key: 'actions', label: T('act.cActions'), num: true, value: c => c.rows.length },
+              { key: 'last', label: T('act.cWhen'),
+                value: c => { const l = c.rows[c.rows.length - 1]; return l.createdOn ? +l.createdOn : 0; },
+                render: c => { const l = c.rows[c.rows.length - 1]; return l.createdOn ? U.fmtDate(l.createdOn) : '—'; } }
+            ],
+            rows: h.churn, pageSize: 20, exportName: 'churning-entitlements',
+            initialSort: { key: 'flips', dir: -1 },
+            search: (c, q) => (c.sample.personRaw + ' ' + c.sample.entitlement).toLowerCase().includes(q)
+          }))));
+      }
+    }
+
+    if (g && !g.empty) {
+      f.appendChild(el('div', { style: 'margin-top:14px' }, card(T('act.grantedTable'),
+        T('act.grantedTableNote', { n: g.meta.persons }), HR.table.make({
+          columns: [
+            { key: 'person', label: T('c.person'), value: r => r.personRaw },
+            { key: 'entitlement', label: T('ru.cEntitlement'), value: r => r.entitlement },
+            { key: 'system', label: T('c.system'), value: r => r.system },
+            { key: 'changed', label: T('act.cChanged'), value: r => r.lastChangedOn ? +r.lastChangedOn : 0,
+              render: r => r.lastChangedOn ? U.fmtDate(r.lastChangedOn) : '—' }
+          ],
+          rows: g.rows, pageSize: 25, exportName: 'granted-entitlements',
+          initialSort: { key: 'changed', dir: -1 },
+          search: (r, q) => (r.personRaw + ' ' + r.entitlement).toLowerCase().includes(q)
+        }))));
+    }
+    return f;
+  }
+
   /* ===================================================== EXPLANATIONS ==== */
   function explainView(m) {
     const f = document.createDocumentFragment();
@@ -1300,9 +1522,12 @@
     );
     f.appendChild(k);
 
-    if (!e.inputs.rules || !e.inputs.vault) {
-      f.appendChild(el('p', { class: 'note', style: 'margin-top:10px', text: T('ex.hint') }));
-    }
+    const missing = [];
+    if (!e.inputs.rules) missing.push('rules');
+    if (!e.inputs.vault) missing.push('vault');
+    if (!e.inputs.history) missing.push('history');
+    const note = partialNotice(missing);
+    if (note) { note.style.marginTop = '14px'; f.appendChild(note); }
 
     const g = el('div', { class: 'grid g2', style: 'margin-top:14px' });
 
@@ -1425,6 +1650,8 @@
     ]));
 
     if (!c) {
+      const note = partialNotice(['rules']);
+      if (note) f.appendChild(note);
       f.appendChild(card(null, null, el('p', { text: T('ru.empty') })));
       f.appendChild(el('div', { style: 'margin-top:14px' }, proposalsCard(m)));
       return f;
@@ -2018,6 +2245,7 @@
     review: reviewView,
     rules: rulesView,
     explain: explainView,
+    activity: activityView,
     overview, risk: riskView, cost: costView, accounts: accountsView,
     permissions: permissionsView, people: peopleView, diff: diffView,
     snapshots: snapshotsView, settings: settingsView,

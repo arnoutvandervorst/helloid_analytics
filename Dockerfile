@@ -1,0 +1,13 @@
+# The app is static: no build, no runtime, no back end. nginx serves the folder so the
+# browser gets a real origin, which is what enables snapshot storage — opened from a file
+# path the same page gets an opaque origin and IndexedDB is refused.
+FROM nginx:1.27-alpine
+
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY index.html /usr/share/nginx/html/
+COPY css/ /usr/share/nginx/html/css/
+COPY js/ /usr/share/nginx/html/js/
+COPY assets/ /usr/share/nginx/html/assets/
+
+# Deliberately absent: *.csv, vault*.json and dist/. Exports carry account, person and
+# contract data and have no business on a public host.

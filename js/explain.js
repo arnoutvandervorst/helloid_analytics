@@ -63,6 +63,10 @@
       });
     } catch (e) { /* mining is optional; explanation degrades without it */ }
 
+    /* What HelloID granted, and what it last tried to do to each person+entitlement. */
+    const activity = model.activity;
+    const granted = model.granted;
+
     const matchByAccount = new Map();
     if (correlation) correlation.matches.forEach(m => matchByAccount.set(m.account.key, m));
     const ambiguousByAccount = new Map();
@@ -111,6 +115,32 @@
     }
 
     function explainPermissionUnmanaged(account, perm) {
+      /* The strongest evidence of all: HelloID itself says it granted this. Then the
+         assignment is not outside the identity system at all. */
+      if (activity && account.personRaw) {
+        if (granted && !granted.empty &&
+            activity.grantedIndex.has(activity.grantedKey(account.personRaw, perm.system, perm.name))) {
+          return { kind: 'helloid-granted', strength: 'strong', params: { name: perm.name } };
+        }
+        const pairKey = activity.pairKey(account.personRaw, perm.system, perm.name);
+        const last = activity.lastAction.get(pairKey);
+        if (last && /grant/i.test(last.operation) && /succeed/i.test(last.result)) {
+          return { kind: 'history-granted', strength: 'strong',
+            params: { date: last.createdOn ? U.fmtDate(last.createdOn).split(',')[0] : '—',
+              origins: last.origins.join(', ') || '—' } };
+        }
+        if (last && /revoke/i.test(last.operation)) {
+          return { kind: 'revoke-not-effective', strength: 'strong',
+            params: { date: last.createdOn ? U.fmtDate(last.createdOn).split(',')[0] : '—',
+              result: last.result } };
+        }
+        const blocked = activity.blockedAction.get(pairKey);
+        if (blocked) {
+          return { kind: 'action-blocked', strength: 'likely',
+            params: { origins: blocked.origins.join(', ') } };
+        }
+      }
+
       const rules = ruleFor.get(perm.key);
 
       /* The strongest answer: a live rule grants it and the person behind the account
@@ -156,6 +186,15 @@
     }
 
     function explainPermissionMissing(account, perm) {
+      if (activity && perm && account.personRaw) {
+        const pairKey = activity.pairKey(account.personRaw, perm.system, perm.name);
+        const failure = activity.failedGrant.get(pairKey);
+        if (failure) {
+          return { kind: 'grant-attempt-failed', strength: 'strong',
+            params: { date: failure.createdOn ? U.fmtDate(failure.createdOn).split(',')[0] : '—',
+              op: failure.operation, result: failure.result } };
+        }
+      }
       const rules = ruleFor.get(perm ? perm.key : '');
       if (rules && rules.all.length) {
         return { kind: 'grant-not-delivered', strength: 'strong',
@@ -222,7 +261,9 @@
       inputs: {
         rules: !!comparison,
         vault: !!vault,
-        bundles: bundleFor.size > 0
+        bundles: bundleFor.size > 0,
+        granted: !!(granted && !granted.empty),
+        history: !!model.history
       },
       summary: {
         total: rows.length,
