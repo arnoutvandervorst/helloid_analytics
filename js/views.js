@@ -954,6 +954,221 @@
       [bar, stats, kidsWrap, legend, table].filter(Boolean));
   }
 
+  /** One mined rule: its condition, what it grants, and who does not have it yet. */
+  function drawerPyramidRule(m, P, row) {
+    const body = document.createDocumentFragment();
+    body.appendChild(dl([
+      [T('py.dCondition'), row.conditions],
+      [T('py.dLevel'), row.level === 99 ? T('py.combo') : 'L' + row.level],
+      [T('py.dMembers'), U.fmtInt(row.members)],
+      [T('py.dGrants'), U.fmtInt(row.entitlements)]
+    ]));
+
+    body.appendChild(card(T('py.dEntitlements'), T('py.dEntitlementsNote'), HR.table.make({
+      columns: [
+        { key: 'name', label: T('py.cEntitlement'), value: g => (m.permissions.get(g.ent) || {}).name || g.ent,
+          render: g => {
+            const perm = m.permissions.get(g.ent);
+            return perm
+              ? el('a', { href: '#', text: perm.name,
+                  onclick: e => { e.preventDefault(); drawerPermission(perm, m); } })
+              : el('span', { text: g.ent });
+          } },
+        { key: 'holders', label: T('py.cHolders'), value: g => g.holders, align: 'right' },
+        { key: 'coverage', label: T('py.cOfGroup'), value: g => g.coverage,
+          render: g => scoreBar(Math.round(g.coverage * 100)) },
+        { key: 'missing', label: T('py.cLackingIt'), value: g => g.missing.length, align: 'right',
+          render: g => g.missing.length
+            ? el('span', { class: 'sev medium', text: String(g.missing.length) })
+            : el('span', { class: 'note', text: '0' }) }
+      ],
+      rows: row.grants, pageSize: 12, exportName: 'rule-entitlements'
+    })));
+
+    /* Who the rule would change something for, which is the work it implies. */
+    const missing = [];
+    row.grants.forEach(g => g.missing.forEach(person =>
+      missing.push({ person, ent: m.permissions.get(g.ent), coverage: g.coverage })));
+    if (missing.length) {
+      body.appendChild(card(T('py.dMissingTitle'), T('py.dMissingNote'), HR.table.make({
+        columns: [
+          { key: 'person', label: T('py.cPerson'), value: r => r.person.name },
+          { key: 'ent', label: T('py.cLacks'), value: r => r.ent ? r.ent.name : '',
+            render: r => el('span', { text: r.ent ? r.ent.name : '—' }) },
+          { key: 'coverage', label: T('py.cPeers'), value: r => r.coverage,
+            render: r => el('span', { text: U.fmtPct(r.coverage, 0) }) }
+        ],
+        rows: missing, pageSize: 10, exportName: 'rule-missing'
+      })));
+    }
+
+    openDrawer(el('div', {}, [
+      el('div', { text: row.name }),
+      el('span', { class: 'note', text: T('py.dHeadNote', {
+        n: row.entitlements, people: U.fmtInt(row.members) }) })
+    ]), el('div', { class: 'stack' }, [body]));
+  }
+
+
+  /**
+   * The two miners on the same scale, plus HelloID's own when its report is loaded.
+   *
+   * Coverage is the goal, so it leads; rules are the price and follow. The pyramid is
+   * kept because it is legible and nests the way an organisation describes itself, but
+   * where it loses on coverage that is stated rather than hidden.
+   */
+
+  /**
+   * The baseline, and the people who fall short of it.
+   *
+   * An entitlement nearly everybody holds is not optional for the few who lack it: it is
+   * the floor, and whoever is under it is either a gap to close or evidence the floor is
+   * not really a floor. HelloID's own miner produces the same list as a by-product of
+   * proposing the rule, and it is the half that gets acted on first — cleanup before
+   * policy.
+   */
+  function baselineCard(m, P) {
+    const b = P.baseline;
+    if (!b) return null;
+
+    const cfg = HR.config.get().pyramid || {};
+    const slider = () => {
+      const value = b.threshold;
+      const out = el('span', { class: 'mono', text: U.fmtPct(value, 0) });
+      const input = el('input', { type: 'range', min: 0.5, max: 1, step: 0.01, value: value });
+      input.addEventListener('input', e => { out.textContent = U.fmtPct(+e.target.value, 0); });
+      input.addEventListener('change', e => {
+        const c = HR.config.get();
+        c.pyramid = Object.assign({}, c.pyramid, { baselineThreshold: +e.target.value });
+        HR.config.save(c);
+        delete m._pyramid;
+        HR.app.render();
+      });
+      return el('label', { class: 'inline' }, [document.createTextNode(T('py.blThreshold')), input, out]);
+    };
+
+    if (!b.grants.length) {
+      /* Saying "no baseline" without saying why invites the wrong conclusion: on a
+         reconciliation export alone there cannot be one. */
+      return card(T('py.blTitle'), T('py.blNote'), [
+        el('p', { text: m.granted && !m.granted.empty
+          ? T('py.blNoneWithGranted', { threshold: U.fmtPct(b.threshold, 0) })
+          : T('py.blNoneReconOnly', { threshold: U.fmtPct(b.threshold, 0) }) }),
+        slider()
+      ]);
+    }
+
+    const outside = b.outside.map(o => ({
+      person: o.person,
+      name: o.person.name,
+      department: o.person.labels.Department || o.person.attrs.Department || '—',
+      missing: o.missing,
+      count: o.missing.length
+    }));
+
+    return card(T('py.blTitle'), T('py.blNote'), [
+      el('div', { class: 'grid g4' }, [
+        tile(T('py.blEntitlements'), U.fmtInt(b.summary.entitlements), T('py.blEntitlementsFoot')),
+        tile(T('py.blComplete'), U.fmtInt(b.summary.complete),
+          T('py.blCompleteFoot', { n: U.fmtInt(b.summary.people) }), { severity: 'good' }),
+        tile(T('py.blOutside'), U.fmtInt(b.summary.outside),
+          T('py.blOutsideFoot', { share: U.fmtPct(b.summary.outsideShare, 0) }),
+          { severity: b.summary.outside ? 'medium' : 'good' }),
+        tile(T('py.blGaps'), U.fmtInt(b.summary.gaps), T('py.blGapsFoot'),
+          { severity: b.summary.gaps ? 'medium' : 'good' })
+      ]),
+      slider(),
+      HR.table.make({
+        columns: [
+          { key: 'name', label: T('py.cEntitlement'), value: g => (m.permissions.get(g.ent) || {}).name || g.ent,
+            render: g => {
+              const perm = m.permissions.get(g.ent);
+              return perm ? el('a', { href: '#', text: perm.name,
+                onclick: e => { e.preventDefault(); drawerPermission(perm, m); } })
+                : el('span', { text: g.ent });
+            } },
+          { key: 'coverage', label: T('py.blHeldBy'), value: g => g.coverage,
+            render: g => scoreBar(Math.round(g.coverage * 100)) },
+          { key: 'missing', label: T('py.blLacking'), value: g => g.missing.length, align: 'right',
+            render: g => g.missing.length
+              ? el('span', { class: 'sev medium', text: String(g.missing.length) })
+              : el('span', { class: 'note', text: '0' }) }
+        ],
+        rows: b.grants, pageSize: 8, exportName: 'baseline'
+      }),
+      outside.length ? card(T('py.blOutsideTitle'), T('py.blOutsideNote'), HR.table.make({
+        columns: [
+          { key: 'name', label: T('py.cPerson'), value: r => r.name,
+            render: r => el('a', { href: '#', text: r.name, onclick: e => {
+              e.preventDefault(); drawerVaultPerson(personRow(m, r.person.person), m);
+            } }) },
+          { key: 'department', label: T('org.cTitle'), value: r => r.department },
+          { key: 'count', label: T('py.blMissingCount'), value: r => r.count, align: 'right' },
+          { key: 'missing', label: T('py.blMissingWhat'), sortable: false,
+            render: r => el('span', { class: 'trunc',
+              title: r.missing.map(e => (m.permissions.get(e) || {}).name || e).join(', '),
+              text: r.missing.map(e => (m.permissions.get(e) || {}).name || e).join(', ') }) }
+        ],
+        rows: outside, pageSize: 10, exportName: 'outside-baseline'
+      })) : null
+    ].filter(Boolean));
+  }
+
+  function coverageCard(m, P) {
+    let G = null;
+    try { G = HR.pyramid.greedy(m); } catch (e) { return null; }
+    if (!G || !G.rules.length) return null;
+
+    const rows = [
+      { method: T('py.cfPyramid'), rules: P.summary.rules + P.summary.combos,
+        coverage: P.summary.coverage, perRule: P.summary.perRule, own: true },
+      { method: T('py.cfGreedy'), rules: G.summary.rules,
+        coverage: G.summary.coverage, perRule: G.summary.perRule, own: true, greedy: G }
+    ];
+    rows.sort((a, b) => b.coverage - a.coverage);
+
+    const sweep = HR.pyramid.sweep(m);
+    const best = sweep.reduce((a, b) => (b.coverage > a.coverage ? b : a), sweep[0]);
+
+    return card(T('py.cfTitle'), T('py.cfNote'), [
+      HR.table.make({
+        columns: [
+          { key: 'method', label: T('py.cfMethod'), value: r => r.method },
+          { key: 'coverage', label: T('py.cfCoverage'), value: r => r.coverage,
+            render: r => scoreBar(Math.round(r.coverage * 100)) },
+          { key: 'rules', label: T('py.cfRules'), value: r => r.rules, align: 'right' },
+          { key: 'perRule', label: T('py.cfPerRule'), value: r => r.perRule, align: 'right',
+            render: r => el('span', { text: U.fmtNum(r.perRule, 1) }) }
+        ],
+        rows, pageSize: 5, exportName: 'mining-comparison'
+      }),
+      el('p', { class: 'note', style: 'margin-top:10px', text: T('py.cfExplain') }),
+      el('div', { class: 'slot-actions' }, [
+        el('button', { class: 'btn', text: T('py.cfExport'), onclick: () => {
+          U.download('coverage-first-rules.csv', HR.pyramid.greedyToRulesCsv(m, G), 'text/csv');
+          HR.usage.exported('coverage-first-rules');
+        } })
+      ]),
+      card(T('py.swTitle'), T('py.swNote'), HR.table.make({
+        columns: [
+          { key: 'threshold', label: T('py.swThreshold'), value: r => r.threshold,
+            render: r => el('span', { class: 'mono' + (r.threshold === P.threshold ? ' pill ok' : ''),
+              text: U.fmtPct(r.threshold, 0) }) },
+          { key: 'coverage', label: T('py.cfCoverage'), value: r => r.coverage,
+            render: r => scoreBar(Math.round(r.coverage * 100)) },
+          { key: 'rules', label: T('py.cfRules'), value: r => r.rules, align: 'right' },
+          { key: 'exceptions', label: T('py.swExceptions'), value: r => r.exceptions, align: 'right',
+            hint: T('py.swExceptionsHint') }
+        ],
+        rows: sweep, pageSize: 8, exportName: 'threshold-sweep',
+        initialSort: { key: 'threshold', dir: -1 }
+      })),
+      el('p', { class: 'note', text: T('py.swBest', {
+        threshold: U.fmtPct(best.threshold, 0), coverage: U.fmtPct(best.coverage, 0),
+        rules: best.rules, exceptions: U.fmtInt(best.exceptions) }) })
+    ]);
+  }
+
   function pyramidView(m) {
     const f = document.createDocumentFragment();
     if (!m.vault) {
@@ -984,6 +1199,7 @@
     f.appendChild(el('div', { class: 'view-head' }, [
       el('div', {}, [
         el('h1', { text: T('py.title') }),
+        el('p', { text: T(m.granted && !m.granted.empty ? 'py.scopeFull' : 'py.scopeRecon') }),
         el('p', { text: T('py.lead', {
           levels: P.levels.map(l => T('py.attr.' + l) || l).join(' › ') || T('py.noLevels'),
           people: U.fmtInt(s.people) }) })
@@ -1078,51 +1294,81 @@
         : T('py.noSuggestion') })
     ]));
 
+    const bl = baselineCard(m, P);
+    if (bl) f.appendChild(bl);
+    const cov = coverageCard(m, P);
+    if (cov) f.appendChild(cov);
     f.appendChild(pyramidJourney(m, P));
 
-    /* ---- the rules ---- */
-    const ruleRows = P.rules.map(r => ({
-      where: r.node.path.map(x => (T('py.attr.' + x.attr) || x.attr) + ': ' +
-        (x.value || T('py.empty'))).join(' + ') || T('py.everyone'),
-      level: r.node.level, perm: m.permissions.get(r.ent), ent: r.ent,
-      coverage: r.coverage, holders: r.holders, missing: r.missing.length, members: r.node.members.length
-    })).concat((P.combos || []).map(c => ({
-      where: c.conds.map(x => x.value).join(' + '),
-      level: 99, perm: m.permissions.get(c.ent), ent: c.ent,
-      coverage: c.coverage, holders: c.holders, missing: c.missing.length, members: c.members.length
+    /* ---- the rules, as rules ----
+       One row per condition, the way HelloID stores them and the way the export writes
+       them. Listing a row per granted entitlement made the table disagree with the CSV
+       it produces and made a two-level model look like hundreds of rules. */
+    const ruleRows = Array.from(P.ruleGroups.entries()).map(entry => {
+      const node = entry[0], grants = entry[1];
+      return {
+        kind: 'pyramid',
+        name: 'Piramide - ' + node.path.map(x => (T('py.attr.' + x.attr) || x.attr) + ': ' +
+          (x.label || x.value || T('py.empty'))).join(' / '),
+        conditions: node.path.map(x => (T('py.attr.' + x.attr) || x.attr) +
+          (x.byId ? '.ExternalId' : '.Name') + ' = ' + (x.value || T('py.empty')) +
+          (x.label && x.label !== x.value ? ' (' + x.label + ')' : '')).join('  ∧  ') || T('py.everyone'),
+        level: node.level,
+        members: node.members.length,
+        grants: grants,
+        entitlements: grants.length,
+        /* The weakest entitlement in the rule decides how safe the rule is. */
+        minCoverage: Math.min.apply(null, grants.map(g => g.coverage)),
+        missing: new Set(grants.flatMap(g => g.missing)).size,
+        node: node
+      };
+    }).concat(Array.from(P.comboGroups.values()).map(group => ({
+      kind: 'combo',
+      name: 'Combinatie - ' + group.conds.map(c => c.label || c.value).join(' + '),
+      conditions: group.conds.map(c => (T('py.attr.' + c.attr) || c.attr) +
+        (c.byId ? '.ExternalId' : '.Name') + ' = ' + c.value +
+        (c.label && c.label !== c.value ? ' (' + c.label + ')' : '')).join('  ∧  '),
+      level: 99,
+      members: group.members.length,
+      grants: group.rules,
+      entitlements: group.rules.length,
+      minCoverage: Math.min.apply(null, group.rules.map(g => g.coverage)),
+      missing: new Set(group.rules.flatMap(g => g.missing)).size,
+      node: null
     })));
 
     f.appendChild(card(T('py.rulesTitle'), T('py.rulesNote'), HR.table.make({
       columns: [
-        { key: 'where', label: T('py.cWho'), value: r => r.where },
+        { key: 'name', label: T('py.cRule'), value: r => r.name,
+          render: r => el('a', { href: '#', text: r.name,
+            onclick: e => { e.preventDefault(); drawerPyramidRule(m, P, r); } }) },
         { key: 'level', label: T('py.cLevel'), value: r => r.level,
           render: r => r.level === 99
             ? el('span', { class: 'pill muted', text: T('py.combo') })
             : el('span', { class: 'mono', text: 'L' + r.level }) },
-        { key: 'ent', label: T('py.cGets'), value: r => r.perm ? r.perm.name : r.ent,
-          render: r => r.perm
-            ? el('a', { href: '#', text: r.perm.name,
-                onclick: e => { e.preventDefault(); drawerPermission(r.perm, m); } })
-            : el('span', { text: r.ent }) },
         { key: 'members', label: T('py.cGroup'), value: r => r.members, align: 'right' },
-        { key: 'coverage', label: T('py.cCoverage'), value: r => r.coverage,
-          render: r => scoreBar(Math.round(r.coverage * 100)) },
-        { key: 'missing', label: T('py.cMissing'), value: r => r.missing, align: 'right',
+        { key: 'entitlements', label: T('py.cGrants'), value: r => r.entitlements, align: 'right' },
+        { key: 'coverage', label: T('py.cWeakest'), value: r => r.minCoverage,
+          hint: T('py.cWeakestHint'), render: r => scoreBar(Math.round(r.minCoverage * 100)) },
+        { key: 'missing', label: T('py.cMissingPeople'), value: r => r.missing, align: 'right',
           render: r => r.missing
             ? el('span', { class: 'sev medium', text: String(r.missing) })
-            : el('span', { class: 'note', text: '0' }) }
+            : el('span', { class: 'note', text: '0' }) },
+        { key: 'list', label: T('py.cGets'), sortable: false,
+          render: r => el('span', { class: 'trunc',
+            title: r.grants.map(g => (m.permissions.get(g.ent) || {}).name || g.ent).join(', '),
+            text: r.grants.map(g => (m.permissions.get(g.ent) || {}).name || g.ent).join(', ') }) }
       ],
-      rows: ruleRows, pageSize: 20, exportName: 'pyramid-rules',
-      /* By level, so the deeper and more specific rules an added level produces are
-         visible rather than buried under the big ones at the top. */
+      rows: ruleRows, pageSize: 15, exportName: 'pyramid-rules',
+      /* By level, so the rules an added level produces are visible rather than buried. */
       initialSort: { key: 'level', dir: 1 }
     })));
 
     /* ---- what the model says is wrong ---- */
     const under = P.stats.under.slice(0, 400).map(u => ({
       person: u.person.name, ent: m.permissions.get(u.ent), coverage: u.coverage,
-      where: u.node ? (u.node.path.map(x => x.value).join(' › ') || T('py.everyone'))
-        : u.combo.conds.map(c => c.value).join(' + ')
+      where: u.node ? (u.node.path.map(x => x.label || x.value).join(' › ') || T('py.everyone'))
+        : u.combo.conds.map(c => c.label || c.value).join(' + ')
     }));
     if (under.length) {
       f.appendChild(card(T('py.underTitle'), T('py.underNote'), HR.table.make({
@@ -1140,7 +1386,7 @@
 
     const isolated = P.stats.pollution.filter(p => p.isolated).slice(0, 400).map(p => ({
       person: p.person.name, ent: m.permissions.get(p.ent), coverage: p.coverage,
-      where: p.node.path.map(x => x.value).join(' › ') || T('py.everyone')
+      where: p.node.path.map(x => x.label || x.value).join(' › ') || T('py.everyone')
     }));
     if (isolated.length) {
       f.appendChild(card(T('py.pollutionTitle'), T('py.pollutionNote'), HR.table.make({

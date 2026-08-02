@@ -29,20 +29,105 @@
   const SEP = '';
 
   /* Attributes a business rule can actually condition on, read off the contract HelloID
-     treats as primary. Adding one here makes it available as a pyramid level. */
+     treats as primary. Adding one here makes it available as a pyramid level.
+
+     Each returns the value to group on and the label to show. Grouping happens on the
+     external id wherever the vault carries one, because that is what survives HR
+     renaming a department or a job title — the same reason HelloID's own mining
+     conditions on externalId. The name is kept for display only, so a renamed
+     department changes what the rule is called and not who it selects. */
   const ATTRIBUTES = {
-    Employer: c => c && c.employer.name,
-    Division: c => c && c.division.name,
-    Department: c => c && (c.department.name || c.department.externalId),
-    Team: c => c && c.team.name,
-    Title: c => c && c.title.name,
-    Location: c => c && c.location.name,
-    CostCenter: c => c && (c.costCenter.name || c.costCenter.code),
-    ContractType: c => c && c.type.name,
-    Manager: c => c && c.manager.displayName
+    Employer: c => c && ref(c.employer),
+    Division: c => c && ref(c.division),
+    Department: c => c && ref(c.department),
+    Team: c => c && ref(c.team),
+    Title: c => c && ref(c.title),
+    Location: c => c && ref(c.location),
+    CostCenter: c => c && ref(c.costCenter),
+    ContractType: c => c && ref(c.type),
+    Manager: c => c && (c.manager.externalId || c.manager.displayName
+      ? { value: c.manager.externalId || c.manager.displayName,
+          label: c.manager.displayName || c.manager.externalId,
+          byId: !!c.manager.externalId }
+      : null)
   };
 
+  /** A HelloID reference: id if there is one, name for the reader. */
+  function ref(o) {
+    if (!o) return null;
+    const id = String(o.externalId || o.code || '').trim();
+    const name = String(o.name || '').trim();
+    if (!id && !name) return null;
+    return { value: id || name, label: name || id, byId: !!id };
+  }
+
   const primary = person => person.primaryContract || person.contracts[0] || null;
+
+  /**
+   * Who the miner reasons about.
+   *
+   * A person with no account holds nothing, and counting them drags every share down: on
+   * a real tenant the most widely held entitlement sat at 46% of everybody and 85% of
+   * everybody with access, which is the difference between finding a baseline and
+   * concluding the organisation has none. Mining therefore runs over people the
+   * reconciliation can actually see access for, and reports how many it set aside —
+   * those people are not ignored, they are the subject of their own finding.
+   */
+  const withAccess = people => people.filter(p => p.ents.size > 0);
+
+  /**
+   * The baseline: what everybody gets.
+   *
+   * Every organisation has a floor — the mailbox, the intranet, the endpoint controls —
+   * and it should be one rule with no condition rather than the same entitlements
+   * restated under every department. It gets its own threshold because the floor is
+   * never quite universal: somebody is always missing MFA, and holding the baseline to
+   * the same bar as a departmental rule either loses it entirely or hides the people who
+   * fall through it.
+   *
+   * Who those people are is the interesting half. An entitlement 96% of the organisation
+   * holds is not optional for the other 4%; it is a gap with names attached.
+   */
+  function baseline(all, threshold) {
+    const people = withAccess(all);
+    const tally = new Map();
+    for (const person of people) for (const ent of person.ents) tally.set(ent, (tally.get(ent) || 0) + 1);
+
+    const grants = [];
+    for (const [ent, holders] of tally) {
+      const coverage = people.length ? holders / people.length : 0;
+      if (coverage < threshold || coverage >= 1) {
+        if (coverage < threshold) continue;
+      }
+      grants.push({ ent, holders, coverage, missing: people.filter(p => !p.ents.has(ent)) });
+    }
+    grants.sort((a, b) => b.coverage - a.coverage);
+
+    /* Everyone short of the floor, with what they are short of. */
+    const shortBy = new Map();
+    grants.forEach(g => g.missing.forEach(person => {
+      if (!shortBy.has(person)) shortBy.set(person, []);
+      shortBy.get(person).push(g.ent);
+    }));
+    const outside = Array.from(shortBy.entries())
+      .map(entry => ({ person: entry[0], missing: entry[1] }))
+      .sort((a, b) => b.missing.length - a.missing.length);
+
+    return {
+      grants, outside,
+      threshold,
+      members: people,
+      summary: {
+        entitlements: grants.length,
+        people: people.length,
+        withoutAccess: all.length - people.length,
+        outside: outside.length,
+        outsideShare: people.length ? outside.length / people.length : 0,
+        gaps: U.sum(grants, g => g.missing.length),
+        complete: people.length - outside.length
+      }
+    };
+  }
 
   /**
    * People with the entitlements they actually hold.
@@ -67,8 +152,15 @@
       }
       const contract = primary(person);
       const attrs = {};
-      for (const name in ATTRIBUTES) attrs[name] = String(ATTRIBUTES[name](contract) || '').trim();
-      people.push({ person, accounts, ents, attrs, name: person.displayName });
+      const labels = {};
+      const byId = {};
+      for (const name in ATTRIBUTES) {
+        const got = ATTRIBUTES[name](contract);
+        attrs[name] = got ? String(got.value) : '';
+        labels[name] = got ? String(got.label) : '';
+        byId[name] = !!(got && got.byId);
+      }
+      people.push({ person, accounts, ents, attrs, labels, byId, name: person.displayName });
     }
     return people;
   }
@@ -113,9 +205,12 @@
       person.chain = [root];
       levels.forEach((attr, i) => {
         const value = person.attrs[attr] || '';
+        const label = person.labels[attr] || value;
         const id = cur.id + SEP + attr + '=' + value;
         if (!nodes.has(id)) {
-          const node = mkNode(id, i + 1, cur.path.concat([{ attr, value }]), cur, value);
+          const node = mkNode(id, i + 1, cur.path.concat([
+            { attr, value, label, byId: !!person.byId[attr] }
+          ]), cur, label);
           nodes.set(id, node);
           cur.children.push(node);
         }
@@ -221,30 +316,40 @@
   /**
    * Which attributes, in which order?
    *
-   * Greedy: add the attribute that buys the most weighted coverage, stop when nothing
-   * buys enough to justify another level. The order that falls out is the order the
-   * organisation actually uses, which is rarely the order somebody would guess.
+   * The goal is coverage: the share of entitlement grants the model accounts for. Rule
+   * count matters, but as a cost rather than an objective — a model that explains more
+   * with more rules is still the better model, and the frontier below shows what each
+   * level cost. So the greedy step maximises plain coverage, and uses weighted coverage
+   * only to break ties, where the tie-break prefers the attribute that governs the more
+   * sensitive and more expensive access.
    */
   function suggestLevels(people, candidates, opts) {
-    opts = Object.assign({ maxLevels: 4, minGain: 0.004, threshold: 0.9, minSize: 5, weight: () => 1 }, opts || {});
+    opts = Object.assign({ maxLevels: 4, minGain: 0.004, threshold: 0.9, minSize: 3, weight: () => 1 }, opts || {});
     const chosen = [];
     const steps = [];
-    let current = account(people, mine(people, [], opts), null, opts).weightedCoverage;
-    const base = current;
+    const measure = levels => account(people, mine(people, levels, opts), null, opts);
+    let current = measure([]);
+    const base = current.coverage;
 
     for (let depth = 0; depth < opts.maxLevels; depth++) {
-      let best = null, bestCoverage = current;
+      let best = null, bestStats = current;
       for (const attr of candidates) {
         if (chosen.includes(attr)) continue;
-        const trial = account(people, mine(people, chosen.concat([attr]), opts), null, opts).weightedCoverage;
-        if (trial > bestCoverage + opts.minGain) { bestCoverage = trial; best = attr; }
+        const trial = measure(chosen.concat([attr]));
+        const better = trial.coverage > bestStats.coverage + opts.minGain ||
+          (Math.abs(trial.coverage - bestStats.coverage) <= opts.minGain &&
+           trial.weightedCoverage > bestStats.weightedCoverage + opts.minGain);
+        if (better) { bestStats = trial; best = attr; }
       }
       if (!best) break;
-      steps.push({ attr: best, gain: bestCoverage - current, coverage: bestCoverage });
+      steps.push({ attr: best, gain: bestStats.coverage - current.coverage, coverage: bestStats.coverage });
       chosen.push(best);
-      current = bestCoverage;
+      current = bestStats;
     }
-    return { levels: chosen, coverage: current, base, steps };
+    return {
+      levels: chosen, coverage: current.coverage, weightedCoverage: current.weightedCoverage,
+      base, steps
+    };
   }
 
   /**
@@ -260,7 +365,7 @@
 
     const groups = new Map();
     for (const p of people) {
-      const pairs = opts.attributes.map(a => [a, p.attrs[a]]).filter(x => x[1]);
+      const pairs = opts.attributes.map(a => [a, p.attrs[a], p.labels[a], !!p.byId[a]]).filter(x => x[1]);
       const combos = [];
       for (let i = 0; i < pairs.length; i++) {
         combos.push([pairs[i]]);
@@ -276,7 +381,10 @@
       for (const conds of combos) {
         const key = conds.map(c => c[0] + '=' + c[1]).join('|');
         let g = groups.get(key);
-        if (!g) { g = { conds: conds.map(c => ({ attr: c[0], value: c[1] })), members: [] }; groups.set(key, g); }
+        if (!g) {
+          g = { conds: conds.map(c => ({ attr: c[0], value: c[1], label: c[2] || c[1], byId: c[3] })), members: [] };
+          groups.set(key, g);
+        }
         g.members.push(p);
       }
     }
@@ -335,6 +443,174 @@
     return rules;
   }
 
+
+  /**
+   * Coverage first: rules chosen for what they still explain.
+   *
+   * The pyramid is a hierarchy, and a hierarchy costs coverage. "Department then Title"
+   * can only mine a title inside a department, so a job title that gets the same access
+   * in every department has to be rediscovered once per department or not at all. That
+   * is a real limitation, and on a tenant where access follows job titles across the
+   * organisation it loses to a flat miner outright.
+   *
+   * So when coverage is the goal, this ignores the hierarchy: every attribute value and
+   * every pair of them is a candidate condition, and rules are taken greedily by how many
+   * assignments they explain that nothing chosen so far explains. The baseline is seeded
+   * first by construction rather than by competition — it is the rule an administrator
+   * writes anyway, and everything after it should be what the baseline does not cover.
+   *
+   * The pyramid keeps its own value: it is legible, it nests the way an organisation
+   * describes itself, and its levels are what a person can argue about. This is the
+   * answer when the question is coverage rather than structure.
+   */
+  function greedy(model, opts) {
+    const cfg = Object.assign({ threshold: 0.9, baselineThreshold: 0.9, minSize: 3,
+      maxConditions: 2, maxRules: 400, minGain: 2 },
+      (HR.config.get().pyramid || {}), opts || {});
+    const weight = permKey => weightOf(model, permKey);
+    const everybody = population(model, model.vault, model.granted);
+    const people = withAccess(everybody);
+    const attributes = availableAttributes(people);
+
+    /* Every group a condition of one or two attribute values can select. */
+    const groups = new Map();
+    for (const person of people) {
+      const pairs = attributes.map(a => [a, person.attrs[a], person.labels[a], !!person.byId[a]])
+        .filter(x => x[1]);
+      const combos = [];
+      for (let i = 0; i < pairs.length; i++) {
+        combos.push([pairs[i]]);
+        if (cfg.maxConditions >= 2) {
+          for (let j = i + 1; j < pairs.length; j++) combos.push([pairs[i], pairs[j]]);
+        }
+      }
+      for (const conds of combos) {
+        const key = conds.map(c => c[0] + '=' + c[1]).join(' & ');
+        let g = groups.get(key);
+        if (!g) {
+          g = { key, conds: conds.map(c => ({ attr: c[0], value: c[1], label: c[2] || c[1], byId: c[3] })), members: [] };
+          groups.set(key, g);
+        }
+        g.members.push(person);
+      }
+    }
+
+    /* Within each group, the entitlements uniform enough to be a rule. */
+    const candidates = [];
+    for (const g of groups.values()) {
+      if (g.members.length < cfg.minSize) continue;
+      const tally = new Map();
+      for (const m of g.members) for (const e of m.ents) tally.set(e, (tally.get(e) || 0) + 1);
+      const ents = [];
+      for (const [ent, count] of tally) {
+        if (count / g.members.length >= cfg.threshold) {
+          ents.push({ ent, holders: count, coverage: count / g.members.length });
+        }
+      }
+      if (ents.length) candidates.push({ group: g, ents });
+    }
+
+    const explained = new Map(people.map(p => [p, new Set()]));
+    const chosen = [];
+
+    const base = baseline(everybody, cfg.baselineThreshold);
+    if (base.grants.length) {
+      base.grants.forEach(g =>
+        people.forEach(p => { if (p.ents.has(g.ent)) explained.get(p).add(g.ent); }));
+      chosen.push({
+        everyone: true, conds: [], members: people, baseline: base,
+        grants: base.grants, gain: U.sum(base.grants, g => g.holders)
+      });
+    }
+
+    const gainOf = candidate => {
+      let n = 0;
+      for (const e of candidate.ents) {
+        for (const m of candidate.group.members) {
+          if (m.ents.has(e.ent) && !explained.get(m).has(e.ent)) n++;
+        }
+      }
+      return n;
+    };
+
+    while (chosen.length < cfg.maxRules) {
+      let best = null, bestGain = cfg.minGain;
+      for (const candidate of candidates) {
+        if (candidate.taken) continue;
+        const gain = gainOf(candidate);
+        if (gain > bestGain) { bestGain = gain; best = candidate; }
+      }
+      if (!best) break;
+      best.taken = true;
+      /* Only the entitlements that still add something; the rest are already covered. */
+      const grants = best.ents.filter(e =>
+        best.group.members.some(m => m.ents.has(e.ent) && !explained.get(m).has(e.ent)));
+      for (const e of grants) {
+        for (const m of best.group.members) if (m.ents.has(e.ent)) explained.get(m).add(e.ent);
+      }
+      chosen.push({
+        everyone: false,
+        conds: best.group.conds,
+        members: best.group.members,
+        grants: grants.map(e => ({ ent: e.ent, holders: e.holders, coverage: e.coverage,
+          missing: best.group.members.filter(m => !m.ents.has(e.ent)) })),
+        gain: bestGain
+      });
+    }
+
+    const total = U.sum(people, p => p.ents.size);
+    const covered = U.sum(people, p => explained.get(p).size);
+    const totalWeight = U.sum(people, p => { let w = 0; p.ents.forEach(e => { w += weight(e); }); return w; });
+    const coveredWeight = U.sum(people, p => {
+      let w = 0; explained.get(p).forEach(e => { w += weight(e); }); return w;
+    });
+
+    return {
+      rules: chosen, people, attributes, explained, baseline: base,
+      summary: {
+        rules: chosen.length,
+        withoutAccess: everybody.length - people.length,
+        grants: U.sum(chosen, r => r.grants.length),
+        assignments: total,
+        explained: covered,
+        coverage: total ? covered / total : 0,
+        weightedCoverage: totalWeight ? coveredWeight / totalWeight : 0,
+        perRule: chosen.length ? covered / chosen.length : 0
+      }
+    };
+  }
+
+  /**
+   * What the rule threshold costs and buys.
+   *
+   * The threshold is the single most consequential setting in the miner and the least
+   * visible: at 90% a rule must be nearly universal in its group, which is safe and
+   * leaves a lot of access unexplained; at 75% the same organisation is largely covered
+   * by rules that each carry a handful of exceptions. HelloID's own miner sits at the
+   * loose end and reports the exceptions, which is why its coverage looks better than
+   * ours on the same data.
+   *
+   * Neither is right in general. Sweeping the range and showing coverage against the
+   * exceptions it implies turns a hidden constant into a decision somebody can make.
+   */
+  function sweep(model, thresholds) {
+    const list = thresholds || [0.95, 0.9, 0.85, 0.8, 0.75, 0.7];
+    return list.map(threshold => {
+      const g = greedy(model, { threshold });
+      const exceptions = U.sum(g.rules, r => U.sum(r.grants, x => x.missing.length));
+      return {
+        threshold,
+        rules: g.summary.rules,
+        coverage: g.summary.coverage,
+        perRule: g.summary.perRule,
+        grants: g.summary.grants,
+        /* Every exception is a person a rule would grant something they do not have
+           today: either a gap to fill or a reason the rule is wrong. */
+        exceptions
+      };
+    });
+  }
+
   /**
    * The whole thing, from a model with a vault to a rule set with its accounting.
    * Cached on the model: mining is the most expensive analysis this tool runs.
@@ -348,7 +624,8 @@
       (HR.config.get().pyramid || {}), opts || {});
 
     const weight = permKey => weightOf(model, permKey);
-    const people = population(model, model.vault, model.granted);
+    const everybody = population(model, model.vault, model.granted);
+    const people = withAccess(everybody);
     const attributes = availableAttributes(people);
     if (!attributes.length) {
       return { unavailable: 'no-attributes', people, attributes: [] };
@@ -359,7 +636,19 @@
     const levels = (cfg.levels && cfg.levels.length ? cfg.levels : suggestion.levels)
       .filter(a => attributes.includes(a));
 
+    const base = baseline(people, cfg.baselineThreshold == null ? 0.9 : cfg.baselineThreshold);
     const mined = mine(people, levels, { threshold: cfg.threshold, minSize: cfg.minSize, weight });
+
+    /* The baseline is a rule at the root, whatever the level threshold says: it is
+       written once and inherited by everything below. */
+    base.grants.forEach(g => {
+      if (mined.root.ruleEnts.has(g.ent)) return;
+      const rule = { node: mined.root, ent: g.ent, coverage: g.coverage, holders: g.holders,
+        missing: g.missing, weight: weight(g.ent), baseline: true };
+      mined.root.rules.push(rule);
+      mined.root.ruleEnts.add(g.ent);
+      mined.rules.unshift(rule);
+    });
     let stats = account(people, mined, null, { pollutionBelow: cfg.pollutionBelow, weight });
 
     let combos = [];
@@ -393,12 +682,13 @@
     const result = {
       people, attributes, suggestion, levels, combos, weight,
       ruleGroups, comboGroups,
-      nodes: mined.nodes, root: mined.root, rules: mined.rules,
+      nodes: mined.nodes, root: mined.root, rules: mined.rules, baseline: base,
       tooSmall: mined.tooSmall, skippedPeople: mined.skippedPeople,
       threshold: cfg.threshold, minSize: cfg.minSize,
       stats,
       summary: {
         people: people.length,
+        withoutAccess: everybody.length - people.length,
         levels: levels.length,
         /* What you would create in HelloID... */
         rules: ruleGroups.size,
@@ -414,6 +704,10 @@
         pollution: stats.pollution.length,
         isolated: stats.isolated,
         tooSmall: mined.tooSmall.length,
+        baselineEntitlements: base.summary.entitlements,
+        outsideBaseline: base.summary.outside,
+        /* The number the whole exercise is judged on. */
+        perRule: ruleGroups.size ? stats.explainedCount / ruleGroups.size : 0,
         rulesPerLevel: levels.map((_, i) =>
           mined.rules.filter(r => r.node.level === i + 1).length)
       }
@@ -422,10 +716,35 @@
     return result;
   }
 
+  /** The coverage-first rule set, in the same export shape. */
+  function greedyToRulesCsv(model, result) {
+    const entName = key => {
+      const perm = model.permissions.get(key);
+      return perm ? (perm.system + ' - ' + perm.name + (perm.path ? ' (' + perm.path + ')' : '')) : key;
+    };
+    const rows = result.rules.map(rule => ({
+      Name: rule.everyone
+        ? 'Basis - Alle medewerkers'
+        : 'Voorstel - ' + rule.conds.map(c => c.label || c.value).join(' + '),
+      EntitlementCount: rule.grants.length,
+      PersonsLatestEvaluation: rule.members.length,
+      Categories: 'Mined',
+      Status: 'proposal',
+      Conditions: rule.conds.map(c =>
+        c.attr + (c.byId ? '.ExternalId' : '.Name') + ', one of: ' + c.value).join('|'),
+      Entitlements: rule.grants.map(g => entName(g.ent)).join('|')
+    }));
+    return U.toCSV(rows, ['Name', 'EntitlementCount', 'PersonsLatestEvaluation', 'Categories',
+      'Status', 'Conditions', 'Entitlements']);
+  }
+
   /** The mined model as a HelloID business-rule export, ready to review and load back. */
   function toRulesCsv(model, pyramid) {
     const rows = [];
-    const label = node => node.path.map(p => p.attr + ': ' + (p.value || '(empty)')).join(' / ') || 'Everyone';
+    const label = node => node.path.map(p => p.attr + ': ' + (p.label || p.value || '(empty)')).join(' / ') || 'Everyone';
+    /* ExternalId where we grouped on one: a rule keyed on a name stops selecting anybody
+       the day HR renames the department. */
+    const condition = p => p.attr + (p.byId ? '.ExternalId' : '.Name') + ', one of: ' + p.value;
     const entName = key => {
       const perm = model.permissions.get(key);
       return perm ? (perm.system + ' - ' + perm.name + (perm.path ? ' (' + perm.path + ')' : '')) : key;
@@ -442,19 +761,20 @@
         PersonsLatestEvaluation: node.members.length,
         Categories: 'Pyramid',
         Status: 'proposal',
-        Conditions: node.path.map(p => p.attr + '.Name, one of: ' + p.value).join('|'),
+        Conditions: node.path.map(condition).join('|'),
         Entitlements: rules.map(r => entName(r.ent)).join('|')
       });
     });
     /* One rule per distinct condition, granting everything that condition implies. */
     (pyramid.comboGroups ? Array.from(pyramid.comboGroups.values()) : []).forEach(group => {
       rows.push({
-        Name: 'Combinatie - ' + group.conds.map(c => c.value).join(' + '),
+        Name: 'Combinatie - ' + group.conds.map(c => c.label || c.value).join(' + '),
         EntitlementCount: group.rules.length,
         PersonsLatestEvaluation: group.members.length,
         Categories: 'Combination',
         Status: 'proposal',
-        Conditions: group.conds.map(c => c.attr + '.Name, one of: ' + c.value).join('|'),
+        Conditions: group.conds.map(c =>
+          c.attr + (c.byId ? '.ExternalId' : '.Name') + ', one of: ' + c.value).join('|'),
         Entitlements: group.rules.map(r => entName(r.ent)).join('|')
       });
     });
@@ -462,6 +782,6 @@
       'Status', 'Conditions', 'Entitlements']);
   }
 
-  HR.pyramid = { build, mine, account, suggestLevels, mineCombos, population,
-    availableAttributes, toRulesCsv, ATTRIBUTES };
+  HR.pyramid = { build, mine, account, suggestLevels, mineCombos, population, greedy,
+    sweep, baseline, availableAttributes, toRulesCsv, greedyToRulesCsv, ATTRIBUTES };
 })(window.HR);

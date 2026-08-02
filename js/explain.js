@@ -225,8 +225,8 @@
       const shaped = owned && owned.get(perm.key);
       if (shaped) {
         const where = shaped.node
-          ? shaped.node.path.map(x => x.value || '(empty)').join(' / ')
-          : shaped.conds.map(c => c.value).join(' + ');
+          ? shaped.node.path.map(x => x.label || x.value || '(empty)').join(' / ')
+          : shaped.conds.map(c => c.label || c.value).join(' + ');
         return { kind: 'org-shaped', strength: 'likely',
           params: { where: where || T('ex.everyone'), pct: U.fmtPct(shaped.coverage, 0) } };
       }

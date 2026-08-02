@@ -123,6 +123,9 @@
      person's access cannot become a role on its own. */
   const DEFAULT_PYRAMID = {
     threshold: 0.9,                 // share of a group that must hold it
+    /* The floor everyone gets, held to its own bar: somebody is always missing MFA, and
+       the people who fall through are the point rather than a rounding error. */
+    baselineThreshold: 0.9,
     minSize: 3,                     // members a group needs before it can carry a rule
     maxLevels: 4,
     combos: true,
