@@ -311,11 +311,28 @@
     const sub = document.getElementById('topbar-sub');
     if (!state.model) { sub.textContent = T('app.noData'); return; }
     const s = state.model.summary;
+
+    /* Naming the reconciliation file here was right when it was the only input. With a
+       vault, rules and activity loaded it understated what the numbers rest on, so the
+       bar now counts the sources and names them on hover. */
+    const sources = [];
     const cur = state.snapshots.find(x => x.id === state.currentSnapshotId);
-    sub.textContent = (cur ? cur.name + ' · ' : '') +
-      U.fmtInt(s.rows) + ' ' + T('app.rows') + ' · ' + U.fmtInt(s.accounts) + ' ' + T('app.accounts') +
-      ' · ' + T('app.riskShort') + ' ' + s.riskScore +
-      (state.baselineSnapshot ? ' · ' + T('app.vs') + ' ' + state.baselineSnapshot.name : '');
+    sources.push(T('src.recon') + ': ' + ((cur && cur.name) || (state.parsed && state.parsed.meta.fileName) || '—'));
+    if (state.ruleSet) sources.push(T('src.rules') + ': ' + state.ruleSet.rules.length);
+    if (state.vault) sources.push(T('src.vault') + ': ' + state.vault.persons.length);
+    if (state.granted) sources.push(T('src.granted') + ': ' + state.granted.meta.rowCount);
+    if (state.history) sources.push(T('src.history') + ': ' + U.fmtInt(state.history.meta.rowCount));
+
+    const parts = [
+      T('app.sources', { n: sources.length }),
+      U.fmtInt(s.accounts) + ' ' + T('app.accounts')
+    ];
+    if (state.vault) parts.push(U.fmtInt(state.vault.persons.length) + ' ' + T('app.persons'));
+    parts.push(T('app.riskShort') + ' ' + s.riskScore);
+    if (state.baselineSnapshot) parts.push(T('app.vs') + ' ' + state.baselineSnapshot.name);
+
+    sub.textContent = parts.join(' · ');
+    sub.title = sources.join('\n');
   }
 
   /* ------------------------------------------------------------------ wire */

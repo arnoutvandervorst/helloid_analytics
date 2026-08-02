@@ -141,7 +141,11 @@
   /** points: [{x, y, r?, label, tip, color?, onClick?}] — one series, status-coloured. */
   function scatter(points, opts) {
     opts = opts || {};
-    const W = 640, H = opts.height || 300, padL = 44, padB = 34, padT = 12, padR = 12;
+    /* Room for what actually gets drawn: tick labels can be money or percentages, the
+       axis caption needs a line of its own rather than sharing one with the top tick,
+       and the x caption has to sit inside the viewBox or its descenders spill out. */
+    const W = 640, H = opts.height || 300;
+    const padL = opts.padL || 56, padB = opts.xLabel ? 46 : 30, padT = opts.yLabel ? 26 : 14, padR = 14;
     const s = svg(W, H);
     const plotW = W - padL - padR, plotH = H - padT - padB;
     const maxX = opts.maxX || Math.max(1, ...points.map(p => p.x));
@@ -156,11 +160,17 @@
         opts.formatY ? opts.formatY(maxY * t) : Math.round(maxY * t)));
     });
     [0, .25, .5, .75, 1].forEach(t => {
-      s.appendChild(n('text', { x: sx(maxX * t), y: H - 14, 'text-anchor': 'middle', fill: 'var(--muted)', 'font-size': 11 },
+      s.appendChild(n('text', { x: sx(maxX * t), y: padT + plotH + 16, 'text-anchor': 'middle', fill: 'var(--muted)', 'font-size': 11 },
         opts.formatX ? opts.formatX(maxX * t) : Math.round(maxX * t)));
     });
-    if (opts.xLabel) s.appendChild(n('text', { x: padL + plotW / 2, y: H - 1, 'text-anchor': 'middle', fill: 'var(--muted)', 'font-size': 11 }, opts.xLabel));
-    if (opts.yLabel) s.appendChild(n('text', { x: 10, y: padT + 4, fill: 'var(--muted)', 'font-size': 11 }, opts.yLabel));
+    if (opts.xLabel) {
+      s.appendChild(n('text', { x: padL + plotW / 2, y: padT + plotH + 34, 'text-anchor': 'middle',
+        fill: 'var(--muted)', 'font-size': 11 }, opts.xLabel));
+    }
+    /* The caption sits above the plot, on its own line, where no tick label reaches. */
+    if (opts.yLabel) {
+      s.appendChild(n('text', { x: padL - 6, y: 12, 'text-anchor': 'end', fill: 'var(--muted)', 'font-size': 11 }, opts.yLabel));
+    }
 
     points.forEach(p => {
       const c = n('circle', {

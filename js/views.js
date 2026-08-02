@@ -295,6 +295,40 @@
         }))
       })), bands.map(b => T('c.' + b)), { corner: T('c.class') })));
 
+    /* With the vault loaded, department is knowable — and where entitlement mass sits
+       per department is a question the reconciliation export alone cannot answer. */
+    if (m.vault) {
+      const index = HR.correlate.personAccountIndex(m, m.vault, m.correlation);
+      const cats = U.uniq(m.permissionList.map(p => p.categoryLabel)).slice(0, 8);
+      const perDept = new Map();
+      for (const entry of index.values()) {
+        const pc = entry.person.primaryContract;
+        const dept = pc ? (pc.department.name || pc.department.externalId || '—') : '—';
+        if (!perDept.has(dept)) perDept.set(dept, { dept, people: 0, counts: new Map() });
+        const row = perDept.get(dept);
+        row.people++;
+        entry.accounts.forEach(a => a.perms.forEach(p => {
+          row.counts.set(p.categoryLabel, (row.counts.get(p.categoryLabel) || 0) + 1);
+        }));
+      }
+      const deptRows = Array.from(perDept.values())
+        .filter(r => U.sum(cats, c => r.counts.get(c) || 0) > 0)
+        .sort((a, b) => U.sum(cats, c => b.counts.get(c) || 0) - U.sum(cats, c => a.counts.get(c) || 0))
+        .slice(0, 14);
+      if (deptRows.length) {
+        g.appendChild(card(T('ov.deptHeat'), T('ov.deptHeatNote'), C.heatmap(
+          deptRows.map(r => ({
+            label: r.dept,
+            cells: cats.map(c => ({
+              value: r.counts.get(c) || 0,
+              tip: '<div class="t-title">' + U.esc(r.dept) + ' · ' + U.esc(c) + '</div>' +
+                '<div class="t-row"><span>' + T('c.assignments') + '</span><b>' + U.fmtInt(r.counts.get(c) || 0) + '</b></div>' +
+                '<div class="t-row"><span>' + T('pp.persons') + '</span><b>' + r.people + '</b></div>'
+            }))
+          })), cats, { corner: T('pp.department') })));
+      }
+    }
+
     f.appendChild(g);
 
     if (m.systemList.length > 1) {
