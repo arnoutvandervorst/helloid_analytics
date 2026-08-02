@@ -14,13 +14,30 @@ Nothing leaves the browser: no build step, no CDN, no network calls.
 
 Opening `index.html` (or the bundled single file) directly from disk also works, but
 browsers give `file://` pages an opaque origin, so snapshots cannot be persisted and the
-"load the CSV from this folder" button is blocked. Over http both work.
+"load the export from this folder" button is blocked. Over http both work.
 
 Import by dragging a CSV anywhere onto the page, or via **Import CSV**.
 
 No reconciliation export is committed to this repository — they carry account and person
-names, so `*.csv` is gitignored. Drop your own export in this folder and the "load the CSV
-from this folder" button picks it up; drag-and-drop works regardless of where the file sits.
+names, so `*.csv` is gitignored. Drop your own export in this folder and the "load the export
+from this folder" button picks it up (it looks for `ReconciliationReport.csv`, then
+`sample-recon.csv`); drag-and-drop works regardless of where the file sits.
+
+### Sample data
+
+```bash
+python3 make-sample.py                  # 5,000 rows -> sample-recon.csv
+python3 make-sample.py --rows 50000     # for performance work
+python3 make-sample.py --systems 2      # multi-system export
+python3 make-sample.py --seed 7 -o next.csv   # a second run to diff against the first
+```
+
+Fictional names, HelloID-shaped group naming, and enough of every case that all fifteen
+finding rules have something to fire on: unowned admin accounts, disabled accounts still in
+licence groups, stacked SKUs, a security baseline at ~88% coverage, break-glass groups with
+two members, rows already dispositioned in HelloID. Output is deterministic per seed, so two
+seeds give you a pair of exports to try the diff on. The generated file is gitignored like
+any other export.
 
 ## Distribute it
 
@@ -213,6 +230,7 @@ js/views.js         analyst views + drawers + Markdown report
 js/board.js         the printable board report
 js/app.js           state, routing, language switch, import pipeline
 build.py            single-file + zip bundler
+make-sample.py      synthetic export generator (no real data ships here)
 devserve.py         no-cache static server used by serve.sh
 ```
 

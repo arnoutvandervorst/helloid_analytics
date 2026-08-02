@@ -71,7 +71,7 @@ window.HR = window.HR || {};
 
     'empty.title': 'Import a HelloID reconciliation export',
     'empty.body': 'Drag the CSV anywhere on this page, or use Import CSV in the top bar. Everything is processed in your browser — nothing is uploaded.',
-    'empty.sample': 'Load ReconciliationReport.csv from this folder',
+    'empty.sample': 'Load the export from this folder',
     'empty.columns': 'Expected columns: System, Person, AccountDisplayName, AccountUserName, AccountEnabled, PermissionDisplayName, PermissionConfigurationDisplayName, SubPermissionDisplayName, Issue, Resolution.',
 
     /* ---- toasts ---- */
@@ -822,7 +822,7 @@ window.HR = window.HR || {};
 
     'empty.title': 'Importeer een HelloID-reconciliatie-export',
     'empty.body': 'Sleep de CSV ergens op deze pagina, of gebruik CSV importeren bovenin. Alles wordt in je browser verwerkt — er gaat niets naar buiten.',
-    'empty.sample': 'Laad ReconciliationReport.csv uit deze map',
+    'empty.sample': 'Laad de export uit deze map',
     'empty.columns': 'Verwachte kolommen: System, Person, AccountDisplayName, AccountUserName, AccountEnabled, PermissionDisplayName, PermissionConfigurationDisplayName, SubPermissionDisplayName, Issue, Resolution.',
 
     'toast.duplicate': 'Identiek aan momentopname "{name}" — niet opnieuw opgeslagen.',

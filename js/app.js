@@ -99,14 +99,22 @@
     reader.readAsText(file);
   }
 
+  /* No export ships with the repo, so try the usual names: whatever the user dropped
+     in the folder first, then the file make-sample.py writes. */
+  const SAMPLE_FILES = ['ReconciliationReport.csv', 'sample-recon.csv'];
+
   async function loadSample() {
-    try {
-      const res = await fetch('ReconciliationReport.csv');
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      importText(await res.text(), 'ReconciliationReport.csv');
-    } catch (e) {
-      U.toast(T('toast.sampleFail'), 8000);
+    for (const name of SAMPLE_FILES) {
+      try {
+        const res = await fetch(name);
+        if (!res.ok) continue;
+        const text = await res.text();
+        if (/^\s*</.test(text)) continue;          // a 404 page, not a CSV
+        importText(text, name);
+        return;
+      } catch (e) { /* not served, or file:// — try the next name */ }
     }
+    U.toast(T('toast.sampleFail'), 8000);
   }
 
   /* ------------------------------------------------------------- snapshots */
