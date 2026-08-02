@@ -640,12 +640,115 @@
   }
 
   /* ================================================================= PEOPLE */
+  /** Accounts belonging to each vault person: HelloID's correlation first, then the
+      name matches, then whatever the reconciliation export already linked. */
+  function peopleIndex(m) {
+    const map = new Map();
+    const add = (person, account) => {
+      if (!map.has(person.personId)) map.set(person.personId, { person, accounts: [] });
+      const entry = map.get(person.personId);
+      if (!entry.accounts.includes(account)) entry.accounts.push(account);
+    };
+    const idx = HR.vault.accountIndex(m.vault);
+    for (const a of m.accountList) {
+      const hit = idx.get(a.userName.toLowerCase());
+      if (hit) add(hit.person, a);
+      else if (a.personRaw) {
+        const p = m.vault.byDisplayName.get(a.personRaw);
+        if (p) add(p, a);
+      }
+    }
+    if (m.correlation) m.correlation.matches.forEach(x => add(x.person, x.account));
+    m.vault.persons.forEach(p => { if (!map.has(p.personId)) map.set(p.personId, { person: p, accounts: [] }); });
+    return map;
+  }
+
+  const STATE_SEV = { future: 'info', current: 'good', past: 'critical', unknown: 'medium' };
+
+  function offsetText(life) {
+    if (life.days == null) return life.state === 'current' ? T('pp.noEnd') : '—';
+    if (life.state === 'future') return T('pp.startsIn', { n: U.fmtInt(life.days) });
+    if (life.state === 'current') return T('pp.endsIn', { n: U.fmtInt(life.days) });
+    if (life.state === 'past') return T('pp.endedAgo', { n: U.fmtInt(life.days) });
+    return '—';
+  }
+
   function peopleView(m) {
     const f = document.createDocumentFragment();
+    const hasVault = !!m.vault;
+
     f.appendChild(el('div', { class: 'view-head' }, el('div', {}, [
       el('h1', { text: T('pp.title') }),
-      el('p', { text: T('pp.lead') })
+      el('p', { text: hasVault
+        ? T('pp.vaultLead', { n: m.vault.persons.length, c: m.vault.meta.contractCount })
+        : T('pp.lead') })
     ])));
+
+    if (!hasVault) return peopleFromRecon(m, f);
+
+    const index = peopleIndex(m);
+    const rows = Array.from(index.values()).map(entry => {
+      const life = HR.vault.lifecycle(entry.person);
+      const perms = U.uniq(entry.accounts.flatMap(a => a.perms));
+      const pc = entry.person.primaryContract;
+      return {
+        person: entry.person,
+        accounts: entry.accounts,
+        perms,
+        life,
+        department: pc ? (pc.department.name || pc.department.externalId) : '',
+        title: pc ? (pc.title.name || pc.title.code) : '',
+        monthlyCost: U.sum(entry.accounts, a => a.monthlyCost),
+        maxRisk: entry.accounts.length ? Math.max.apply(null, entry.accounts.map(a => a.riskScore)) : 0
+      };
+    });
+
+    const counts = U.counts(rows, r => r.life.state);
+    const k = el('div', { class: 'grid g4' });
+    k.append(
+      tile(T('pp.persons'), U.fmtInt(rows.length), T('pp.personsFoot'), { small: true }),
+      tile(T('pp.stateCurrent'), U.fmtInt(counts.get('current') || 0), T('pp.contracts'), { small: true, severity: 'good' }),
+      tile(T('pp.statePast'), U.fmtInt(counts.get('past') || 0), T('pp.statePast'), { small: true, severity: (counts.get('past') || 0) ? 'critical' : 'good' }),
+      tile(T('pp.stateFuture'), U.fmtInt(counts.get('future') || 0), T('pp.stateFuture'), { small: true, severity: 'info' })
+    );
+    f.appendChild(k);
+
+    f.appendChild(el('div', { style: 'margin-top:14px' }, card(null, null, HR.table.make({
+      columns: [
+        { key: 'name', label: T('c.person'), value: r => r.person.displayName },
+        { key: 'externalId', label: T('c.employeeId'), value: r => r.person.externalId },
+        { key: 'state', label: T('pp.state'), value: r => r.life.state,
+          render: r => el('span', { class: 'sev ' + STATE_SEV[r.life.state], text: T('pp.state' + r.life.state.charAt(0).toUpperCase() + r.life.state.slice(1)) }) },
+        { key: 'offset', label: T('pp.offset'), num: true, hint: T('pp.offsetHint'),
+          value: r => r.life.state === 'past' ? -(r.life.days || 0) : (r.life.days == null ? 1e9 : r.life.days),
+          render: r => offsetText(r.life) },
+        { key: 'contracts', label: T('pp.contracts'), num: true, value: r => r.person.contracts.length },
+        { key: 'department', label: T('pp.department'), value: r => r.department },
+        { key: 'title', label: T('pp.jobTitle'), value: r => r.title },
+        { key: 'accounts', label: T('pp.accounts'), num: true, value: r => r.accounts.length },
+        { key: 'perms', label: T('c.perms'), num: true, value: r => r.perms.length },
+        { key: 'cost', label: T('c.costMo'), num: true, value: r => r.monthlyCost, render: r => U.fmtMoney(r.monthlyCost) },
+        { key: 'risk', label: T('pp.maxRisk'), num: true, value: r => r.maxRisk, render: r => r.accounts.length ? scoreBar(r.maxRisk) : '—' }
+      ],
+      rows, pageSize: 40, exportName: 'people',
+      initialSort: { key: 'state', dir: 1 },
+      search: (r, q) => (r.person.displayName + ' ' + r.person.externalId + ' ' + r.department + ' ' + r.title +
+        ' ' + r.accounts.map(a => a.userName).join(' ')).toLowerCase().includes(q),
+      filters: [
+        { key: 'state', label: T('pp.state'),
+          options: ['current', 'past', 'future', 'unknown'].map(v => ({ value: v, label: T('pp.state' + v.charAt(0).toUpperCase() + v.slice(1)) })),
+          match: (r, v) => r.life.state === v },
+        { key: 'accounts', label: T('pp.accounts'),
+          options: [{ value: 'with', label: '1+' }, { value: 'without', label: '0' }],
+          match: (r, v) => (v === 'with') === (r.accounts.length > 0) }
+      ],
+      onRowClick: r => drawerVaultPerson(r, m)
+    }))));
+    return f;
+  }
+
+  /** The pre-vault view: persons as the reconciliation export knows them. */
+  function peopleFromRecon(m, f) {
     const multi = m.personList.filter(p => p.accountCount > 1).length;
     const k = el('div', { class: 'grid g4' });
     k.append(
@@ -655,7 +758,6 @@
       tile(T('pp.unowned'), U.fmtInt(m.summary.orphanAccounts), T('pp.unownedFoot'), { small: true, severity: 'critical', onClick: () => HR.app.go('accounts', { filter: 'orphan' }) })
     );
     f.appendChild(k);
-
     f.appendChild(el('div', { style: 'margin-top:14px' }, card(null, null, HR.table.make({
       columns: [
         { key: 'name', label: T('c.person') },
@@ -672,6 +774,107 @@
       onRowClick: p => drawerPerson(p, m)
     }))));
     return f;
+  }
+
+  /** Combined entitlements as a table rather than a paragraph: sortable and exportable. */
+  function entitlementTable(perms, accounts, m, exportName) {
+    const rows = perms.map(p => ({
+      perm: p,
+      via: accounts.filter(a => a.permKeys.has(p.key)).map(a => a.userName).join(', ')
+    }));
+    return HR.table.make({
+      columns: [
+        { key: 'name', label: T('ru.cGroup'), value: r => r.perm.name },
+        { key: 'category', label: T('c.category'), value: r => r.perm.categoryLabel },
+        { key: 'holders', label: T('c.holders'), num: true, value: r => r.perm.holderCount },
+        { key: 'cost', label: T('c.unitMo'), num: true, value: r => r.perm.monthlyPrice || 0,
+          render: r => r.perm.monthlyPrice ? U.fmtMoney(r.perm.monthlyPrice) : '—' },
+        { key: 'risk', label: T('c.risk'), num: true, value: r => r.perm.riskScore },
+        { key: 'via', label: T('pp.accounts'), value: r => r.via }
+      ],
+      rows, pageSize: 15, exportName: exportName || 'entitlements',
+      initialSort: { key: 'risk', dir: -1 },
+      search: (r, q) => (r.perm.name + ' ' + r.perm.categoryLabel).toLowerCase().includes(q),
+      onRowClick: r => drawerPermission(r.perm, m)
+    });
+  }
+
+  /** A vault person: contracts, accounts, entitlements, and what the rules expect. */
+  function drawerVaultPerson(row, m) {
+    const p = row.person;
+    const head = el('div', {}, [
+      el('h2', { text: p.displayName }),
+      el('div', { class: 'row' }, [
+        el('span', { class: 'sev ' + STATE_SEV[row.life.state], text: T('pp.state' + row.life.state.charAt(0).toUpperCase() + row.life.state.slice(1)) }),
+        el('span', { class: 'pill', text: offsetText(row.life) }),
+        el('span', { class: 'pill', text: T('dr.accountsN', { n: row.accounts.length }) }),
+        p.blocked ? el('span', { class: 'pill removed', text: 'blocked' }) : null,
+        p.excluded ? el('span', { class: 'pill removed', text: 'excluded' }) : null
+      ])
+    ]);
+    const body = el('div', { class: 'stack' });
+    body.appendChild(dl([
+      [T('c.employeeId'), p.externalId || '—'],
+      [T('pp.department'), row.department || '—'],
+      [T('pp.jobTitle'), row.title || '—'],
+      [T('dr.monthlyCost'), U.fmtMoney(row.monthlyCost)]
+    ]));
+
+    body.appendChild(card(T('pp.drawerContracts'), T('dr.groupsN', { n: p.contracts.length }), HR.table.make({
+      columns: [
+        { key: 'start', label: T('pp.cStart'), value: c => c.startDate ? c.startDate.toISOString().slice(0, 10) : '—' },
+        { key: 'end', label: T('pp.cEnd'), value: c => c.endDate ? c.endDate.toISOString().slice(0, 10) : '—' },
+        { key: 'dept', label: T('pp.department'), value: c => c.department.name || c.department.externalId },
+        { key: 'title', label: T('pp.jobTitle'), value: c => c.title.name || c.title.code },
+        { key: 'type', label: T('pp.cType'), value: c => c.type.code || c.type.name },
+        { key: 'fte', label: T('pp.cFte'), num: true, value: c => (c.details || {}).Fte || 0 }
+      ],
+      rows: p.contracts, pageSize: 10, exportName: 'contracts-' + p.externalId,
+      initialSort: { key: 'start', dir: -1 }
+    })));
+
+    if (row.accounts.length) {
+      body.appendChild(card(T('pp.accounts'), null, HR.table.make({
+        columns: [
+          { key: 'userName', label: T('c.account') },
+          { key: 'enabled', label: T('c.state'), value: a => T(a.enabled === false ? 'c.disabled' : 'c.enabled') },
+          { key: 'permCount', label: T('c.perms'), num: true },
+          { key: 'monthlyCost', label: T('c.costMo'), num: true, render: a => U.fmtMoney(a.monthlyCost) },
+          { key: 'riskScore', label: T('c.risk'), num: true, render: a => scoreBar(a.riskScore) }
+        ], rows: row.accounts, pageSize: 10, exportName: 'accounts-' + p.externalId,
+        onRowClick: a => drawerAccount(a)
+      })));
+    }
+
+    if (row.perms.length) {
+      body.appendChild(card(T('pp.combined'), T('pp.combinedNote', { n: row.perms.length }),
+        entitlementTable(row.perms, row.accounts, m, 'entitlements-' + p.externalId)));
+    }
+
+    /* What the rules say this person should have, once a vault makes them evaluable. */
+    const prov = m.provisioning && m.provisioning.rows.find(r => r.person.personId === p.personId);
+    if (prov) {
+      body.appendChild(card(T('pp.drawerRules'), T('dr.groupsN', { n: prov.matchedRules.length }),
+        prov.matchedRules.length
+          ? el('ul', { class: 'clean' }, prov.matchedRules.map(r => el('li', {}, [
+              el('strong', { text: r.name }),
+              el('span', { class: 'pill', text: r.status })
+            ])))
+          : el('p', { class: 'note', text: T('ru.noRule') })));
+      if (prov.missing.length || prov.extra.length) {
+        body.appendChild(card(T('pp.drawerExpected'), null, [
+          prov.missing.length ? el('div', {}, [
+            el('h3', { text: T('pp.missingHere') }),
+            entitlementTable(prov.missing.map(x => x.perm), row.accounts, m, 'expected-not-held-' + p.externalId)
+          ]) : null,
+          prov.extra.length ? el('div', { style: 'margin-top:12px' }, [
+            el('h3', { text: T('pp.heldNotExpected') }),
+            entitlementTable(prov.extra, row.accounts, m, 'held-not-expected-' + p.externalId)
+          ]) : null
+        ].filter(Boolean)));
+      }
+    }
+    openDrawer(head, body);
   }
 
   /* =================================================================== DIFF */
@@ -859,11 +1062,27 @@
     f.appendChild(el('div', { class: 'view-head' }, [
       el('div', {}, [
         el('h1', { text: T('st.title') }),
-        el('p', { text: T('st.lead') })
+        el('p', { text: T('st.lead') }),
+        el('p', { class: 'note', text: T('st.persistNote') })
       ]),
       el('div', { class: 'row' }, [
         el('button', { class: 'btn primary', text: T('st.save'), onclick: () => { HR.config.save(cfg); HR.app.rebuild(); U.toast(T('toast.settingsSaved')); } }),
-        el('button', { class: 'btn', text: T('st.reset'), onclick: () => { if (confirm(T('st.resetConfirm'))) { HR.config.reset(); HR.app.rebuild(); HR.app.go('settings'); } } })
+        el('button', { class: 'btn', text: T('st.reset'), onclick: () => { if (confirm(T('st.resetConfirm'))) { HR.config.reset(); HR.app.rebuild(); HR.app.go('settings'); } } }),
+        el('button', { class: 'btn', text: T('st.exportFile'), onclick: () => {
+          HR.config.save(cfg);
+          U.download('analytics-settings.json', HR.config.exportJson(), 'application/json');
+        } }),
+        el('label', { class: 'btn' }, [
+          document.createTextNode(T('st.importFile')),
+          el('input', { type: 'file', accept: '.json,application/json', hidden: true, onchange: async e => {
+            const file = e.target.files[0]; if (!file) return;
+            try {
+              const counts = HR.config.importJson(await file.text());
+              HR.app.applyChrome(); HR.app.rebuild(); HR.app.go('settings');
+              U.toast(T('toast.settingsImported', counts), 5000);
+            } catch (err) { U.toast(err.message, 7000); }
+          } })
+        ])
       ])
     ]));
 
@@ -1623,9 +1842,9 @@
       ], rows: per.accounts, pageSize: 10, exportName: 'person-accounts',
       onRowClick: a => drawerAccount(a)
     })));
-    const allPerms = U.uniq(per.accounts.flatMap(a => a.perms.map(p => p.name)));
+    const allPerms = U.uniq(per.accounts.flatMap(a => a.perms));
     body.appendChild(card(T('pp.combined'), T('pp.combinedNote', { n: allPerms.length }),
-      el('p', { class: 'note', text: allPerms.join(', ') })));
+      entitlementTable(allPerms, per.accounts, m, 'entitlements-' + per.name)));
     openDrawer(head, body);
   }
 

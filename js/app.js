@@ -15,6 +15,7 @@
     diff: null,
     review: null,          // pending configuration proposals for the current import
     ruleSet: null,         // parsed HelloID business-rule export, when one is loaded
+    vault: null,           // parsed HelloID Vault export: persons, contracts, attributes
     view: 'overview',
     params: {}
   };
@@ -56,7 +57,9 @@
 
   /* ---------------------------------------------------------------- import */
   async function importText(text, fileName) {
-    /* One drop zone, two exports: route by what the header says this file is. */
+    /* One drop zone: route by what the file says it is. JSON is either a settings
+       file, a snapshot bundle or a vault export. */
+    if (/^\s*[{[]/.test(text)) return importJsonFile(text, fileName);
     if (looksLikeRuleExport(text)) return importRules(text, fileName);
 
     let parsed;
@@ -65,7 +68,7 @@
     if (parsed.warnings.length) U.toast(parsed.warnings[0], 5000);
 
     state.parsed = parsed;
-    state.model = HR.model.build(parsed.records, { ruleSet: state.ruleSet });
+    state.model = HR.model.build(parsed.records, { ruleSet: state.ruleSet, vault: state.vault });
 
     const snap = HR.store.makeSnapshot(parsed, state.model);
     const dup = state.snapshots.find(s => s.fingerprint === parsed.meta.fingerprint);
@@ -101,6 +104,49 @@
       const header = HR.parse.parseDelimited(firstLine + '\n', HR.parse.sniffDelim(text))[0] || [];
       return HR.rules.looksLikeRules(header);
     } catch (e) { return false; }
+  }
+
+  async function importJsonFile(text, fileName) {
+    let peek = null;
+    try { peek = JSON.parse(text); } catch (e) { /* handled below */ }
+    if (peek && HR.config.looksLikeSettings(peek)) {
+      try {
+        const counts = HR.config.importJson(text);
+        HR.app.applyChrome();
+        rebuild();
+        U.toast(T('toast.settingsImported', counts), 5000);
+      } catch (err) { U.toast(err.message, 7000); }
+      return;
+    }
+    if (peek && (peek.kind === 'helloid-recon-snapshots' || Array.isArray(peek.snapshots))) {
+      try {
+        const n = await HR.store.importJSON(text);
+        await refreshSnapshots();
+        U.toast(T('toast.importedSnaps', { n: n }));
+      } catch (err) { U.toast(T('toast.importFail', { msg: err.message }), 5000); }
+      return;
+    }
+    return importVault(text, fileName);
+  }
+
+  /** The vault attaches to whatever else is loaded; it is what makes conditions evaluable. */
+  async function importVault(text, fileName) {
+    let vault;
+    try { vault = HR.vault.parse(text, fileName); }
+    catch (err) { U.toast(err.message, 7000); return; }
+    if (vault.warnings.length) U.toast(vault.warnings[0], 5000);
+
+    state.vault = vault;
+    if (!state.model) {
+      U.toast(T('toast.vaultNoRecon', { n: vault.persons.length }), 6000);
+      render();
+      return;
+    }
+    rebuild();
+    U.toast(T('toast.vaultLoaded', {
+      n: vault.persons.length, c: vault.meta.contractCount
+    }), 5000);
+    go(state.ruleSet ? 'rules' : 'people');
   }
 
   /** Business rules attach to whatever reconciliation export is loaded. */
@@ -167,7 +213,7 @@
       if (!snap) { U.toast(T('toast.snapNotFound')); return; }
       state.baselineId = id;
       state.baselineSnapshot = snap;
-      state.baselineModel = HR.model.build(snap.records, { ruleSet: state.ruleSet });
+      state.baselineModel = HR.model.build(snap.records, { ruleSet: state.ruleSet, vault: state.vault });
       await recomputeDiff();
       if (!quiet) U.toast(T('toast.baselineSet', { name: snap.name }));
     }
@@ -185,7 +231,7 @@
     if (!snap) { U.toast(T('toast.snapNotFound')); return; }
     state.currentSnapshotId = id;
     state.parsed = { records: snap.records, meta: { fileName: snap.fileName, fingerprint: snap.fingerprint } };
-    state.model = HR.model.build(snap.records, { ruleSet: state.ruleSet });
+    state.model = HR.model.build(snap.records, { ruleSet: state.ruleSet, vault: state.vault });
     if (state.baselineId === id) await setBaseline(null);
     await recomputeDiff();
     updateTopbar();
@@ -195,7 +241,7 @@
 
   /** Re-run the whole pipeline after a settings change. */
   function rebuild() {
-    const opts = { ruleSet: state.ruleSet };
+    const opts = { ruleSet: state.ruleSet, vault: state.vault };
     if (state.parsed) state.model = HR.model.build(state.parsed.records, opts);
     if (state.baselineSnapshot) state.baselineModel = HR.model.build(state.baselineSnapshot.records, opts);
     recomputeDiff();

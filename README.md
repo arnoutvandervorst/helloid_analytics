@@ -138,6 +138,46 @@ Each proposal carries its members, its exceptions (accounts holding all but one 
 
 Mining is cached per model, samples above 5,000 accounts, and raises its support floor with the population — 97 ms on the 5k export, ~50 ms at 50k and 200k.
 
+## Vault export
+
+Drop a HelloID Vault export (JSON: `{ Persons: [...], Departments: [...] }`) on the page and
+the analysis stops being limited to what the target system shows. `DisplayName` is
+`Name (ExternalId)` — the same string the reconciliation export puts in its Person column —
+so the two join without fuzzy matching.
+
+What the vault makes possible:
+
+- **Conditions become evaluable.** `js/evaluate.js` resolves each clause against real
+  attributes: `Department.ExternalId`, `Title.*`, `Location.Name`, `Type.Code`,
+  `Custom.*`, `Person: active`, and the `Time frame` window against contract dates. A rule
+  that selects nobody now reports *which clause* excluded everyone.
+- **Drift per person, not per group.** Expected entitlements are the union over every rule
+  a person matches (rules stack), compared against what their accounts actually hold.
+- **Leavers.** Every contract ended while an account is still enabled — invisible to the
+  reconciliation export alone, which knows the account is on but not that the employment
+  behind it is over.
+- **Unowned accounts get names.** `js/correlate.js` scores unowned accounts against vault
+  people. The most useful class is former employees: correlation is the first thing that
+  breaks when someone leaves the source, so their account arrives as an orphan with no
+  trace of who it was.
+- **Secondary accounts get linked.** An `adm-` or function account rarely has its own person
+  record, so reconciliation calls it ownerless. It is not — the owner is the person holding
+  the main account, and that is who should be recertifying it and losing it on departure.
+
+A clause whose facet the engine does not recognise makes the rule *indeterminate* for that
+person, never silently true. Matching is scored and never automatic: ties are reported as
+ties rather than guessed.
+
+Vault exports carry person and contract data, so `vault*.json` is gitignored alongside the
+CSV exports.
+
+## Settings file
+
+Settings live in the browser, which means a bundle opened straight from disk starts fresh
+every run. **Settings → Export settings file** writes the whole tunable model — price book,
+taxonomy, account classes, risk weights, effort model, branding, language — to one JSON
+file. Import it from the same panel, or just drop it anywhere on the page.
+
 ## Performance
 
 Measured in Chrome on the real 5k-row export and on synthetic 50k/200k exports:

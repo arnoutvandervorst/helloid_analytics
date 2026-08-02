@@ -366,5 +366,245 @@
     return out;
   }
 
-  HR.findings = { run, runComparison, RULES, COMPARISON_RULES };
+
+  /* ---------------------------------------------------------------------------
+     Vault findings — only when a vault export makes conditions evaluable. */
+  const VAULT_RULES = [
+    function ruleSelectsNobody(m) {
+      const ev = m.evaluation;
+      const dead = [];
+      for (const [, b] of ev.perRule) {
+        if (b.matched.length || !b.rule.scopingConditions.length) continue;
+        const blockers = Array.from(b.blockingClauses.entries()).sort((x, y) => y[1] - x[1]);
+        dead.push({ rule: b.rule, blockers });
+      }
+      if (!dead.length) return null;
+      return Object.assign({
+        id: 'vault-rule-selects-nobody', severity: 'high', category: T('fi.cat.rules'),
+        entities: dead.map(d => ({
+          type: 'rule', key: d.rule.name, label: d.rule.name,
+          detail: T('fi.vault-rule-selects-nobody.detail', {
+            clause: d.blockers.length ? d.blockers[0][0] : '—',
+            n: d.blockers.length ? d.blockers[0][1] : 0
+          })
+        })),
+        impactMonthly: 0
+      }, prose('vault-rule-selects-nobody', { n: dead.length }));
+    },
+
+    function evaluationDisagrees(m) {
+      const ev = m.evaluation;
+      const rows = [];
+      for (const [, b] of ev.perRule) {
+        const declared = b.rule.personsEvaluated;
+        if (declared == null) continue;
+        const ours = b.matched.length;
+        /* Small differences are timing; a large one means the rule has not been
+           evaluated since the data changed, or the conditions read differently here. */
+        if (Math.abs(ours - declared) >= Math.max(5, declared * 0.25)) {
+          rows.push({ rule: b.rule, ours, declared });
+        }
+      }
+      if (!rows.length) return null;
+      return Object.assign({
+        id: 'vault-evaluation-drift', severity: 'medium', category: T('fi.cat.rules'),
+        entities: rows.map(r => ({
+          type: 'rule', key: r.rule.name, label: r.rule.name,
+          detail: T('fi.vault-evaluation-drift.detail', { ours: r.ours, declared: r.declared })
+        })),
+        impactMonthly: 0
+      }, prose('vault-evaluation-drift', { n: rows.length }));
+    },
+
+    function overProvisioned(m) {
+      const rows = m.provisioning.rows.filter(r => r.extra.length);
+      if (!rows.length) return null;
+      /* "Extra" is measured against the rules that exist. Where the rule set describes
+         only a fraction of the groups in use, almost everything reads as extra — true,
+         but a statement about the rule set rather than about these people. */
+      const coverage = m.comparison ? m.comparison.summary.coverage : 1;
+      const thin = coverage < 0.5;
+      return Object.assign({
+        id: 'vault-over-provisioned', severity: thin ? 'medium' : 'high', category: T('fi.cat.entitlements'),
+        entities: rows.slice(0, 80).map(r => ({
+          type: 'account', key: r.accounts[0] ? r.accounts[0].key : r.person.personId,
+          label: r.person.displayName,
+          detail: T('fi.vault-over-provisioned.detail', {
+            n: r.extra.length, list: r.extra.slice(0, 4).map(p => p.name).join(', ')
+          })
+        })),
+        impactMonthly: U.sum(rows, r => r.extraCost)
+      }, prose('vault-over-provisioned', {
+        n: rows.length, total: U.sum(rows, r => r.extra.length),
+        coverage: U.fmtPct(coverage, 0)
+      }, thin ? 'fi.vault-over-provisioned.whyThin' : 'fi.vault-over-provisioned.why'));
+    },
+
+    function underProvisioned(m) {
+      const rows = m.provisioning.rows.filter(r => r.missing.length);
+      if (!rows.length) return null;
+      return Object.assign({
+        id: 'vault-under-provisioned', severity: 'medium', category: T('fi.cat.service'),
+        entities: rows.slice(0, 80).map(r => ({
+          type: 'account', key: r.accounts[0] ? r.accounts[0].key : r.person.personId,
+          label: r.person.displayName,
+          detail: T('fi.vault-under-provisioned.detail', {
+            n: r.missing.length, list: r.missing.slice(0, 4).map(x => x.perm.name).join(', ')
+          })
+        })),
+        impactMonthly: 0
+      }, prose('vault-under-provisioned', {
+        n: rows.length, total: U.sum(rows, r => r.missing.length)
+      }));
+    },
+
+    function leaversStillEnabled(m) {
+      const rows = m.provisioning.leavers;
+      if (!rows.length) return null;
+      return Object.assign({
+        id: 'vault-leaver-enabled', severity: 'critical', category: T('fi.cat.identity'),
+        entities: rows.map(r => ({
+          type: 'account', key: r.accounts[0].key, label: r.person.displayName,
+          detail: T('fi.vault-leaver-enabled.detail', {
+            date: r.endedOn ? U.fmtDate(r.endedOn).split(',')[0] : '—',
+            accounts: r.accounts.map(a => a.userName).join(', ')
+          })
+        })),
+        impactMonthly: U.sum(rows, r => U.sum(r.accounts, a => a.monthlyCost))
+      }, prose('vault-leaver-enabled', { n: rows.length }));
+    },
+
+    function correlationMismatch(m) {
+      const rows = m.provisioning.miscorrelated;
+      if (!rows.length) return null;
+      return Object.assign({
+        id: 'vault-correlation-mismatch', severity: 'medium', category: T('fi.cat.dataQuality'),
+        entities: rows.map(r => ({
+          type: 'account', key: r.account.key, label: r.account.userName,
+          detail: T('fi.vault-correlation-mismatch.detail', { person: r.person.displayName })
+        })),
+        impactMonthly: 0
+      }, prose('vault-correlation-mismatch', { n: rows.length }));
+    },
+
+    function personsWithoutAccount(m) {
+      const rows = m.provisioning.accountless.filter(p => p.activeContracts.length);
+      if (!rows.length) return null;
+      return Object.assign({
+        id: 'vault-no-account', severity: 'medium', category: T('fi.cat.service'),
+        entities: rows.slice(0, 80).map(p => ({
+          type: 'person', key: p.personId, label: p.displayName,
+          detail: T('fi.vault-no-account.detail', {
+            dept: p.primaryContract ? (p.primaryContract.department.name || p.primaryContract.department.externalId || '—') : '—'
+          })
+        })),
+        impactMonthly: 0
+      }, prose('vault-no-account', { n: rows.length }));
+    }
+  ];
+
+  const CORRELATION_RULES = [
+    function formerEmployeeAccounts(m) {
+      const c = m.correlation;
+      const hits = c.former;
+      if (!hits.length) return null;
+      const enabled = hits.filter(h => h.stillEnabled);
+      return Object.assign({
+        id: 'correlate-former-employee', severity: enabled.length ? 'critical' : 'high',
+        category: T('fi.cat.identity'),
+        entities: hits.map(h => ({
+          type: 'account', key: h.account.key, label: h.account.userName,
+          detail: T('fi.correlate-former-employee.detail', {
+            person: h.person.displayName,
+            date: h.endedOn ? U.fmtDate(h.endedOn).split(',')[0] : '—',
+            days: h.daysSinceEnd == null ? '—' : U.fmtInt(h.daysSinceEnd),
+            state: T(h.stillEnabled ? 'c.enabled' : 'c.disabled'),
+            evidence: h.evidence.join(', ')
+          })
+        })),
+        impactMonthly: U.sum(hits, h => h.monthlyCost),
+        recoverable: true
+      }, prose('correlate-former-employee', { n: hits.length, enabled: enabled.length }));
+    },
+
+    function unownedMatchedToCurrent(m) {
+      const hits = m.correlation.matches.filter(h => !h.former);
+      if (!hits.length) return null;
+      return Object.assign({
+        id: 'correlate-current-employee', severity: 'medium', category: T('fi.cat.dataQuality'),
+        entities: hits.map(h => ({
+          type: 'account', key: h.account.key, label: h.account.userName,
+          detail: T('fi.correlate-current-employee.detail', {
+            person: h.person.displayName, evidence: h.evidence.join(', ')
+          })
+        })),
+        impactMonthly: 0
+      }, prose('correlate-current-employee', { n: hits.length }));
+    },
+
+    function secondaryAccounts(m) {
+      const groups = (m.linkedAccounts || { groups: [] }).groups.filter(g => g.unlinkedSecondary.length);
+      if (!groups.length) return null;
+      const priv = groups.filter(g => g.privileged.length).length;
+      return Object.assign({
+        id: 'correlate-secondary-account', severity: priv ? 'high' : 'medium',
+        category: T('fi.cat.identity'),
+        entities: groups.flatMap(g => g.unlinkedSecondary.map(x => ({
+          type: 'account', key: x.account.key, label: x.account.userName,
+          detail: T('fi.correlate-secondary-account.detail', {
+            person: g.person.displayName,
+            main: g.primary.account.userName,
+            cls: x.account.clsLabel
+          })
+        }))),
+        impactMonthly: 0
+      }, prose('correlate-secondary-account', {
+        n: U.sum(groups, g => g.unlinkedSecondary.length), p: groups.length
+      }));
+    },
+
+    function ambiguousOwners(m) {
+      const hits = m.correlation.ambiguous;
+      if (!hits.length) return null;
+      return Object.assign({
+        id: 'correlate-ambiguous', severity: 'low', category: T('fi.cat.dataQuality'),
+        entities: hits.map(h => ({
+          type: 'account', key: h.account.key, label: h.account.userName,
+          detail: T('fi.correlate-ambiguous.detail', {
+            list: h.candidates.map(c => c.person.displayName).join(' / ')
+          })
+        })),
+        impactMonthly: 0
+      }, prose('correlate-ambiguous', { n: hits.length }));
+    }
+  ];
+
+  function runCorrelation(model) {
+    const out = [];
+    for (const rule of CORRELATION_RULES) {
+      let f = null;
+      try { f = rule(model); } catch (e) { console.error('correlation rule failed:', rule.name, e); }
+      if (!f) continue;
+      if (f.count == null) f.count = f.entities.length;
+      f.annualImpact = (f.impactMonthly || 0) * 12;
+      out.push(f);
+    }
+    return out;
+  }
+
+  function runVault(model) {
+    const out = [];
+    for (const rule of VAULT_RULES) {
+      let f = null;
+      try { f = rule(model); } catch (e) { console.error('vault rule failed:', rule.name, e); }
+      if (!f) continue;
+      if (f.count == null) f.count = f.entities.length;
+      f.annualImpact = (f.impactMonthly || 0) * 12;
+      out.push(f);
+    }
+    return out;
+  }
+
+  HR.findings = { run, runComparison, runVault, runCorrelation,
+    RULES, COMPARISON_RULES, VAULT_RULES, CORRELATION_RULES };
 })(window.HR);

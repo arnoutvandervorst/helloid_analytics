@@ -1,5 +1,8 @@
-# Reconciliation exports stay out of the repo — they carry account and person names.
+# Exports stay out of the repo — they carry account, person and contract data.
 *.csv
+vault*.json
+Vault*.json
+*-vault.json
 
 # Build output; build.py regenerates it.
 dist/

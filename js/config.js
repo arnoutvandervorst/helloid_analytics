@@ -180,5 +180,46 @@
     return 'low';
   }
 
-  HR.config = { get: load, save, reset, DEFAULTS, categoryFor, accountClassFor, priceFor, severityOf, clone, labelOf };
+  /* Everything a run depends on, in one file. Opened from disk the app has no durable
+     storage, so this is how a tuned price book and taxonomy survive to the next session
+     — and how they travel to a colleague. */
+  const FILE_KIND = 'helloid-analytics-settings';
+
+  function exportJson() {
+    return JSON.stringify({
+      kind: FILE_KIND,
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      language: HR.i18n ? HR.i18n.lang : 'en',
+      settings: stripCompiled(load()),
+      branding: HR.brand ? HR.brand.state : null
+    }, null, 2);
+  }
+
+  function importJson(text) {
+    let data;
+    try { data = JSON.parse(text); }
+    catch (e) { throw new Error('Settings file is not valid JSON: ' + e.message); }
+    if (!data || data.kind !== FILE_KIND || !data.settings) {
+      throw new Error('Not a settings file for this tool (expected kind "' + FILE_KIND + '").');
+    }
+    current = deepMerge(clone(DEFAULTS), data.settings);
+    adoptKeys(current);
+    save(current);
+    if (data.branding && HR.brand) {
+      HR.brand.set(data.branding);
+      HR.brand.apply();
+    }
+    if (data.language && HR.i18n) HR.i18n.setLang(data.language);
+    return {
+      categories: current.categories.length,
+      classes: current.accountClasses.length,
+      prices: current.priceBook.length
+    };
+  }
+
+  const looksLikeSettings = data => !!data && data.kind === FILE_KIND;
+
+  HR.config = { get: load, save, reset, DEFAULTS, categoryFor, accountClassFor, priceFor,
+    severityOf, clone, labelOf, exportJson, importJson, looksLikeSettings, FILE_KIND };
 })(window.HR);

@@ -160,5 +160,109 @@
     };
   }
 
-  HR.compare = { compare };
+  /* ---------------------------------------------------------------------------
+     With a vault loaded the comparison stops being set-level. Rules can be evaluated
+     against real people, so "who should hold this" becomes answerable and the drift
+     splits per person rather than per group. */
+  function provisioning(model, ruleSet, vault, evaluation) {
+    const idx = HR.vault.accountIndex(vault);
+    const byPerson = new Map();
+
+    /* Tie each vault person to the accounts the reconciliation export knows about. */
+    for (const account of model.accountList) {
+      const hit = idx.get(account.userName.toLowerCase());
+      if (!hit) continue;
+      if (!byPerson.has(hit.person.personId)) byPerson.set(hit.person.personId, { person: hit.person, accounts: [] });
+      byPerson.get(hit.person.personId).accounts.push(account);
+    }
+
+    const rows = [];
+    for (const [personId, entry] of byPerson) {
+      const ev = evaluation.perPerson.get(personId);
+      if (!ev) continue;
+
+      /* Expected = union over every rule the person matches; rules stack. */
+      const expected = new Map();
+      for (const { rule } of ev.matchedRules) {
+        for (const ent of rule.entitlements) {
+          if (ent.isAccount) continue;
+          const perm = findPermissionFor(model, ent);
+          if (perm) expected.set(perm.key, { perm, rules: (expected.get(perm.key) || { rules: [] }).rules.concat(rule) });
+        }
+      }
+      const held = new Map();
+      entry.accounts.forEach(a => a.perms.forEach(p => held.set(p.key, p)));
+
+      const missing = Array.from(expected.values()).filter(x => !held.has(x.perm.key));
+      const extra = Array.from(held.values()).filter(p => !expected.has(p.key));
+
+      rows.push({
+        person: entry.person,
+        accounts: entry.accounts,
+        matchedRules: ev.matchedRules.map(x => x.rule),
+        indeterminate: ev.unknownRules.length > 0,
+        expected: Array.from(expected.values()),
+        held: Array.from(held.values()),
+        missing,
+        extra,
+        extraCost: U.sum(extra, p => p.monthlyPrice || 0)
+      });
+    }
+
+    /* People the vault knows but the reconciliation export has no account for. */
+    const accountless = vault.persons.filter(p => !byPerson.has(p.personId) && !p.excluded);
+
+    /* Contracts all ended, yet an account is still enabled — the leaver question the
+       reconciliation export alone cannot answer. */
+    const now = evaluation.when || new Date();
+    const leavers = [];
+    for (const [, entry] of byPerson) {
+      const p = entry.person;
+      if (!p.contracts.length) continue;
+      const allEnded = p.contracts.every(c => c.endDate && c.endDate < now);
+      if (!allEnded) continue;
+      const live = entry.accounts.filter(a => a.enabled !== false);
+      if (live.length) leavers.push({ person: p, accounts: live, endedOn: p.lastEnd });
+    }
+
+    /* Accounts the reconciliation export calls unowned while the vault has correlated
+       them to a person: a correlation problem, not an ownership one. */
+    const miscorrelated = model.accountList.filter(a => {
+      const hit = idx.get(a.userName.toLowerCase());
+      return a.orphan && hit;
+    }).map(a => ({ account: a, person: idx.get(a.userName.toLowerCase()).person }));
+
+    return {
+      rows,
+      accountless,
+      leavers,
+      miscorrelated,
+      summary: {
+        personsMatched: byPerson.size,
+        accountsCorrelated: U.sum(Array.from(byPerson.values()), e => e.accounts.length),
+        accountsUnknown: model.accountList.length - U.sum(Array.from(byPerson.values()), e => e.accounts.length),
+        underProvisioned: rows.filter(r => r.missing.length).length,
+        overProvisioned: rows.filter(r => r.extra.length).length,
+        missingTotal: U.sum(rows, r => r.missing.length),
+        extraTotal: U.sum(rows, r => r.extra.length),
+        extraCost: U.sum(rows, r => r.extraCost),
+        accountless: accountless.length,
+        leavers: leavers.length,
+        miscorrelated: miscorrelated.length
+      }
+    };
+  }
+
+  /* Same join the rule comparison uses: path first, then system + name. */
+  function findPermissionFor(model, ent) {
+    for (const p of model.permissionList) {
+      if (ent.path && p.path && pathKey(p.system, p.path) === pathKey(ent.system, ent.path)) return p;
+    }
+    for (const p of model.permissionList) {
+      if (nameKey(p.system, p.name) === nameKey(ent.system, ent.name)) return p;
+    }
+    return null;
+  }
+
+  HR.compare = { compare, provisioning };
 })(window.HR);

@@ -147,13 +147,31 @@
     /* A business-rule export turns "unmanaged" into two different problems, so the
        comparison runs before the summary and contributes its own findings. */
     const ruleSet = opts && opts.ruleSet;
+    const vault = opts && opts.vault;
+    if (vault) {
+      model.vault = vault;
+      /* Who did these unowned accounts belong to? Answerable only with person data. */
+      model.correlation = HR.correlate.matchUnowned(model, vault);
+      model.linkedAccounts = HR.correlate.linkAccounts(model, vault, model.correlation);
+      model.findings = model.findings.concat(HR.findings.runCorrelation(model));
+    }
     if (ruleSet) {
       model.comparison = HR.compare.compare(model, ruleSet);
+
+      /* With person data the conditions stop being decoration: rules can be evaluated,
+         which turns group-level drift into per-person over- and under-provisioning. */
+      if (vault) {
+        model.evaluation = HR.evaluate.evaluateAll(ruleSet, vault, { includeDrafts: true });
+        model.provisioning = HR.compare.provisioning(model, ruleSet, vault, model.evaluation);
+      }
       model.findings = model.findings
         .concat(HR.findings.runComparison(model))
+        .concat(model.provisioning ? HR.findings.runVault(model) : [])
         .sort((a, b) => HR.util.severityRank(a.severity) - HR.util.severityRank(b.severity) ||
           (b.impactMonthly || 0) - (a.impactMonthly || 0) || b.count - a.count);
     }
+    model.findings.sort((a, b) => HR.util.severityRank(a.severity) - HR.util.severityRank(b.severity) ||
+      (b.impactMonthly || 0) - (a.impactMonthly || 0) || b.count - a.count);
     model.summary = summarise(model);
     return model;
   }
