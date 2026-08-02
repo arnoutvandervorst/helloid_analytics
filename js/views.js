@@ -656,7 +656,7 @@
               document.createTextNode(T('org.cardPeople', { n: U.fmtInt(count) }) +
                 (subs ? ' · ' + T('org.cardSubs', { n: subs }) : '')),
               k.managers.size ? document.createTextNode(' · ' + Array.from(k.managers.keys())[0])
-                : el('span', { class: 'sev medium', text: ' ' + T('org.cardNoManager') })
+                : el('span', { class: 'sev medium org-flag', text: T('org.cardNoManager') })
             ]),
             bar
           ]);
@@ -820,6 +820,122 @@
     return wrap;
   }
 
+
+  /**
+   * The access journey: the pyramid travelled one group at a time.
+   *
+   * The rules table says what the model concluded. This says how it got there — for the
+   * group you are standing in, which entitlements are already a rule, which are
+   * inherited from above, which are held by enough people to become one, and which are
+   * held by so few that they are noise. That classification is the whole argument of the
+   * model, and it is only legible per group.
+   */
+  let journeyId = 'root';
+
+  function pyramidJourney(m, P) {
+    const node = P.nodes.get(journeyId) || P.root;
+    const cfg = Object.assign({ threshold: 0.9, pollutionBelow: 0.1 }, HR.config.get().pyramid || {});
+
+    const crumbs = [];
+    for (let n = node; n; n = n.parent) crumbs.unshift(n);
+
+    const bar = el('div', { class: 'crumbs' });
+    crumbs.forEach((n, i) => {
+      if (i) bar.appendChild(el('span', { class: 'note', text: '›' }));
+      bar.appendChild(el('button', {
+        class: 'btn sm' + (n === node ? ' primary' : ''),
+        text: n.label || T('py.everyone'),
+        onclick: () => { journeyId = n.id; HR.app.render(); }
+      }));
+    });
+
+    /* Entitlements this group holds, and what the model does with each. */
+    const inherited = new Set();
+    for (let a = node.parent; a; a = a.parent) a.ruleEnts.forEach(e => inherited.add(e));
+
+    const rows = Array.from(node.entCount.entries()).map(entry => {
+      const ent = entry[0], count = entry[1];
+      const coverage = count / (node.members.length || 1);
+      const state = node.ruleEnts.has(ent) ? 'rule'
+        : inherited.has(ent) ? 'inherited'
+        : coverage >= cfg.threshold ? 'minable'
+        : coverage <= cfg.pollutionBelow ? 'noise' : 'partial';
+      return { perm: m.permissions.get(ent), ent, count, coverage, state };
+    }).sort((a, b) => b.coverage - a.coverage);
+
+    const avg = node.members.length
+      ? U.sum(node.members, x => x.ents.size) / node.members.length : 0;
+    const parentAvg = node.parent && node.parent.members.length
+      ? U.sum(node.parent.members, x => x.ents.size) / node.parent.members.length : null;
+    const under = P.stats.under.filter(x => x.node === node).length;
+    const pollution = P.stats.pollution.filter(x => x.person.deepest === node).length;
+
+    const stats = el('div', { class: 'grid g4', style: 'margin:12px 0' });
+    stats.append(
+      tile(T('py.jPeople'), U.fmtInt(node.members.length),
+        node.parent ? T('py.jOfParent', { n: U.fmtInt(node.parent.members.length) }) : T('py.jWhole')),
+      tile(T('py.jAverage'), U.fmtNum(avg, 1),
+        parentAvg == null ? T('py.jNoParent')
+          : T('py.jVsParent', { delta: (avg - parentAvg >= 0 ? '+' : '') + U.fmtNum(avg - parentAvg, 1) })),
+      tile(T('py.jRulesHere'), U.fmtInt(node.rules.length),
+        T('py.jInherited', { n: U.fmtInt(inherited.size) })),
+      tile(T('py.jGaps'), U.fmtInt(under), T('py.jPollution', { n: U.fmtInt(pollution) }),
+        { severity: under ? 'medium' : 'good' })
+    );
+
+    /* Where to go next. */
+    const children = (node.children || []).slice()
+      .sort((a, b) => b.members.length - a.members.length);
+    const kidsWrap = children.length
+      ? el('div', { class: 'grid g3', style: 'margin-bottom:12px' }, children.map(k => {
+          const share = node.members.length ? k.members.length / node.members.length : 0;
+          const bar2 = el('span', { class: 'scorebar' });
+          const fill = el('i');
+          fill.style.width = (share * 100) + '%';
+          fill.style.background = C.slot(1);
+          bar2.appendChild(fill);
+          return el('div', { class: 'card click org-card', onclick: () => { journeyId = k.id; HR.app.render(); } }, [
+            el('div', { class: 'slot-head' }, [
+              el('strong', { text: k.label || T('py.empty') }),
+              el('span', { class: 'note mono', text: k.rules.length ? T('py.nRules', { n: k.rules.length }) : '' })
+            ]),
+            el('div', { class: 'note', text: T('py.jMembers', { n: U.fmtInt(k.members.length) }) }),
+            bar2
+          ]);
+        }))
+      : null;
+
+    const legend = el('div', { class: 'slot-actions', style: 'margin-bottom:8px' }, [
+      el('span', { class: 'sev good', text: T('py.st.rule') }),
+      el('span', { class: 'sev info', text: T('py.st.inherited') }),
+      el('span', { class: 'sev medium', text: T('py.st.minable') }),
+      el('span', { class: 'sev low', text: T('py.st.partial') }),
+      el('span', { class: 'sev high', text: T('py.st.noise') })
+    ]);
+
+    const table = HR.table.make({
+      columns: [
+        { key: 'ent', label: T('py.cEntitlement'), value: r => r.perm ? r.perm.name : r.ent,
+          render: r => r.perm
+            ? el('a', { href: '#', text: r.perm.name,
+                onclick: e => { e.preventDefault(); drawerPermission(r.perm, m); } })
+            : el('span', { text: r.ent }) },
+        { key: 'holders', label: T('py.cHolders'), value: r => r.count, align: 'right' },
+        { key: 'coverage', label: T('py.cOfGroup'), value: r => r.coverage,
+          render: r => scoreBar(Math.round(r.coverage * 100)) },
+        { key: 'state', label: T('py.cVerdict'), value: r => r.state,
+          render: r => el('span', {
+            class: 'sev ' + ({ rule: 'good', inherited: 'info', minable: 'medium',
+              partial: 'low', noise: 'high' })[r.state],
+            text: T('py.st.' + r.state) }) }
+      ],
+      rows, pageSize: 12, exportName: 'journey'
+    });
+
+    return card(T('py.journeyTitle'), T('py.journeyNote'),
+      [bar, stats, kidsWrap, legend, table].filter(Boolean));
+  }
+
   function pyramidView(m) {
     const f = document.createDocumentFragment();
     if (!m.vault) { f.appendChild(partialNotice(['vault'])); return f; }
@@ -905,6 +1021,8 @@
             coverage: U.fmtPct(P.suggestion.coverage, 0) })
         : T('py.noSuggestion') })
     ]));
+
+    f.appendChild(pyramidJourney(m, P));
 
     /* ---- the rules ---- */
     const ruleRows = P.rules.map(r => ({

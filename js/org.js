@@ -166,7 +166,7 @@
    * is overall, and only facets the organisation clearly maintains produce findings.
    */
   function quality(vault, opts) {
-    opts = Object.assign({ fillFloor: 0.8, when: null }, opts || {});
+    opts = Object.assign({ fillFloor: 0.8, horizonDays: 90, when: null }, opts || {});
     const now = opts.when || new Date();
     const persons = vault.persons;
 
@@ -232,6 +232,36 @@
       .map(entry => ({ externalId: entry[0], persons: entry[1] }));
     const noExternalId = persons.filter(p => !p.externalId);
 
+    /* ---- the joiner/mover/leaver window ----
+       A contract about to end and a contract about to start are the two moments where
+       access is wrong on purpose for a while. Both are in the vault already; nothing in
+       the reconciliation can see them coming. */
+    const endingSoon = [];
+    const startingSoon = [];
+    for (const person of persons) {
+      for (const c of contractsOf(person)) {
+        if (c.endDate && !isEnded(c, now)) {
+          const days = Math.round((c.endDate - now) / DAY);
+          if (days <= (opts.horizonDays || 90)) endingSoon.push({ person, contract: c, days });
+        }
+        if (c.startDate && c.startDate > now) {
+          const days = Math.round((c.startDate - now) / DAY);
+          if (days <= (opts.horizonDays || 90)) startingSoon.push({ person, contract: c, days });
+        }
+      }
+    }
+    endingSoon.sort((a, b) => a.days - b.days);
+    startingSoon.sort((a, b) => a.days - b.days);
+
+    /* People HelloID has been told to leave alone. Their access is unmanaged by design,
+       which is worth separating from access that is unmanaged by accident. */
+    const flagged = persons.filter(p => p.blocked || p.excluded || p.skipProcessing);
+
+    /* Two contracts running at once is legitimate and makes every "the person's
+       department" statement ambiguous — including the ones rules are written against. */
+    const multiContract = persons.filter(p => contractsOf(p).filter(c =>
+      (!c.startDate || c.startDate <= now) && (!c.endDate || c.endDate >= now)).length > 1);
+
     /* Everyone whose contracts have all ended, which is what makes an account a leaver's
        account rather than an unowned one. */
     const ended = persons.filter(p => contractsOf(p).length &&
@@ -248,6 +278,7 @@
       undeclared,
       noContract, backwards, openEnded, farFuture,
       duplicateIds, noExternalId, ended,
+      endingSoon, startingSoon, flagged, multiContract,
       summary: {
         persons: persons.length,
         contracts: U.sum(persons, p => contractsOf(p).length),
@@ -258,7 +289,11 @@
         missingValues: U.sum(facets.filter(f => f.anomalous), f => f.missing.length),
         noContract: noContract.length,
         duplicateIds: duplicateIds.length,
-        ended: ended.length
+        ended: ended.length,
+        endingSoon: endingSoon.length,
+        startingSoon: startingSoon.length,
+        flagged: flagged.length,
+        multiContract: multiContract.length
       }
     };
   }

@@ -456,6 +456,7 @@ table.board-tbl .owner-cell { border-bottom: 1px solid #e3e2dc; min-width: 90px;
 
 /* The role pyramid: bands widening downward, each level splitting the organisation
    further. Width encodes the level, the inner bar encodes rules placed there. */
+.org-card .org-flag { margin-left: 8px; }
 .pyramid { display: flex; flex-direction: column; align-items: center; gap: 6px; margin: 4px 0 14px; }
 .pyr-band, .pyr-across {
   position: relative; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;

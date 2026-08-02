@@ -114,6 +114,14 @@
           params: { person: secondary.person.displayName, main: secondary.main.userName } };
       }
       const match = matchByAccount.get(account.key);
+      /* HelloID was told not to process this person, so nothing about their account
+         being unmanaged is a surprise — it is the configured outcome. */
+      if (match && (match.person.excluded || match.person.skipProcessing || match.person.blocked)) {
+        return { kind: 'excluded-person', strength: 'strong',
+          params: { person: match.person.displayName,
+            flag: match.person.excluded ? T('fi.flag.excluded')
+              : (match.person.skipProcessing ? T('fi.flag.skip') : T('fi.flag.blocked')) } };
+      }
       if (match && match.former) {
         return { kind: 'former-employee', strength: 'likely',
           params: { person: match.person.displayName,

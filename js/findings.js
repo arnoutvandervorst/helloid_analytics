@@ -980,8 +980,115 @@
         })),
         impactMonthly: 0
       }, prose('vault-duplicate-id', { n: hits.length }));
+    },
+
+    /* Contracts about to end: the only warning a reconciliation cannot give, because
+       everything it reports has already happened. */
+    function contractsEndingSoon(m) {
+      const hits = m.orgQuality.endingSoon;
+      if (!hits.length) return null;
+      return Object.assign({
+        id: 'vault-contract-ending', severity: 'medium', category: T('fi.cat.process'),
+        entities: hits.slice(0, 80).map(h => ({
+          type: 'person', key: h.person.personId, label: h.person.displayName,
+          detail: T('fi.vault-contract-ending.detail', {
+            days: h.days, date: U.fmtDate(h.contract.endDate).split(',')[0],
+            dept: h.contract.department.name || '\u2014' })
+        })),
+        impactMonthly: 0
+      }, prose('vault-contract-ending', {
+        n: hits.length, people: new Set(hits.map(h => h.person.personId)).size,
+        soonest: hits[0].days
+      }));
+    },
+
+    function contractsStartingSoon(m) {
+      const hits = m.orgQuality.startingSoon;
+      if (!hits.length) return null;
+      return Object.assign({
+        id: 'vault-contract-starting', severity: 'info', category: T('fi.cat.process'),
+        entities: hits.slice(0, 80).map(h => ({
+          type: 'person', key: h.person.personId, label: h.person.displayName,
+          detail: T('fi.vault-contract-starting.detail', {
+            days: h.days, date: U.fmtDate(h.contract.startDate).split(',')[0],
+            dept: h.contract.department.name || '\u2014' })
+        })),
+        impactMonthly: 0
+      }, prose('vault-contract-starting', {
+        n: hits.length, people: new Set(hits.map(h => h.person.personId)).size
+      }));
+    },
+
+    /* HelloID has been told to leave these people alone, so their access is outside the
+       identity system on purpose — which is not the same as by accident. */
+    function flaggedPersons(m) {
+      const hits = m.orgQuality.flagged;
+      if (!hits.length) return null;
+      const label = p => [
+        p.blocked ? T('fi.flag.blocked') : null,
+        p.excluded ? T('fi.flag.excluded') : null,
+        p.skipProcessing ? T('fi.flag.skip') : null
+      ].filter(Boolean).join(', ');
+      return Object.assign({
+        id: 'vault-flagged-person', severity: 'medium', category: T('fi.cat.process'),
+        entities: hits.slice(0, 80).map(p => ({
+          type: 'person', key: p.personId, label: p.displayName, detail: label(p)
+        })),
+        impactMonthly: 0
+      }, prose('vault-flagged-person', {
+        n: hits.length, total: m.orgQuality.summary.persons
+      }));
+    },
+
+    /* Two contracts running at once: legitimate, and it makes "their department"
+       ambiguous for every rule written against one. */
+    function multipleActiveContracts(m) {
+      const hits = m.orgQuality.multiContract;
+      if (!hits.length) return null;
+      return Object.assign({
+        id: 'vault-multi-contract', severity: 'low', category: T('fi.cat.dataQuality'),
+        entities: hits.slice(0, 80).map(p => ({
+          type: 'person', key: p.personId, label: p.displayName,
+          detail: T('fi.vault-multi-contract.detail', {
+            n: p.activeContracts.length,
+            depts: U.uniq(p.activeContracts.map(c => c.department.name).filter(Boolean)).join(', ') || '\u2014' })
+        })),
+        impactMonthly: 0
+      }, prose('vault-multi-contract', { n: hits.length }));
+    },
+
+    /* A current employee with no account anywhere: the joiner half of the problem this
+       tool otherwise only sees from the leaver end. */
+    function activePersonsWithoutAccount(m) {
+      if (!m.vault) return null;
+      const index = HR.correlate.personAccountIndex(m, m.vault, m.correlation);
+      const now = new Date();
+      const hits = m.vault.persons.filter(p => {
+        if (!p.contracts.length) return false;
+        const life = HR.vault.lifecycle(p, now);
+        if (life.state !== 'current') return false;
+        const entry = index.get(p.personId);
+        return !entry || !entry.accounts.length;
+      });
+      if (!hits.length) return null;
+      return Object.assign({
+        id: 'vault-person-no-account', severity: 'high', category: T('fi.cat.access'),
+        entities: hits.slice(0, 80).map(p => {
+          const c = p.primaryContract || p.contracts[0];
+          return {
+            type: 'person', key: p.personId, label: p.displayName,
+            detail: T('fi.vault-person-no-account.detail', {
+              dept: (c && c.department.name) || '\u2014',
+              since: c && c.startDate ? U.fmtDate(c.startDate).split(',')[0] : '\u2014' })
+          };
+        }),
+        impactMonthly: 0
+      }, prose('vault-person-no-account', {
+        n: hits.length, total: m.vault.persons.length
+      }));
     }
   ];
+
 
   function runVaultQuality(model) {
     const out = [];
