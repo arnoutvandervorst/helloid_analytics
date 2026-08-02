@@ -1,6 +1,5 @@
-# ANALYTICS_HOSTNAME
-# Same pattern as familyplanner (3456) and reischeck (3457): the container listens on
-# loopback only, and the existing cloudflared tunnel "viga" fronts it with TLS.
+# The container listens on loopback only; whatever proxy or tunnel you put in front of it
+# terminates TLS. Change the published port to suit the host.
 services:
   app:
     build: .

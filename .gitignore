@@ -11,6 +11,10 @@ Vault*.json
 # Build output; build.py regenerates it.
 dist/
 
+# Deployment notes for a specific host: hostnames, users and internal addresses.
+deploy-local/
+DEPLOY-NUC.md
+
 # Session state and OS noise
 .remember/
 .DS_Store
