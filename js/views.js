@@ -958,8 +958,9 @@
   function drawerPyramidRule(m, P, row) {
     const body = document.createDocumentFragment();
     body.appendChild(dl([
-      [T('py.dCondition'), row.conditions],
-      [T('py.dLevel'), row.level === 99 ? T('py.combo') : 'L' + row.level],
+      [T('py.dCondition'), row.level === 0 ? T('py.dNoCondition') : row.conditions],
+      [T('py.dLevel'), row.level === 99 ? T('py.combo')
+        : row.level === 0 ? T('py.baselineTag') : 'L' + row.level],
       [T('py.dMembers'), U.fmtInt(row.members)],
       [T('py.dGrants'), U.fmtInt(row.entitlements)]
     ]));
@@ -1199,7 +1200,6 @@
     f.appendChild(el('div', { class: 'view-head' }, [
       el('div', {}, [
         el('h1', { text: T('py.title') }),
-        el('p', { text: T(m.granted && !m.granted.empty ? 'py.scopeFull' : 'py.scopeRecon') }),
         el('p', { text: T('py.lead', {
           levels: P.levels.map(l => T('py.attr.' + l) || l).join(' › ') || T('py.noLevels'),
           people: U.fmtInt(s.people) }) })
@@ -1209,6 +1209,11 @@
         HR.usage.exported('pyramid-rules');
       } })
     ]));
+
+    /* What the coverage figures are measured over. Its own line, full width: inside the
+       header flex it wrapped against the export button and read as an afterthought. */
+    f.appendChild(el('p', { class: 'note scope-note',
+      text: T(m.granted && !m.granted.empty ? 'py.scopeFull' : 'py.scopeRecon') }));
 
     const tiles = el('div', { class: 'grid g4', style: 'margin-bottom:14px' });
     tiles.append(
@@ -1306,10 +1311,13 @@
        it produces and made a two-level model look like hundreds of rules. */
     const ruleRows = Array.from(P.ruleGroups.entries()).map(entry => {
       const node = entry[0], grants = entry[1];
+      const isBaseline = node.level === 0;
       return {
-        kind: 'pyramid',
-        name: 'Piramide - ' + node.path.map(x => (T('py.attr.' + x.attr) || x.attr) + ': ' +
-          (x.label || x.value || T('py.empty'))).join(' / '),
+        kind: isBaseline ? 'baseline' : 'pyramid',
+        name: isBaseline
+          ? T('py.baselineRuleName')
+          : 'Piramide - ' + node.path.map(x => (T('py.attr.' + x.attr) || x.attr) + ': ' +
+            (x.label || x.value || T('py.empty'))).join(' / '),
         conditions: node.path.map(x => (T('py.attr.' + x.attr) || x.attr) +
           (x.byId ? '.ExternalId' : '.Name') + ' = ' + (x.value || T('py.empty')) +
           (x.label && x.label !== x.value ? ' (' + x.label + ')' : '')).join('  ∧  ') || T('py.everyone'),
@@ -1345,7 +1353,9 @@
         { key: 'level', label: T('py.cLevel'), value: r => r.level,
           render: r => r.level === 99
             ? el('span', { class: 'pill muted', text: T('py.combo') })
-            : el('span', { class: 'mono', text: 'L' + r.level }) },
+            : r.level === 0
+              ? el('span', { class: 'pill ok', text: T('py.baselineTag') })
+              : el('span', { class: 'mono', text: 'L' + r.level }) },
         { key: 'members', label: T('py.cGroup'), value: r => r.members, align: 'right' },
         { key: 'entitlements', label: T('py.cGrants'), value: r => r.entitlements, align: 'right' },
         { key: 'coverage', label: T('py.cWeakest'), value: r => r.minCoverage,
