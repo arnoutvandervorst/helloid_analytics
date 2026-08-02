@@ -47,6 +47,26 @@
       }
     }
 
+    /* The org-shaped model: an entitlement nearly everyone in this person's department
+       or title holds is explained by where they work, not by who they are. Stronger
+       than a bundle because it names the group a rule condition could select. */
+    const pyramidFor = new Map();       // person key -> Map(permKey -> rule)
+    try {
+      const pyr = model.vault ? HR.pyramid.build(model) : null;
+      if (pyr && pyr.rules) {
+        for (const person of pyr.people) {
+          const owned = new Map();
+          for (const node of person.chain || []) {
+            node.rules.forEach(r => { if (!owned.has(r.ent)) owned.set(r.ent, r); });
+          }
+          (pyr.combos || []).forEach(c => {
+            if (c.members.includes(person) && !owned.has(c.ent)) owned.set(c.ent, c);
+          });
+          if (owned.size) pyramidFor.set(person.person.displayName, owned);
+        }
+      }
+    } catch (e) { /* mining is optional; explanation degrades without it */ }
+
     /* Mined bundles explain access that no rule describes but that clearly travels
        together — an undocumented role rather than a one-off. */
     const bundleFor = new Map();        // permission key -> proposal
@@ -192,6 +212,15 @@
       }
       if (baseline.has(perm.key)) {
         return { kind: 'baseline-access', strength: 'likely', params: { name: perm.name } };
+      }
+      const owned = account.personRaw ? pyramidFor.get(account.personRaw) : null;
+      const shaped = owned && owned.get(perm.key);
+      if (shaped) {
+        const where = shaped.node
+          ? shaped.node.path.map(x => x.value || '(empty)').join(' / ')
+          : shaped.conds.map(c => c.value).join(' + ');
+        return { kind: 'org-shaped', strength: 'likely',
+          params: { where: where || T('ex.everyone'), pct: U.fmtPct(shaped.coverage, 0) } };
       }
       const bundles = bundleFor.get(perm.key);
       if (bundles) {

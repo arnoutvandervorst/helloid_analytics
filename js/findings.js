@@ -873,6 +873,129 @@
     }
   ];
 
+
+  /* ------------------------------------------------------- the vault as data */
+  const VAULT_QUALITY_RULES = [
+    /* An attribute nearly everyone has and a few do not: not a policy, a gap. */
+    function attributeGaps(m) {
+      const facets = m.orgQuality.anomalousFacets;
+      if (!facets.length) return null;
+      const entities = [];
+      facets.forEach(f => f.missing.slice(0, 20).forEach(person => entities.push({
+        type: 'person', key: person.personId, label: person.displayName,
+        detail: T('fi.vault-attribute-gap.detail', { facet: f.label, fill: U.fmtPct(f.fill, 0) })
+      })));
+      return Object.assign({
+        id: 'vault-attribute-gap', severity: 'high', category: T('fi.cat.dataQuality'),
+        entities: entities.slice(0, 80), count: U.sum(facets, f => f.missing.length), impactMonthly: 0
+      }, prose('vault-attribute-gap', {
+        n: U.sum(facets, f => f.missing.length),
+        facets: facets.map(f => f.label + ' (' + U.fmtPct(f.fill, 0) + ')').join(', ')
+      }));
+    },
+
+    /* A title only on ended contracts can never select anybody again. */
+    function titlesOnlyOnEndedContracts(m) {
+      const hits = m.orgQuality.deadTitles;
+      if (!hits.length) return null;
+      return Object.assign({
+        id: 'vault-dead-title', severity: 'medium', category: T('fi.cat.dataQuality'),
+        entities: hits.slice(0, 80).map(t => ({
+          type: 'title', key: t.name, label: t.name,
+          detail: T('fi.vault-dead-title.detail', {
+            n: t.ended, date: t.lastEnd ? U.fmtDate(t.lastEnd).split(',')[0] : '\u2014' })
+        })),
+        impactMonthly: 0
+      }, prose('vault-dead-title', { n: hits.length }));
+    },
+
+    /* Departments with people and nobody named as manager: no approver, no reviewer. */
+    function departmentsWithoutManager(m) {
+      const hits = m.orgQuality.departmentsWithoutManager;
+      if (!hits.length) return null;
+      const total = m.orgQuality.structure.meta.departments;
+      return Object.assign({
+        id: 'vault-no-manager', severity: 'medium', category: T('fi.cat.process'),
+        entities: hits.slice(0, 80).map(n => ({
+          type: 'department', key: n.id, label: n.name,
+          detail: T('fi.vault-no-manager.detail', { n: n.people.length })
+        })),
+        impactMonthly: 0
+      }, prose('vault-no-manager', { n: hits.length, total: total }));
+    },
+
+    /* People sit in a department the Departments list never declares, so no rule
+       condition picking from that list can reach them. */
+    function undeclaredDepartments(m) {
+      const hits = m.orgQuality.undeclared;
+      if (!hits.length) return null;
+      return Object.assign({
+        id: 'vault-undeclared-department', severity: 'high', category: T('fi.cat.dataQuality'),
+        entities: hits.slice(0, 80).map(n => ({
+          type: 'department', key: n.id, label: n.name || n.id,
+          detail: T('fi.vault-undeclared-department.detail', { n: n.people.length })
+        })),
+        impactMonthly: 0
+      }, prose('vault-undeclared-department', {
+        n: hits.length, people: U.sum(hits, x => x.people.length)
+      }));
+    },
+
+    function personsWithoutContract(m) {
+      const hits = m.orgQuality.noContract;
+      if (!hits.length) return null;
+      return Object.assign({
+        id: 'vault-no-contract', severity: 'high', category: T('fi.cat.dataQuality'),
+        entities: hits.slice(0, 80).map(p => ({
+          type: 'person', key: p.personId, label: p.displayName,
+          detail: T('fi.vault-no-contract.detail')
+        })),
+        impactMonthly: 0
+      }, prose('vault-no-contract', { n: hits.length, total: m.orgQuality.summary.persons }));
+    },
+
+    function contractDatesBackwards(m) {
+      const hits = m.orgQuality.backwards;
+      if (!hits.length) return null;
+      return Object.assign({
+        id: 'vault-contract-backwards', severity: 'medium', category: T('fi.cat.dataQuality'),
+        entities: hits.slice(0, 80).map(h => ({
+          type: 'person', key: h.person.personId, label: h.person.displayName,
+          detail: T('fi.vault-contract-backwards.detail', {
+            start: U.fmtDate(h.contract.startDate).split(',')[0],
+            end: U.fmtDate(h.contract.endDate).split(',')[0] })
+        })),
+        impactMonthly: 0
+      }, prose('vault-contract-backwards', { n: hits.length }));
+    },
+
+    function duplicateExternalIds(m) {
+      const hits = m.orgQuality.duplicateIds;
+      if (!hits.length) return null;
+      return Object.assign({
+        id: 'vault-duplicate-id', severity: 'critical', category: T('fi.cat.dataQuality'),
+        entities: hits.slice(0, 80).map(d => ({
+          type: 'person', key: d.externalId, label: d.externalId,
+          detail: d.persons.map(p => p.displayName).join(' / ')
+        })),
+        impactMonthly: 0
+      }, prose('vault-duplicate-id', { n: hits.length }));
+    }
+  ];
+
+  function runVaultQuality(model) {
+    const out = [];
+    for (const rule of VAULT_QUALITY_RULES) {
+      let f = null;
+      try { f = rule(model); } catch (e) { console.error('vault-quality rule failed:', rule.name, e); }
+      if (!f) continue;
+      if (f.count == null) f.count = f.entities.length;
+      f.annualImpact = (f.impactMonthly || 0) * 12;
+      out.push(f);
+    }
+    return out;
+  }
+
   function runProducts(model) {
     const out = [];
     for (const rule of PRODUCT_RULES) {
@@ -975,6 +1098,7 @@
   }
 
   HR.findings = { run, runComparison, runVault, runCorrelation, runExplanation, runActivity, runProducts,
+    runVaultQuality,
     runCatalogue, RULES, COMPARISON_RULES, VAULT_RULES, CORRELATION_RULES, EXPLANATION_RULES,
     ACTIVITY_RULES, CATALOGUE_RULES };
 })(window.HR);

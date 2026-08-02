@@ -560,6 +560,346 @@
     ]), body);
   }
 
+
+  /* ============================================================ ORGANISATION
+
+     The structure HR maintains, travelled one level at a time. Everything else in this
+     tool starts from an account or an entitlement; a department head starts from their
+     department, and a rule condition is written against this shape rather than against
+     a group name.                                                                     */
+
+  let orgCursor = null;
+
+  function orgView(m) {
+    const f = document.createDocumentFragment();
+    if (!m.vault) {
+      f.appendChild(partialNotice(['vault']));
+      return f;
+    }
+    const q = m.orgQuality;
+    const tree = q.structure;
+
+    f.appendChild(el('div', { class: 'view-head' }, [
+      el('div', {}, [
+        el('h1', { text: T('org.title') }),
+        el('p', { text: T('org.lead', {
+          departments: tree.meta.departments, people: U.fmtInt(tree.meta.people),
+          titles: q.titles.length }) })
+      ])
+    ]));
+
+    if (!tree.meta.hierarchical) {
+      /* A flat list is what the export gave, not what the organisation is. */
+      f.appendChild(el('p', { class: 'note', style: 'margin-bottom:12px', text: T('org.flat') }));
+    }
+
+    const node = orgCursor ? tree.byId(orgCursor) : null;
+    const crumb = el('div', { class: 'crumbs' }, [
+      el('button', { class: 'btn sm' + (node ? '' : ' primary'), text: T('org.whole'),
+        onclick: () => { orgCursor = null; HR.app.render(); } })
+    ]);
+    if (node) {
+      tree.pathOf(node).forEach((n, i, all) => {
+        crumb.append(el('span', { class: 'note', text: '›' }),
+          el('button', { class: 'btn sm' + (i === all.length - 1 ? ' primary' : ''), text: n.name,
+            onclick: () => { orgCursor = n.id; HR.app.render(); } }));
+      });
+    }
+    f.appendChild(crumb);
+
+    /* ---- stat row for wherever we are ---- */
+    const stats = el('div', { class: 'grid g4', style: 'margin:12px 0' });
+    if (node) {
+      const managers = Array.from(node.managers.keys());
+      stats.append(
+        tile(T('org.here'), U.fmtInt(node.people.length), T('org.hereFoot')),
+        tile(T('org.below'), U.fmtInt(tree.subtreeCount(node)),
+          T('org.belowFoot', { n: tree.subtreeDepartments(node) })),
+        tile(T('org.titlesHere'), U.fmtInt(node.titles.size), T('org.titlesFoot')),
+        tile(T('org.manager'), managers.length ? managers[0] : '—',
+          managers.length > 1 ? T('org.managersFoot', { n: managers.length }) : T('org.managerFoot'),
+          { severity: managers.length ? 'good' : 'medium' })
+      );
+    } else {
+      stats.append(
+        tile(T('org.people'), U.fmtInt(tree.meta.people), T('org.peopleFoot')),
+        tile(T('org.departments'), U.fmtInt(tree.meta.departments),
+          T('org.departmentsFoot', { n: tree.roots.length })),
+        tile(T('org.titlesAll'), U.fmtInt(q.titles.length), T('org.titlesAllFoot')),
+        tile(T('org.noManager'), U.fmtInt(q.departmentsWithoutManager.length), T('org.noManagerFoot'),
+          { severity: q.departmentsWithoutManager.length ? 'medium' : 'good' })
+      );
+    }
+    f.appendChild(stats);
+
+    /* ---- go deeper ---- */
+    const kids = node ? node.children : tree.roots;
+    if (kids.length) {
+      const maxCount = Math.max.apply(null, kids.map(k => tree.subtreeCount(k)).concat([1]));
+      const cards = el('div', { class: 'grid g3' }, kids
+        .slice()
+        .sort((a, b) => tree.subtreeCount(b) - tree.subtreeCount(a))
+        .map(k => {
+          const count = tree.subtreeCount(k);
+          const subs = tree.subtreeDepartments(k);
+          const bar = el('span', { class: 'scorebar' });
+          const fill = el('i');
+          fill.style.width = (count / maxCount * 100) + '%';
+          fill.style.background = C.slot(1);
+          bar.appendChild(fill);
+          return el('div', { class: 'card click org-card', onclick: () => { orgCursor = k.id; HR.app.render(); } }, [
+            el('div', { class: 'slot-head' }, [
+              el('strong', { text: k.name }),
+              el('span', { class: 'note mono', text: k.externalId || '' })
+            ]),
+            el('div', { class: 'note' }, [
+              document.createTextNode(T('org.cardPeople', { n: U.fmtInt(count) }) +
+                (subs ? ' · ' + T('org.cardSubs', { n: subs }) : '')),
+              k.managers.size ? document.createTextNode(' · ' + Array.from(k.managers.keys())[0])
+                : el('span', { class: 'sev medium', text: ' ' + T('org.cardNoManager') })
+            ]),
+            bar
+          ]);
+        }));
+      f.appendChild(card(node ? T('org.deeper') : T('org.top'), null, cards));
+    }
+
+    /* ---- people right here ---- */
+    if (node && node.people.length) {
+      const rows = node.people.map(entry => {
+        const life = HR.vault.lifecycle(entry.person);
+        return { person: entry.person, contract: entry.contract, life };
+      });
+      f.appendChild(card(T('org.peopleIn', { name: node.name, n: node.people.length }), null,
+        HR.table.make({
+          columns: [
+            { key: 'name', label: T('org.cPerson'), value: r => r.person.displayName,
+              render: r => el('a', { href: '#', text: r.person.displayName,
+                onclick: e => { e.preventDefault(); drawerVaultPerson(r.person, m); } }) },
+            { key: 'id', label: T('org.cId'), value: r => r.person.externalId },
+            { key: 'title', label: T('org.cTitle'), value: r => r.contract.title.name || '' },
+            { key: 'type', label: T('org.cType'), value: r => r.contract.type.name || '' },
+            { key: 'state', label: T('org.cState'), value: r => r.life.state,
+              render: r => el('span', { class: 'sev ' + (r.life.state === 'current' ? 'good'
+                : r.life.state === 'future' ? 'info' : 'medium'), text: T('pp.state.' + r.life.state) }) }
+          ],
+          rows, pageSize: 15, exportName: 'org-' + node.name
+        })));
+    }
+
+    /* ---- job titles across the whole organisation ---- */
+    if (!node) {
+      f.appendChild(card(T('org.titlesTitle'), T('org.titlesNote'), HR.table.make({
+        columns: [
+          { key: 'name', label: T('org.cTitleName'), value: t => t.name },
+          { key: 'active', label: T('org.cActive'), value: t => t.active, align: 'right' },
+          { key: 'ended', label: T('org.cEnded'), value: t => t.ended, align: 'right' },
+          { key: 'persons', label: T('org.cPersons'), value: t => t.persons.size, align: 'right' },
+          { key: 'departments', label: T('org.cDepartments'), value: t => t.departments.size, align: 'right' },
+          { key: 'state', label: T('org.cTitleState'), value: t => (t.active ? 1 : 0),
+            render: t => t.active
+              ? el('span', { class: 'sev good', text: T('org.titleLive') })
+              : el('span', { class: 'sev medium', text: T('org.titleDead', {
+                  date: t.lastEnd ? U.fmtDate(t.lastEnd).split(',')[0] : '—' }) }) }
+        ],
+        rows: q.titles, pageSize: 15, exportName: 'job-titles'
+      })));
+
+      f.appendChild(vaultQualityCard(m));
+    }
+    return f;
+  }
+
+  /** What is missing from the vault, measured against what it usually contains. */
+  function vaultQualityCard(m) {
+    const q = m.orgQuality;
+    const rows = q.facets.slice().sort((a, b) => b.fill - a.fill);
+    return card(T('org.qualityTitle'), T('org.qualityNote'), [
+      HR.table.make({
+        columns: [
+          { key: 'facet', label: T('org.cFacet'), value: r => r.label },
+          { key: 'fill', label: T('org.cFill'), value: r => r.fill,
+            render: r => scoreBar(Math.round(r.fill * 100)) },
+          { key: 'missing', label: T('org.cMissing'), value: r => r.missing.length, align: 'right' },
+          { key: 'verdict', label: T('org.cVerdict'), value: r => r.anomalous ? 1 : 0,
+            render: r => r.anomalous
+              ? el('span', { class: 'sev high', text: T('org.gap') })
+              : (r.fill === 0
+                  ? el('span', { class: 'note', text: T('org.unused') })
+                  : (r.fill === 1 ? el('span', { class: 'sev good', text: T('org.complete') })
+                    : el('span', { class: 'note', text: T('org.partial') }))) }
+        ],
+        rows, pageSize: 10, exportName: 'vault-attributes'
+      }),
+      el('p', { class: 'note', style: 'margin-top:8px', text: T('org.qualityFoot', {
+        persons: U.fmtInt(q.summary.persons), contracts: U.fmtInt(q.summary.contracts),
+        ended: U.fmtInt(q.summary.ended) }) })
+    ]);
+  }
+
+  /* ================================================================= PYRAMID */
+
+  function pyramidView(m) {
+    const f = document.createDocumentFragment();
+    if (!m.vault) { f.appendChild(partialNotice(['vault'])); return f; }
+
+    let P;
+    try { P = HR.pyramid.build(m); } catch (e) { P = null; }
+    if (!P || P.unavailable) {
+      f.appendChild(card(T('py.title'), null, el('p', { class: 'note', text: T('py.unavailable') })));
+      return f;
+    }
+
+    const s = P.summary;
+    f.appendChild(el('div', { class: 'view-head' }, [
+      el('div', {}, [
+        el('h1', { text: T('py.title') }),
+        el('p', { text: T('py.lead', {
+          levels: P.levels.map(l => T('py.attr.' + l) || l).join(' › ') || T('py.noLevels'),
+          people: U.fmtInt(s.people) }) })
+      ]),
+      el('button', { class: 'btn', text: T('py.export'), onclick: () => {
+        U.download('pyramid-rules.csv', HR.pyramid.toRulesCsv(m, P), 'text/csv');
+        HR.usage.exported('pyramid-rules');
+      } })
+    ]));
+
+    const tiles = el('div', { class: 'grid g4', style: 'margin-bottom:14px' });
+    tiles.append(
+      tile(T('py.kRules'), U.fmtInt(s.rules + s.combos),
+        T('py.kRulesFoot', { pyramid: s.rules, combos: s.combos })),
+      tile(T('py.kCoverage'), U.fmtPct(s.coverage, 0),
+        T('py.kCoverageFoot', { explained: U.fmtInt(s.explained), total: U.fmtInt(s.assignments) }),
+        { severity: s.coverage > 0.6 ? 'good' : s.coverage > 0.3 ? 'medium' : 'high' }),
+      tile(T('py.kUnder'), U.fmtInt(s.under), T('py.kUnderFoot'),
+        { severity: s.under ? 'medium' : 'good', onClick: () => HR.app.go('pyramid', { tab: 'under' }) }),
+      tile(T('py.kPollution'), U.fmtInt(s.pollution), T('py.kPollutionFoot', { isolated: U.fmtInt(s.isolated) }),
+        { severity: 'medium' })
+    );
+    f.appendChild(tiles);
+
+    /* ---- the levels, and what each one bought ---- */
+    const cfg = HR.config.get();
+    const chips = el('div', { class: 'slot-actions' });
+    const setLevels = levels => {
+      const c = HR.config.get();
+      c.pyramid = Object.assign({}, c.pyramid, { levels });
+      HR.config.save(c);
+      delete m._pyramid;
+      HR.app.render();
+    };
+    P.levels.forEach((attr, i) => {
+      chips.appendChild(el('span', { class: 'pill solid' }, [
+        el('span', { class: 'mono', text: 'L' + (i + 1) + ' ' }),
+        document.createTextNode(T('py.attr.' + attr) || attr),
+        el('button', { class: 'btn sm ghost', text: '↑', title: T('py.up'), onclick: () => {
+          if (!i) return;
+          const next = P.levels.slice();
+          next[i - 1] = P.levels[i]; next[i] = P.levels[i - 1];
+          setLevels(next);
+        } }),
+        el('button', { class: 'btn sm ghost', text: '✕', title: T('py.remove'),
+          onclick: () => setLevels(P.levels.filter((_, j) => j !== i)) })
+      ]));
+    });
+    const remaining = P.attributes.filter(a => !P.levels.includes(a));
+    if (remaining.length) {
+      const sel = el('select', {}, [el('option', { value: '', text: T('py.addLevel') })]
+        .concat(remaining.map(a => el('option', { value: a, text: T('py.attr.' + a) || a }))));
+      sel.addEventListener('change', e => { if (e.target.value) setLevels(P.levels.concat([e.target.value])); });
+      chips.appendChild(sel);
+    }
+    if (P.suggestion.levels.length && P.suggestion.levels.join() !== P.levels.join()) {
+      chips.appendChild(el('button', { class: 'btn sm primary', text: T('py.useSuggested'),
+        onclick: () => setLevels(P.suggestion.levels) }));
+    }
+
+    f.appendChild(card(T('py.levelsTitle'), T('py.levelsNote'), [
+      chips,
+      el('p', { class: 'note', style: 'margin-top:10px', text: P.suggestion.steps.length
+        ? T('py.suggestion', {
+            steps: P.suggestion.steps.map(x => (T('py.attr.' + x.attr) || x.attr) +
+              ' +' + U.fmtNum(x.gain * 100, 1) + 'pp').join(', '),
+            coverage: U.fmtPct(P.suggestion.coverage, 0) })
+        : T('py.noSuggestion') })
+    ]));
+
+    /* ---- the rules ---- */
+    const ruleRows = P.rules.map(r => ({
+      where: r.node.path.map(x => x.value || T('py.empty')).join(' › ') || T('py.everyone'),
+      level: r.node.level, perm: m.permissions.get(r.ent), ent: r.ent,
+      coverage: r.coverage, holders: r.holders, missing: r.missing.length, members: r.node.members.length
+    })).concat((P.combos || []).map(c => ({
+      where: c.conds.map(x => x.value).join(' + '),
+      level: 99, perm: m.permissions.get(c.ent), ent: c.ent,
+      coverage: c.coverage, holders: c.holders, missing: c.missing.length, members: c.members.length
+    })));
+
+    f.appendChild(card(T('py.rulesTitle'), T('py.rulesNote'), HR.table.make({
+      columns: [
+        { key: 'where', label: T('py.cWho'), value: r => r.where },
+        { key: 'level', label: T('py.cLevel'), value: r => r.level,
+          render: r => r.level === 99
+            ? el('span', { class: 'pill muted', text: T('py.combo') })
+            : el('span', { class: 'mono', text: 'L' + r.level }) },
+        { key: 'ent', label: T('py.cGets'), value: r => r.perm ? r.perm.name : r.ent,
+          render: r => r.perm
+            ? el('a', { href: '#', text: r.perm.name,
+                onclick: e => { e.preventDefault(); drawerPermission(r.perm, m); } })
+            : el('span', { text: r.ent }) },
+        { key: 'members', label: T('py.cGroup'), value: r => r.members, align: 'right' },
+        { key: 'coverage', label: T('py.cCoverage'), value: r => r.coverage,
+          render: r => scoreBar(Math.round(r.coverage * 100)) },
+        { key: 'missing', label: T('py.cMissing'), value: r => r.missing, align: 'right',
+          render: r => r.missing
+            ? el('span', { class: 'sev medium', text: String(r.missing) })
+            : el('span', { class: 'note', text: '0' }) }
+      ],
+      rows: ruleRows, pageSize: 20, exportName: 'pyramid-rules',
+      /* Pyramid rules first, biggest group first: the model reads top-down. */
+      initialSort: { key: 'members', dir: -1 }
+    })));
+
+    /* ---- what the model says is wrong ---- */
+    const under = P.stats.under.slice(0, 400).map(u => ({
+      person: u.person.name, ent: m.permissions.get(u.ent), coverage: u.coverage,
+      where: u.node ? (u.node.path.map(x => x.value).join(' › ') || T('py.everyone'))
+        : u.combo.conds.map(c => c.value).join(' + ')
+    }));
+    if (under.length) {
+      f.appendChild(card(T('py.underTitle'), T('py.underNote'), HR.table.make({
+        columns: [
+          { key: 'person', label: T('py.cPerson'), value: r => r.person },
+          { key: 'where', label: T('py.cBecause'), value: r => r.where },
+          { key: 'ent', label: T('py.cLacks'), value: r => r.ent ? r.ent.name : '',
+            render: r => el('span', { text: r.ent ? r.ent.name : '—' }) },
+          { key: 'coverage', label: T('py.cPeers'), value: r => r.coverage,
+            render: r => el('span', { text: U.fmtPct(r.coverage, 0) }) }
+        ],
+        rows: under, pageSize: 12, exportName: 'under-entitled'
+      })));
+    }
+
+    const isolated = P.stats.pollution.filter(p => p.isolated).slice(0, 400).map(p => ({
+      person: p.person.name, ent: m.permissions.get(p.ent), coverage: p.coverage,
+      where: p.node.path.map(x => x.value).join(' › ') || T('py.everyone')
+    }));
+    if (isolated.length) {
+      f.appendChild(card(T('py.pollutionTitle'), T('py.pollutionNote'), HR.table.make({
+        columns: [
+          { key: 'person', label: T('py.cPerson'), value: r => r.person },
+          { key: 'where', label: T('py.cIn'), value: r => r.where },
+          { key: 'ent', label: T('py.cHolds'), value: r => r.ent ? r.ent.name : '',
+            render: r => el('span', { text: r.ent ? r.ent.name : '—' }) },
+          { key: 'coverage', label: T('py.cPeers'), value: r => r.coverage,
+            render: r => el('span', { text: U.fmtPct(r.coverage, 0) }) }
+        ],
+        rows: isolated, pageSize: 12, exportName: 'pollution'
+      })));
+    }
+    return f;
+  }
+
   /* ================================================================ OVERVIEW */
   function overview(m) {
     const f = document.createDocumentFragment();
@@ -2677,6 +3017,7 @@
     overview, risk: riskView, cost: costView, accounts: accountsView,
     permissions: permissionsView, people: peopleView, diff: diffView,
     snapshots: snapshotsView, settings: settingsView, sources: sourcesView, products: productsView,
+    org: orgView, pyramid: pyramidView,
     openDrawer, closeDrawer, drawerAccount, drawerPermission, drawerPerson, drawerProduct, card, tile
   };
 })(window.HR);

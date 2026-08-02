@@ -165,6 +165,10 @@
     }
     if (vault) {
       model.vault = vault;
+      /* The vault as data rather than as input: what is missing, dangling or dead in it
+         weakens every check that leans on it. */
+      model.orgQuality = HR.org.quality(vault);
+      model.findings = model.findings.concat(HR.findings.runVaultQuality(model));
       /* Who did these unowned accounts belong to? Answerable only with person data. */
       model.correlation = HR.correlate.matchUnowned(model, vault);
       model.linkedAccounts = HR.correlate.linkAccounts(model, vault, model.correlation);
