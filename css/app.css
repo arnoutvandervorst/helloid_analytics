@@ -139,6 +139,10 @@ label.inline { display: inline-flex; align-items: center; gap: 6px; font-size: 1
 .sidenav button:hover { background: var(--hover); color: var(--text-primary); }
 .sidenav button.active { background: var(--hover); color: var(--text-primary); font-weight: 600; }
 main { padding: 20px 24px 60px; min-width: 0; }
+/* Views append cards, grids and notes as siblings. Spacing them here rather than in
+   each view means a new block is never flush against the one above it by omission;
+   margins collapse, so a block that sets its own larger margin still wins. */
+#view-root > * + * { margin-top: 14px; }
 .empty-state { max-width: 620px; margin: 8vh auto; text-align: center; }
 .empty-state .hint { color: var(--muted); font-size: 12px; margin-top: 24px; }
 

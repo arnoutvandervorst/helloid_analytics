@@ -317,6 +317,142 @@ class DemoSet:
         self.rules_rows = rows
         return [csv_line(header)] + [csv_line([r[h] for h in header]) for r in rows]
 
+
+    # ------------------------------------------------------- Service Automation
+    def build_products(self):
+        """Products people request, and what each one is worth or risks.
+
+        Named after the applications the reconciliation already contains, because that is
+        how tenants name them and it is what the product-to-entitlement matcher has to
+        work with. Whether a name resembling a group means anything is exactly the
+        question the Products view asks a human to answer, so the demo has to contain
+        both honest matches and tempting near-misses.
+        """
+        rnd = self.rnd
+        catalogue = [
+            # name, entitlement it really grants (or None), price, risk, time limit days
+            ('PowerBI Pro', 'APP-PowerBI-Pro', '9,90', None, None),
+            ('Copilot', 'APP-Copilot', '28,00', None, None),
+            ('Adobe Acrobat Pro', 'APP-Adobe-AcrobatPro', '17,50', None, None),
+            ('Visio', 'APP-Visio', '12,00', None, 600),
+            ('Project', 'APP-Project', '25,00', None, None),
+            ('Beheerderstoegang AD', 'ADMIN-AD-Beheer', None, 9, 5),
+            ('Exchange-beheer', 'ADMIN-Exchange-Beheer', None, 8, 5),
+            ('Noodprocedure breakglass', 'PRIV-Noodprocedure-Breakglass', None, 10, 1),
+            ('Thuiswerkplek', 'VPN-Thuiswerken', None, 3, None),
+            ('Mobiele telefoon', None, '32,00', 2, None),
+            ('Laptop', None, '45,00', 4, None),
+            ('Parkeerplaats', None, '85,00', None, None),
+            ('Tweede beeldscherm', None, '18,00', None, None),
+            ('Toegangspas hoofdlocatie', None, None, 5, None)
+        ]
+
+        products = []
+        self.product_grants = {}
+        for i, (name, ent, price, risk, limit) in enumerate(catalogue):
+            if ent:
+                self.product_grants[name] = ent
+            products.append({
+                'productId': f'p{i:04d}-demo-0000-0000-000000000000',
+                'name': name,
+                'description': f'{name} \u2014 aan te vragen via de selfservice-catalogus.',
+                'code': f'2024{i:04d}DEMO',
+                'categories': [{'id': f'cat-{i % 4}'}],
+                'resourceOwnerGroup': {'name': 'ROLE-KWA07-Kwaliteit'} if i % 3 == 0 else {},
+                'approvalWorkflow': {'name': 'Manager' if risk else 'Auto Approve'},
+                'price': price or '',
+                'showPrice': bool(price),
+                'hasRiskFactor': risk is not None,
+                'riskFactor': risk,
+                'hasTimeLimit': limit is not None,
+                # HelloID states this in minutes; the tool reads it back as days.
+                'ownershipMaxDuration': (limit * 1440) if limit else 60,
+                'limitType': 'Maximum',
+                # Physical items do not come back when an account is disabled; access should.
+                'returnOnUserDisable': ent is not None and risk is None,
+                'visibility': 'All',
+                'isEnabled': True,
+                'actions': []
+            })
+        return {
+            'kind': 'helloid-products',
+            'source': '/products',
+            'tenant': 'demo.helloid.com',
+            'products': products
+        }
+
+    def build_assignments(self):
+        """Who holds which product.
+
+        Assignments are drawn from the people who already hold the entitlement the
+        product grants, so the holder-overlap check has something true to confirm. The
+        rest of the catalogue \u2014 laptops, passes, parking \u2014 grants nothing in the
+        directory and exists to show what a product without an entitlement looks like.
+        """
+        rnd = self.rnd
+        holders_by_perm = {}
+        for acc in self.accounts:
+            if not acc['person']:
+                continue
+            login = acc['user'] + '@avondrood.local'
+            for perm in acc['perms']:
+                holders_by_perm.setdefault(perm.split(' (')[0], []).append((login, acc))
+
+        approvers = ['Teamleider Zorg', 'Manager Bedrijfsvoering', 'Hoofd ICT']
+        # People whose contracts have all ended, so the demo carries the case where a
+        # product outlives the person's employment.
+        leavers = [p_['UserName'] + '@avondrood.local' for p_ in self.vault['Persons']
+                   if p_['UserName'] and p_['Contracts']
+                   and all(c.get('EndDate') and c['EndDate'][:10] < self.today.strftime('%Y-%m-%d')
+                           for c in p_['Contracts'])]
+        rows = [csv_line(['AssignmentGuid', 'UserName', 'UserGuid', 'ProductName', 'ProductGuid',
+                          'ProductSku', 'RequestedAt', 'ApprovedAt', 'ReturnDate', 'Source',
+                          'ApprovedBy', 'ApprovalComment', 'Approved'])]
+        n = 0
+        everyone = [(a['user'] + '@avondrood.local', a) for a in self.accounts if a['person']]
+
+        for product in self.products['products']:
+            name = product['name']
+            ent = self.product_grants.get(name)
+            pool = holders_by_perm.get(ent, []) if ent else rnd.sample(
+                everyone, min(len(everyone), rnd.randint(8, 30)))
+            # Privileged groups sit on admin accounts that belong to nobody, so nobody
+            # would hold the product either. A few people request it regardless \u2014
+            # which is exactly the population a risk factor is meant to surface.
+            if ent and not pool:
+                pool = rnd.sample(everyone, min(len(everyone), rnd.randint(3, 8)))
+            if ent and pool:
+                # Most holders requested it; a few hold it without ever having done so,
+                # which is the gap between "granted by a product" and "granted somehow".
+                pool = rnd.sample(pool, max(1, min(len(pool), int(len(pool) * 0.8))))
+
+            if leavers and rnd.random() < 0.4:
+                for login in rnd.sample(leavers, min(len(leavers), rnd.randint(1, 3))):
+                    pool = pool + [(login, None)]
+
+            for login, acc in pool:
+                n += 1
+                requested = self.today - timedelta(days=rnd.randint(20, 1500),
+                                                   hours=rnd.randint(0, 23))
+                approved = requested + timedelta(hours=rnd.randint(1, 72))
+                if approved > self.today:
+                    approved = self.today - timedelta(hours=1)
+                # A handful approved by the requester: the control that was skipped.
+                self_approved = rnd.random() < 0.03
+                approver = login if self_approved else (
+                    rnd.choice(approvers) if product['hasRiskFactor'] else '')
+                returned = ''
+                if rnd.random() < 0.05:
+                    returned = (approved + timedelta(days=rnd.randint(30, 400))).strftime('%Y-%m-%dT%H:%M:%S')
+                rows.append(csv_line([
+                    f'a{n:05d}-demo', login, f'u{n:05d}', name, product['productId'],
+                    product['code'], requested.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3],
+                    approved.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3], returned, '',
+                    approver, 'Akkoord' if approver else '',
+                    'True' if approver else ''
+                ]))
+        return rows
+
     # -------------------------------------------------------------------- catalogue
     def build_catalogue(self):
         """One row per entitlement HelloID knows, with its rule count and target state."""
@@ -416,6 +552,8 @@ class DemoSet:
         catalogue = self.build_catalogue()
         granted = self.build_granted()
         history = self.build_history()
+        self.products = self.build_products()
+        assignments = self.build_assignments()
 
         files = {
             'recon.csv': '\n'.join(recon) + '\n',
@@ -423,7 +561,9 @@ class DemoSet:
             'catalogue.csv': '\n'.join(catalogue) + '\n',
             'granted.csv': '\n'.join(granted) + '\n',
             'history.csv': '\n'.join(history) + '\n',
-            'vault.json': json.dumps(self.vault, indent=1, ensure_ascii=False) + '\n'
+            'vault.json': json.dumps(self.vault, indent=1, ensure_ascii=False) + '\n',
+            'products.json': json.dumps(self.products, indent=1, ensure_ascii=False) + '\n',
+            'product-assignments.csv': '\n'.join(assignments) + '\n'
         }
         for name, text in files.items():
             with open(os.path.join(outdir, name), 'w', encoding='utf-8') as fh:
@@ -440,7 +580,9 @@ class DemoSet:
                 {'slot': 'rules', 'file': 'rules.csv'},
                 {'slot': 'granted', 'file': 'granted.csv'},
                 {'slot': 'history', 'file': 'history.csv'},
-                {'slot': 'catalogue', 'file': 'catalogue.csv'}
+                {'slot': 'catalogue', 'file': 'catalogue.csv'},
+                {'slot': 'products', 'file': 'products.json'},
+                {'slot': 'assignments', 'file': 'product-assignments.csv'}
             ]
         }
         with open(os.path.join(outdir, 'manifest.json'), 'w', encoding='utf-8') as fh:
@@ -452,7 +594,8 @@ class DemoSet:
             print(f'{path}: {os.path.getsize(path) // 1024} KiB')
         print(f"{len(recon) - 1} reconciliation rows, {len(self.vault['Persons'])} persons, "
               f'{len(self.rules_rows)} rules, {len(catalogue) - 1} entitlements, '
-              f'{len(granted) - 1} granted, {len(history) - 1} actions')
+              f'{len(granted) - 1} granted, {len(history) - 1} actions, '
+              f"{len(self.products['products'])} products, {len(assignments) - 1} assignments")
 
 
 def main():

@@ -325,20 +325,24 @@
       ])
     ]));
 
-    if (HR.demo.isOn() || HR.app.demoAvailable()) f.appendChild(demoCard());
-    f.appendChild(el('div', { class: 'grid g3' }, SOURCE_SLOTS.map(sourceSlot)));
+    /* One stack, one gap: the demo card, the slot grid and the tool's own files were
+       three siblings whose spacing lived only inside the grid, so they sat flush. */
+    const stack = el('div', { class: 'stack' });
+    if (HR.demo.isOn() || HR.app.demoAvailable()) stack.appendChild(demoCard());
+    stack.appendChild(el('div', { class: 'grid g3' }, SOURCE_SLOTS.map(sourceSlot)));
 
     /* Not sources of truth about the tenant — settings and snapshot bundles are this
        tool's own files — so they sit apart from the slots above. */
-    f.appendChild(card(T('src.otherTitle'), null, [
+    stack.appendChild(card(T('src.otherTitle'), null, [
       el('p', { class: 'note', text: T('src.otherNote') }),
       el('div', { class: 'slot-actions' }, [
         pickButton(T('src.settingsFile'), '.json', '', f2 => HR.app.importFileAs(f2, 'settings')),
         pickButton(T('src.snapshotBundle'), '.json', '', f2 => HR.app.importFileAs(f2, 'snapshots')),
         HR.app.sampleName() ? el('button', { class: 'btn ghost',
           text: T('src.sampleFile', { name: HR.app.sampleName() }), onclick: () => HR.app.loadSample() }) : null
-      ])
+      ].filter(Boolean))
     ]));
+    f.appendChild(stack);
 
     f.appendChild(el('p', { class: 'note', style: 'margin-top:12px', text: T('src.privacy') }));
     /* Whoever hits a file this tool reads wrongly is the only one who can say so. */

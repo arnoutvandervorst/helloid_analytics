@@ -242,7 +242,12 @@
         layers.personName++;
       } else if (accountByUser.has(key) || accountByUser.has(local)) {
         const acc = accountByUser.get(key) || accountByUser.get(local);
-        hit = { person: null, account: acc, how: 'account-name' };
+        /* The account is certain; the person behind it may already be known from the
+           correlation pass, and without that link nothing can be said about whether
+           the holder still works here. */
+        const owner = correlation && correlation.matches
+          ? (correlation.matches.find(x => x.account.key === acc.key) || null) : null;
+        hit = { person: owner ? owner.person : null, account: acc, how: 'account-name' };
         layers.accountName++;
       } else if (correlation && correlation.matches) {
         /* The scored matcher already decided which person owns which account; if one of

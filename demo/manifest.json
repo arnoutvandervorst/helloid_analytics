@@ -27,6 +27,14 @@
   {
    "slot": "catalogue",
    "file": "catalogue.csv"
+  },
+  {
+   "slot": "products",
+   "file": "products.json"
+  },
+  {
+   "slot": "assignments",
+   "file": "product-assignments.csv"
   }
  ]
 }
