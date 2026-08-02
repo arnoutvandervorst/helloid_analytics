@@ -53,7 +53,8 @@
       el('p', { text: T('empty.body') }),
       el('p', {}, [
         el('button', { class: 'btn primary', text: T('empty.sources'), onclick: () => go('sources') }),
-        el('button', { class: 'btn', text: T('empty.sample'), onclick: loadSample, style: 'margin-left:8px' })
+        sampleFile ? el('button', { class: 'btn', style: 'margin-left:8px',
+          text: T('src.sampleFile', { name: sampleFile }), onclick: loadSample }) : null
       ]),
       el('p', { class: 'hint', text: T('empty.columns') })
     ]));
@@ -318,6 +319,23 @@
      in the folder first, then the file make-sample.py writes. */
   const SAMPLE_FILES = ['ReconciliationReport.csv', 'sample-recon.csv'];
 
+  /* The button only makes sense where an export actually sits next to index.html —
+     the local server workflow. The hosted copy serves no CSV at all (and denies the
+     extension), so offering it there is a button that can only fail. */
+  let sampleFile = undefined;
+  async function findSample() {
+    if (sampleFile !== undefined) return sampleFile;
+    sampleFile = null;
+    if (location.protocol === 'file:') return sampleFile;
+    for (const name of SAMPLE_FILES) {
+      try {
+        const res = await fetch(name, { method: 'HEAD' });
+        if (res.ok && !/html/i.test(res.headers.get('content-type') || '')) { sampleFile = name; break; }
+      } catch (e) { /* not served */ }
+    }
+    return sampleFile;
+  }
+
   async function loadSample() {
     for (const name of SAMPLE_FILES) {
       try {
@@ -453,6 +471,8 @@
     // render would keep the placeholder until the next navigation.
     HR.usage.start();
     HR.brand.detectAuto().then(found => { HR.brand.apply(); if (found) render(); });
+    /* Repaint once we know whether a sample is reachable, the same way the logo does. */
+    findSample().then(name => { if (name && (state.view === 'sources' || !state.model)) render(); });
     HR.brand.apply();
     applyChrome();
 
@@ -531,6 +551,6 @@
   }
 
   HR.app = { state, go, rebuild, loadSnapshot, setBaseline, refreshSnapshots, importText, render, applyChrome,
-    importFileAs, clearSource, detectKind, loadSample };
+    importFileAs, clearSource, detectKind, loadSample, findSample, sampleName: () => sampleFile || null };
   document.addEventListener('DOMContentLoaded', init);
 })(window.HR);

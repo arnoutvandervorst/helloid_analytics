@@ -293,7 +293,8 @@
       el('div', { class: 'slot-actions' }, [
         pickButton(T('src.settingsFile'), '.json', '', f2 => HR.app.importFileAs(f2, 'settings')),
         pickButton(T('src.snapshotBundle'), '.json', '', f2 => HR.app.importFileAs(f2, 'snapshots')),
-        el('button', { class: 'btn ghost', text: T('empty.sample'), onclick: () => HR.app.loadSample() })
+        HR.app.sampleName() ? el('button', { class: 'btn ghost',
+          text: T('src.sampleFile', { name: HR.app.sampleName() }), onclick: () => HR.app.loadSample() }) : null
       ])
     ]));
 
