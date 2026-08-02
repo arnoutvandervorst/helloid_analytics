@@ -371,8 +371,28 @@
       if (combos.length) stats = account(people, mined, combos, { pollutionBelow: cfg.pollutionBelow, weight });
     }
 
+    /* A HelloID rule is one condition granting a list of entitlements, and rules stack,
+       so an entitlement granted higher up is never restated below. Counting one "rule"
+       per granted entitlement therefore overstates the model by an order of magnitude:
+       what an administrator actually creates is one rule per group. Both numbers are
+       kept — the groups are the rules, the grants are their contents. */
+    const ruleGroups = new Map();
+    mined.rules.forEach(r => {
+      if (!ruleGroups.has(r.node)) ruleGroups.set(r.node, []);
+      ruleGroups.get(r.node).push(r);
+    });
+
+    /* Combination rules condense the same way: identical conditions are one rule. */
+    const comboGroups = new Map();
+    combos.forEach(c => {
+      const key = c.conds.map(x => x.attr + '=' + x.value).sort().join('|');
+      if (!comboGroups.has(key)) comboGroups.set(key, { conds: c.conds, members: c.members, rules: [] });
+      comboGroups.get(key).rules.push(c);
+    });
+
     const result = {
       people, attributes, suggestion, levels, combos, weight,
+      ruleGroups, comboGroups,
       nodes: mined.nodes, root: mined.root, rules: mined.rules,
       tooSmall: mined.tooSmall, skippedPeople: mined.skippedPeople,
       threshold: cfg.threshold, minSize: cfg.minSize,
@@ -380,8 +400,12 @@
       summary: {
         people: people.length,
         levels: levels.length,
-        rules: mined.rules.length,
-        combos: combos.length,
+        /* What you would create in HelloID... */
+        rules: ruleGroups.size,
+        combos: comboGroups.size,
+        /* ...and what those rules hand out between them. */
+        grants: mined.rules.length,
+        comboGrants: combos.length,
         coverage: stats.coverage,
         weightedCoverage: stats.weightedCoverage,
         assignments: stats.totalAssignments,
@@ -422,15 +446,16 @@
         Entitlements: rules.map(r => entName(r.ent)).join('|')
       });
     });
-    (pyramid.combos || []).forEach(rule => {
+    /* One rule per distinct condition, granting everything that condition implies. */
+    (pyramid.comboGroups ? Array.from(pyramid.comboGroups.values()) : []).forEach(group => {
       rows.push({
-        Name: 'Combinatie - ' + rule.conds.map(c => c.value).join(' + '),
-        EntitlementCount: 1,
-        PersonsLatestEvaluation: rule.members.length,
+        Name: 'Combinatie - ' + group.conds.map(c => c.value).join(' + '),
+        EntitlementCount: group.rules.length,
+        PersonsLatestEvaluation: group.members.length,
         Categories: 'Combination',
         Status: 'proposal',
-        Conditions: rule.conds.map(c => c.attr + '.Name, one of: ' + c.value).join('|'),
-        Entitlements: entName(rule.ent)
+        Conditions: group.conds.map(c => c.attr + '.Name, one of: ' + c.value).join('|'),
+        Entitlements: group.rules.map(r => entName(r.ent)).join('|')
       });
     });
     return U.toCSV(rows, ['Name', 'EntitlementCount', 'PersonsLatestEvaluation', 'Categories',

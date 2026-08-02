@@ -761,13 +761,16 @@
     for (let level = 0; level <= levels.length; level++) {
       const nodes = Array.from(P.nodes.values()).filter(n => n.level === level);
       const sized = nodes.filter(n => n.members.length);
-      const rules = rulesAt(level);
-      const covered = U.sum(rules, r => r.holders);
+      const grants = rulesAt(level);
+      /* Rules as HelloID counts them: one per group, granting several entitlements. */
+      const rules = new Set(grants.map(r => r.node)).size;
+      const covered = U.sum(grants, r => r.holders);
       bands.push({
         level,
         attr: level === 0 ? null : levels[level - 1],
         groups: sized.length,
-        rules: rules.length,
+        rules,
+        grants: grants.length,
         covered,
         biggest: sized.reduce((max, n) => Math.max(max, n.members.length), 0),
         median: sized.length
@@ -791,7 +794,9 @@
         el('span', { class: 'pyr-groups',
           text: b.level === 0 ? T('py.oneGroup') : T('py.groups', { n: U.fmtInt(b.groups) }) }),
         el('span', { class: 'pyr-rules' + (b.rules ? '' : ' none'),
-          text: T('py.rulesHere', { n: U.fmtInt(b.rules) }) })
+          text: b.rules
+            ? T('py.rulesHereGrants', { n: U.fmtInt(b.rules), grants: U.fmtInt(b.grants) })
+            : T('py.rulesHere', { n: 0 }) })
       );
       /* A bar inside the band, so levels can be compared without reading the numbers. */
       const bar = el('span', { class: 'pyr-bar' });
@@ -810,7 +815,8 @@
         el('span', { class: 'pyr-level', text: '⇄' }),
         el('span', { class: 'pyr-attr', text: T('py.acrossTitle') }),
         el('span', { class: 'pyr-groups', text: T('py.acrossNote') }),
-        el('span', { class: 'pyr-rules', text: T('py.rulesHere', { n: U.fmtInt(P.combos.length) }) })
+        el('span', { class: 'pyr-rules', text: T('py.rulesHereGrants', {
+          n: U.fmtInt(P.summary.combos), grants: U.fmtInt(P.summary.comboGrants) }) })
       ]);
       wrap.appendChild(across);
     }
@@ -889,8 +895,8 @@
       tile(T('py.jAverage'), U.fmtNum(avg, 1),
         parentAvg == null ? T('py.jNoParent')
           : T('py.jVsParent', { delta: (avg - parentAvg >= 0 ? '+' : '') + U.fmtNum(avg - parentAvg, 1) })),
-      tile(T('py.jRulesHere'), U.fmtInt(node.rules.length),
-        T('py.jInherited', { n: U.fmtInt(inherited.size) })),
+      tile(T('py.jRulesHere'), node.rules.length ? '1' : '0',
+        T('py.jGrantsHere', { n: U.fmtInt(node.rules.length), inherited: U.fmtInt(inherited.size) })),
       tile(T('py.jGaps'), U.fmtInt(under), T('py.jPollution', { n: U.fmtInt(pollution) }),
         { severity: under ? 'medium' : 'good' })
     );
@@ -909,7 +915,7 @@
           return el('div', { class: 'card click org-card', onclick: () => { journeyId = k.id; HR.app.render(); } }, [
             el('div', { class: 'slot-head' }, [
               el('strong', { text: k.label || T('py.empty') }),
-              el('span', { class: 'note mono', text: k.rules.length ? T('py.nRules', { n: k.rules.length }) : '' })
+              el('span', { class: 'note mono', text: k.rules.length ? T('py.nGrants', { n: k.rules.length }) : '' })
             ]),
             el('div', { class: 'note', text: T('py.jMembers', { n: U.fmtInt(k.members.length) }) }),
             bar2
@@ -991,7 +997,7 @@
     const tiles = el('div', { class: 'grid g4', style: 'margin-bottom:14px' });
     tiles.append(
       tile(T('py.kRules'), U.fmtInt(s.rules + s.combos),
-        T('py.kRulesFoot', { pyramid: s.rules, combos: s.combos })),
+        T('py.kRulesFoot', { grants: U.fmtInt(s.grants + s.comboGrants) })),
       tile(T('py.kCoverage'), U.fmtPct(s.coverage, 0),
         T('py.kCoverageFoot', { explained: U.fmtInt(s.explained), total: U.fmtInt(s.assignments) }),
         { severity: s.coverage > 0.6 ? 'good' : s.coverage > 0.3 ? 'medium' : 'high' }),
@@ -2851,6 +2857,7 @@
     return card(T('ro.pyramidTitle'), T('ro.pyramidNote'), [
       el('p', { text: T('ro.pyramidLead', {
         rules: U.fmtInt(s2.rules + s2.combos),
+        grants: U.fmtInt(s2.grants + s2.comboGrants),
         levels: P.levels.map(l => T('py.attr.' + l) || l).join(' \u203a ') || T('py.noLevels'),
         coverage: U.fmtPct(s2.coverage, 0)
       }) }),
