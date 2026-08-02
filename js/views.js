@@ -666,22 +666,23 @@
 
     /* ---- people right here ---- */
     if (node && node.people.length) {
-      const rows = node.people.map(entry => {
-        const life = HR.vault.lifecycle(entry.person);
-        return { person: entry.person, contract: entry.contract, life };
-      });
+      const index = peopleIndex(m);
+      const rows = node.people.map(entry => ({
+        person: entry.person, contract: entry.contract,
+        life: HR.vault.lifecycle(entry.person)
+      }));
       f.appendChild(card(T('org.peopleIn', { name: node.name, n: node.people.length }), null,
         HR.table.make({
           columns: [
             { key: 'name', label: T('org.cPerson'), value: r => r.person.displayName,
               render: r => el('a', { href: '#', text: r.person.displayName,
-                onclick: e => { e.preventDefault(); drawerVaultPerson(r.person, m); } }) },
+                onclick: e => { e.preventDefault(); drawerVaultPerson(personRow(m, r.person, index), m); } }) },
             { key: 'id', label: T('org.cId'), value: r => r.person.externalId },
             { key: 'title', label: T('org.cTitle'), value: r => r.contract.title.name || '' },
             { key: 'type', label: T('org.cType'), value: r => r.contract.type.name || '' },
             { key: 'state', label: T('org.cState'), value: r => r.life.state,
-              render: r => el('span', { class: 'sev ' + (r.life.state === 'current' ? 'good'
-                : r.life.state === 'future' ? 'info' : 'medium'), text: T('pp.state.' + r.life.state) }) }
+              render: r => el('span', { class: 'sev ' + STATE_SEV[r.life.state],
+                text: stateLabel(r.life.state) }) }
           ],
           rows, pageSize: 15, exportName: 'org-' + node.name
         })));
@@ -1719,6 +1720,31 @@
 
   const STATE_SEV = { future: 'info', current: 'good', past: 'critical', unknown: 'medium' };
 
+  /** The label for a contract state, wherever it is shown. */
+  const stateLabel = state => T('pp.state' + state.charAt(0).toUpperCase() + state.slice(1));
+
+  /**
+   * Everything the person drawer needs, derived from a vault person.
+   *
+   * The People view builds these rows as it goes; the organisation walker has only a
+   * person, so it needs the same shape from somewhere. Building it in one place keeps
+   * the drawer from having to know which view opened it.
+   */
+  function personRow(m, person, index) {
+    const entry = (index || peopleIndex(m)).get(person.personId) || { person, accounts: [] };
+    const pc = person.primaryContract || person.contracts[0] || null;
+    return {
+      person,
+      accounts: entry.accounts,
+      perms: U.uniq(entry.accounts.flatMap(a => a.perms)),
+      life: HR.vault.lifecycle(person),
+      department: pc ? (pc.department.name || pc.department.externalId) : '',
+      title: pc ? (pc.title.name || pc.title.code) : '',
+      monthlyCost: U.sum(entry.accounts, a => a.monthlyCost),
+      maxRisk: entry.accounts.length ? Math.max.apply(null, entry.accounts.map(a => a.riskScore)) : 0
+    };
+  }
+
   function offsetText(life) {
     if (life.days == null) return life.state === 'current' ? T('pp.noEnd') : '—';
     if (life.state === 'future') return T('pp.startsIn', { n: U.fmtInt(life.days) });
@@ -1863,7 +1889,7 @@
     const head = el('div', {}, [
       el('h2', { text: p.displayName }),
       el('div', { class: 'row' }, [
-        el('span', { class: 'sev ' + STATE_SEV[row.life.state], text: T('pp.state' + row.life.state.charAt(0).toUpperCase() + row.life.state.slice(1)) }),
+        el('span', { class: 'sev ' + STATE_SEV[row.life.state], text: stateLabel(row.life.state) }),
         el('span', { class: 'pill', text: offsetText(row.life) }),
         el('span', { class: 'pill', text: T('dr.accountsN', { n: row.accounts.length }) }),
         p.blocked ? el('span', { class: 'pill removed', text: 'blocked' }) : null,
