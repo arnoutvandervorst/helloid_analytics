@@ -1242,6 +1242,132 @@
     return f;
   }
 
+  /* ===================================================== EXPLANATIONS ==== */
+  function explainView(m) {
+    const f = document.createDocumentFragment();
+    const e = m.explanation;
+    const s = e.summary;
+
+    const inputs = [];
+    if (e.inputs.rules) inputs.push(T('ex.inputRules'));
+    if (e.inputs.vault) inputs.push(T('ex.inputVault'));
+    if (e.inputs.bundles) inputs.push(T('ex.inputBundles'));
+
+    f.appendChild(el('div', { class: 'view-head' }, el('div', {}, [
+      el('h1', { text: T('ex.title') }),
+      el('p', { text: T('ex.lead') })
+    ])));
+
+    const k = el('div', { class: 'grid g4' });
+    k.append(
+      tile(T('ex.kpiExplained'), U.fmtPct(s.share, 0),
+        T('ex.kpiExplainedFoot', { n: U.fmtInt(s.explained), total: U.fmtInt(s.total) }),
+        { severity: s.share > 0.8 ? 'good' : s.share > 0.5 ? 'medium' : 'high' }),
+      tile(T('ex.kpiUnexplained'), U.fmtInt(s.unexplained),
+        T('ex.kpiUnexplainedFoot', { n: s.accountsWithResidue }),
+        { severity: s.unexplained ? 'high' : 'good' }),
+      tile(T('ex.kpiStrong'), U.fmtInt(s.strong), T('ex.kpiStrongFoot'), { small: true, severity: 'good' }),
+      tile(T('ex.kpiInputs'), String(inputs.length || 0),
+        inputs.length ? inputs.join(' · ') : T('ex.inputNone'),
+        { small: true, severity: inputs.length >= 2 ? 'good' : 'medium' })
+    );
+    f.appendChild(k);
+
+    if (!e.inputs.rules || !e.inputs.vault) {
+      f.appendChild(el('p', { class: 'note', style: 'margin-top:10px', text: T('ex.hint') }));
+    }
+
+    const g = el('div', { class: 'grid g2', style: 'margin-top:14px' });
+
+    /* what explains the rows */
+    const kindColours = [C.slot(3), C.slot(1), C.slot(7), C.slot(4), C.slot(6), C.slot(5), C.slot(2), C.slot(8)];
+    const mix = e.byKind.map(([kind, n], i) => ({
+      label: T('ex.kind.' + kind) !== 'ex.kind.' + kind ? T('ex.kind.' + kind) : kind,
+      value: n, color: kindColours[i % kindColours.length]
+    }));
+    if (s.unexplained) mix.push({ label: T('ex.unexplainedLabel'), value: s.unexplained, color: C.STATUS.critical });
+    g.appendChild(card(T('ex.mix'), T('ex.mixNote'), C.stackedBar(mix)));
+
+    /* explained share per issue type */
+    const issueRows = Array.from(e.byIssue.entries()).map(([issue, b]) => ({ issue, b }));
+    g.appendChild(card(T('ex.byIssue'), null, HR.table.make({
+      columns: [
+        { key: 'issue', label: T('ex.cIssue'), value: r => r.issue },
+        { key: 'total', label: T('ex.cTotal'), num: true, value: r => r.b.total },
+        { key: 'explained', label: T('ex.cExplained'), num: true, value: r => r.b.explained },
+        { key: 'share', label: T('ex.cShare'), num: true, value: r => r.b.total ? r.b.explained / r.b.total : 0,
+          render: r => U.fmtPct(r.b.total ? r.b.explained / r.b.total : 0, 0) },
+        { key: 'strong', label: T('ex.cStrong'), num: true, value: r => r.b.strong }
+      ], rows: issueRows, pageSize: 10, exportName: 'explained-by-issue'
+    })));
+    f.appendChild(g);
+
+    /* the residue: what nobody can account for */
+    if (e.residueByAccount.length) {
+      f.appendChild(el('div', { style: 'margin-top:14px' }, card(T('ex.residue'), T('ex.residueNote'), HR.table.make({
+        columns: [
+          { key: 'account', label: T('ex.cAccount'), value: r => r.account.userName },
+          { key: 'person', label: T('c.person'),
+            render: r => r.account.personRaw ? el('span', { text: r.account.personName })
+              : el('span', { class: 'sev critical', text: T('c.unowned') }) },
+          { key: 'cls', label: T('c.class'), value: r => r.account.clsLabel },
+          { key: 'rows', label: T('ex.cRows'), num: true, value: r => r.rows.length },
+          { key: 'groups', label: T('ex.cGroups'),
+            render: r => el('span', { class: 'trunc', title: U.uniq(r.permissions.map(p => p.name)).join(', '),
+              text: U.uniq(r.permissions.map(p => p.name)).join(', ') }) },
+          { key: 'risk', label: T('c.risk'), num: true, value: r => r.account.riskScore, render: r => scoreBar(r.account.riskScore) }
+        ],
+        rows: e.residueByAccount, pageSize: 20, exportName: 'unexplained-rows',
+        initialSort: { key: 'rows', dir: -1 },
+        search: (r, q) => (r.account.userName + ' ' + r.account.personRaw).toLowerCase().includes(q),
+        onRowClick: r => drawerAccount(r.account)
+      }))));
+    }
+
+    /* every row, with its reason */
+    const STRENGTH_SEV = { strong: 'good', likely: 'medium', weak: 'low' };
+    f.appendChild(el('div', { style: 'margin-top:14px' }, card(T('ex.table'), null, HR.table.make({
+      columns: [
+        { key: 'issue', label: T('ex.cIssue'), value: r => r.issue },
+        { key: 'account', label: T('ex.cAccount'), value: r => r.record.userName },
+        { key: 'permission', label: T('ex.cPermission'), value: r => r.record.permission || '—' },
+        { key: 'kind', label: T('ex.cKind'),
+          value: r => r.explanation ? T('ex.kind.' + r.explanation.kind) : T('ex.unexplainedLabel'),
+          render: r => r.explanation
+            ? el('span', { text: T('ex.kind.' + r.explanation.kind) })
+            : el('span', { class: 'sev critical', text: T('ex.unexplainedLabel') }) },
+        { key: 'strength', label: T('ex.cStrength'),
+          value: r => r.strength || 'zz',
+          render: r => r.strength
+            ? el('span', { class: 'sev ' + STRENGTH_SEV[r.strength], text: T('ex.strength' + r.strength.charAt(0).toUpperCase() + r.strength.slice(1)) })
+            : '—' },
+        { key: 'detail', label: T('ex.cDetail'),
+          value: r => r.explanation ? T('ex.kind.' + r.explanation.kind + '.d', r.explanation.params) : '',
+          render: r => el('span', { class: 'trunc',
+            title: r.explanation ? T('ex.kind.' + r.explanation.kind + '.d', r.explanation.params) : '',
+            text: r.explanation ? T('ex.kind.' + r.explanation.kind + '.d', r.explanation.params) : '—' }) }
+      ],
+      rows: e.rows, pageSize: 30, exportName: 'explanations',
+      searchPlaceholder: T('ac.searchPh'),
+      search: (r, q) => (r.record.userName + ' ' + (r.record.permission || '') + ' ' +
+        (r.explanation ? r.explanation.kind : '')).toLowerCase().includes(q),
+      filters: [
+        { key: 'issue', label: T('ex.cIssue'), options: U.uniq(e.rows.map(r => r.issue)).map(v => ({ value: v, label: v })),
+          match: (r, v) => r.issue === v },
+        { key: 'kind', label: T('ex.cKind'),
+          options: e.byKind.map(([kind]) => ({ value: kind, label: T('ex.kind.' + kind) }))
+            .concat([{ value: '__none', label: T('ex.unexplainedLabel') }]),
+          match: (r, v) => v === '__none' ? !r.explanation : (r.explanation && r.explanation.kind === v) },
+        { key: 'strength', label: T('ex.cStrength'),
+          options: ['strong', 'likely', 'weak'].map(v => ({ value: v, label: T('ex.strength' + v.charAt(0).toUpperCase() + v.slice(1)) })),
+          match: (r, v) => r.strength === v }
+      ],
+      onRowClick: r => { if (r.account) drawerAccount(r.account); }
+    }))));
+
+    return f;
+  }
+
   /* ==================================================== BUSINESS RULES ==== */
   /* The rule export next to the reconciliation export: what the model says should be
      granted, against what the target system hands out. */
@@ -1852,6 +1978,7 @@
     board: (m, params) => HR.board.view(m, params),
     review: reviewView,
     rules: rulesView,
+    explain: explainView,
     overview, risk: riskView, cost: costView, accounts: accountsView,
     permissions: permissionsView, people: peopleView, diff: diffView,
     snapshots: snapshotsView, settings: settingsView,

@@ -170,6 +170,10 @@
         .sort((a, b) => HR.util.severityRank(a.severity) - HR.util.severityRank(b.severity) ||
           (b.impactMonthly || 0) - (a.impactMonthly || 0) || b.count - a.count);
     }
+    /* Runs last: every other input is an ingredient of an explanation. */
+    model.explanation = HR.explain.build(model);
+    model.findings = model.findings.concat(HR.findings.runExplanation(model));
+
     model.findings.sort((a, b) => HR.util.severityRank(a.severity) - HR.util.severityRank(b.severity) ||
       (b.impactMonthly || 0) - (a.impactMonthly || 0) || b.count - a.count);
     model.summary = summarise(model);

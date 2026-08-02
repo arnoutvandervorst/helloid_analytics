@@ -579,6 +579,42 @@
     }
   ];
 
+  const EXPLANATION_RULES = [
+    function unexplainedRows(m) {
+      const e = m.explanation;
+      if (!e.unexplained.length) return null;
+      const groups = e.residueByAccount;
+      return Object.assign({
+        id: 'explain-residue', severity: 'medium', category: T('fi.cat.dataQuality'),
+        entities: groups.slice(0, 80).map(g => ({
+          type: 'account', key: g.account.key, label: g.account.userName,
+          detail: T('fi.explain-residue.detail', {
+            n: g.rows.length,
+            list: U.uniq(g.permissions.map(p => p.name)).slice(0, 3).join(', ') || g.rows[0].issue
+          })
+        })),
+        impactMonthly: 0
+      }, prose('explain-residue', {
+        n: e.unexplained.length,
+        share: U.fmtPct(1 - e.summary.share, 0),
+        accounts: groups.length
+      }));
+    }
+  ];
+
+  function runExplanation(model) {
+    const out = [];
+    for (const rule of EXPLANATION_RULES) {
+      let f = null;
+      try { f = rule(model); } catch (e) { console.error('explanation rule failed:', rule.name, e); }
+      if (!f) continue;
+      if (f.count == null) f.count = f.entities.length;
+      f.annualImpact = (f.impactMonthly || 0) * 12;
+      out.push(f);
+    }
+    return out;
+  }
+
   function runCorrelation(model) {
     const out = [];
     for (const rule of CORRELATION_RULES) {
@@ -605,6 +641,6 @@
     return out;
   }
 
-  HR.findings = { run, runComparison, runVault, runCorrelation,
-    RULES, COMPARISON_RULES, VAULT_RULES, CORRELATION_RULES };
+  HR.findings = { run, runComparison, runVault, runCorrelation, runExplanation,
+    RULES, COMPARISON_RULES, VAULT_RULES, CORRELATION_RULES, EXPLANATION_RULES };
 })(window.HR);

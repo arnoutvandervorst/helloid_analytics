@@ -138,6 +138,31 @@ Each proposal carries its members, its exceptions (accounts holding all but one 
 
 Mining is cached per model, samples above 5,000 accounts, and raises its support floor with the population — 97 ms on the 5k export, ~50 ms at 50k and 200k.
 
+## Explanations
+
+The point of loading the other files. A reconciliation export states differences without
+saying what caused them, so every row arrives with the same weight. `js/explain.js` walks
+each row and attaches its strongest available justification — a rule that grants it, a role
+bundle it travels in, a former owner, a link to someone's main account, a disposition
+already recorded in HelloID — and reports what is left.
+
+Explanations are ranked by how much they settle: **strong** (cause identified, next action
+mechanical), **likely** (rests on a name match or a statistical pattern), **weak** (narrows
+the question without closing it).
+
+The residue is the deliverable. Rows nothing accounts for are what genuinely need a person,
+they are grouped by account rather than listed one by one, and their count is a better
+progress measure than the raw finding total because it falls as the model improves rather
+than as the data changes.
+
+Each input raises the share, measured on the demo trio:
+
+| Loaded | Rows explained |
+| --- | --- |
+| reconciliation only | 21% |
+| \+ business rules | 24% |
+| \+ vault | 32% |
+
 ## Vault export
 
 Drop a HelloID Vault export (JSON: `{ Persons: [...], Departments: [...] }`) on the page and
