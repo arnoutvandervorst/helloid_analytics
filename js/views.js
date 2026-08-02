@@ -739,6 +739,87 @@
 
   /* ================================================================= PYRAMID */
 
+
+  /**
+   * The pyramid, drawn.
+   *
+   * The table below it lists rules; this says what the shape of the model is — how many
+   * groups each level splits the organisation into, how many rules sit at that level,
+   * and how much access it accounts for. Narrow at the top because everyone is one
+   * group; wider below because each level divides it further.
+   */
+  function pyramidDiagram(m, P) {
+    const levels = P.levels;
+    const bands = [];
+    const rulesAt = level => P.rules.filter(r => r.node.level === level);
+
+    for (let level = 0; level <= levels.length; level++) {
+      const nodes = Array.from(P.nodes.values()).filter(n => n.level === level);
+      const sized = nodes.filter(n => n.members.length);
+      const rules = rulesAt(level);
+      const covered = U.sum(rules, r => r.holders);
+      bands.push({
+        level,
+        attr: level === 0 ? null : levels[level - 1],
+        groups: sized.length,
+        rules: rules.length,
+        covered,
+        biggest: sized.reduce((max, n) => Math.max(max, n.members.length), 0),
+        median: sized.length
+          ? sized.map(n => n.members.length).sort((a, b) => a - b)[Math.floor(sized.length / 2)] : 0
+      });
+    }
+
+    const maxRules = Math.max.apply(null, bands.map(b => b.rules).concat([1]));
+    const wrap = el('div', { class: 'pyramid' });
+
+    bands.forEach((b, i) => {
+      /* Width follows the level, not the data: the shape is the point, the numbers are
+         printed inside it. */
+      const width = 34 + (bands.length === 1 ? 66 : (i / (bands.length - 1)) * 62);
+      const band = el('div', { class: 'pyr-band' + (b.rules ? '' : ' empty') });
+      band.style.width = width + '%';
+      band.append(
+        el('span', { class: 'pyr-level', text: 'L' + b.level }),
+        el('span', { class: 'pyr-attr',
+          text: b.attr ? (T('py.attr.' + b.attr) || b.attr) : T('py.everyone') }),
+        el('span', { class: 'pyr-groups',
+          text: b.level === 0 ? T('py.oneGroup') : T('py.groups', { n: U.fmtInt(b.groups) }) }),
+        el('span', { class: 'pyr-rules' + (b.rules ? '' : ' none'),
+          text: T('py.rulesHere', { n: U.fmtInt(b.rules) }) })
+      );
+      /* A bar inside the band, so levels can be compared without reading the numbers. */
+      const bar = el('span', { class: 'pyr-bar' });
+      const fill = el('i');
+      fill.style.width = (b.rules / maxRules * 100) + '%';
+      bar.appendChild(fill);
+      band.appendChild(bar);
+      band.title = b.level === 0
+        ? T('py.bandRootTip', { rules: b.rules })
+        : T('py.bandTip', { groups: b.groups, biggest: b.biggest, median: b.median, rules: b.rules });
+      wrap.appendChild(band);
+    });
+
+    if (P.combos && P.combos.length) {
+      const across = el('div', { class: 'pyr-across' }, [
+        el('span', { class: 'pyr-level', text: '⇄' }),
+        el('span', { class: 'pyr-attr', text: T('py.acrossTitle') }),
+        el('span', { class: 'pyr-groups', text: T('py.acrossNote') }),
+        el('span', { class: 'pyr-rules', text: T('py.rulesHere', { n: U.fmtInt(P.combos.length) }) })
+      ]);
+      wrap.appendChild(across);
+    }
+
+    /* What the shape costs and buys, in one line under it. */
+    const s = P.summary;
+    wrap.appendChild(el('p', { class: 'note pyr-foot', text: T('py.diagramFoot', {
+      levels: levels.length,
+      groups: U.fmtInt(Array.from(P.nodes.values()).filter(n => n.level === levels.length && n.members.length).length),
+      coverage: U.fmtPct(s.coverage, 0)
+    }) }));
+    return wrap;
+  }
+
   function pyramidView(m) {
     const f = document.createDocumentFragment();
     if (!m.vault) { f.appendChild(partialNotice(['vault'])); return f; }
@@ -815,6 +896,7 @@
     }
 
     f.appendChild(card(T('py.levelsTitle'), T('py.levelsNote'), [
+      pyramidDiagram(m, P),
       chips,
       el('p', { class: 'note', style: 'margin-top:10px', text: P.suggestion.steps.length
         ? T('py.suggestion', {

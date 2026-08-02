@@ -167,6 +167,9 @@ main { padding: 20px 24px 60px; min-width: 0; }
 .tile .foot { font-size: 12px; color: var(--muted); margin-top: 2px; }
 .tile.click { cursor: pointer; }
 .tile.click:hover { border-color: var(--border-strong); }
+/* A card that navigates has to look like one — the org walker is a stack of them. */
+.card.click { cursor: pointer; }
+.card.click:hover { border-color: var(--border-strong); background: var(--hover); }
 .delta { font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; gap: 3px; }
 .delta.up { color: var(--critical); }
 .delta.down { color: var(--good-ink); }
@@ -450,3 +453,26 @@ table.board-tbl .owner-cell { border-bottom: 1px solid #e3e2dc; min-width: 90px;
   .demo-banner { display: none; }          /* the strip inside the paper prints instead */
   .demo-strip { border-color: #000; background: none; }
 }
+
+/* The role pyramid: bands widening downward, each level splitting the organisation
+   further. Width encodes the level, the inner bar encodes rules placed there. */
+.pyramid { display: flex; flex-direction: column; align-items: center; gap: 6px; margin: 4px 0 14px; }
+.pyr-band, .pyr-across {
+  position: relative; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 8px 14px; border: 1px solid var(--border-strong); border-radius: 8px;
+  background: var(--surface-2); font-size: 12px; min-height: 38px; box-sizing: border-box;
+}
+.pyr-band.empty { opacity: .6; border-style: dashed; }
+.pyr-across { width: 96%; border-style: dashed; background: transparent; margin-top: 4px; }
+.pyr-level { font-family: var(--mono); color: var(--muted); font-size: 11px; }
+.pyr-attr { font-weight: 600; }
+.pyr-groups { color: var(--text-secondary); }
+.pyr-rules { margin-left: auto; color: var(--text-secondary); white-space: nowrap; }
+.pyr-rules.none { color: var(--muted); }
+.pyr-bar {
+  position: absolute; left: 0; bottom: 0; height: 3px; width: 100%;
+  background: transparent; border-radius: 0 0 8px 8px; overflow: hidden;
+}
+.pyr-bar i { display: block; height: 3px; background: var(--series-1); }
+.pyr-foot { align-self: stretch; text-align: center; margin-top: 6px; }
+@media (max-width: 720px) { .pyr-band, .pyr-across { width: 100% !important; } }
