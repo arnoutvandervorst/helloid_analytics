@@ -822,6 +822,13 @@
       groups: U.fmtInt(Array.from(P.nodes.values()).filter(n => n.level === levels.length && n.members.length).length),
       coverage: U.fmtPct(s.coverage, 0)
     }) }));
+    if (P.summary.tooSmall) {
+      /* Otherwise a level that adds no rules reads as a level that found nothing. */
+      wrap.appendChild(el('p', { class: 'note pyr-foot', text: T('py.tooSmall', {
+        groups: U.fmtInt(P.summary.tooSmall), people: U.fmtInt(P.skippedPeople),
+        min: P.minSize
+      }) }));
+    }
     return wrap;
   }
 
@@ -1031,9 +1038,32 @@
         onclick: () => setLevels(P.suggestion.levels) }));
     }
 
+    /* The two numbers that decide how granular the model can get. They were fixed, and
+       the minimum group size in particular made deeper levels look useless: a department
+       splits into titles of two or three people, all of which a floor of five discards. */
+    const slider = (labelKey, key, min, max, step, format) => {
+      const value = P[key];
+      const out = el('span', { class: 'mono', text: format(value) });
+      const input = el('input', { type: 'range', min: min, max: max, step: step, value: value });
+      input.addEventListener('input', e => { out.textContent = format(+e.target.value); });
+      input.addEventListener('change', e => {
+        const c = HR.config.get();
+        c.pyramid = Object.assign({}, c.pyramid, { [key]: +e.target.value });
+        HR.config.save(c);
+        delete m._pyramid;
+        HR.app.render();
+      });
+      return el('label', { class: 'inline' }, [document.createTextNode(T(labelKey)), input, out]);
+    };
+    const knobs = el('div', { class: 'slot-actions' }, [
+      slider('py.threshold', 'threshold', 0.5, 1, 0.01, v => U.fmtPct(v, 0)),
+      slider('py.minSize', 'minSize', 1, 25, 1, v => U.fmtInt(v))
+    ]);
+
     f.appendChild(card(T('py.levelsTitle'), T('py.levelsNote'), [
       pyramidDiagram(m, P),
       chips,
+      knobs,
       el('p', { class: 'note', style: 'margin-top:10px', text: P.suggestion.steps.length
         ? T('py.suggestion', {
             steps: P.suggestion.steps.map(x => (T('py.attr.' + x.attr) || x.attr) +
@@ -1046,7 +1076,8 @@
 
     /* ---- the rules ---- */
     const ruleRows = P.rules.map(r => ({
-      where: r.node.path.map(x => x.value || T('py.empty')).join(' › ') || T('py.everyone'),
+      where: r.node.path.map(x => (T('py.attr.' + x.attr) || x.attr) + ': ' +
+        (x.value || T('py.empty'))).join(' + ') || T('py.everyone'),
       level: r.node.level, perm: m.permissions.get(r.ent), ent: r.ent,
       coverage: r.coverage, holders: r.holders, missing: r.missing.length, members: r.node.members.length
     })).concat((P.combos || []).map(c => ({
@@ -1076,8 +1107,9 @@
             : el('span', { class: 'note', text: '0' }) }
       ],
       rows: ruleRows, pageSize: 20, exportName: 'pyramid-rules',
-      /* Pyramid rules first, biggest group first: the model reads top-down. */
-      initialSort: { key: 'members', dir: -1 }
+      /* By level, so the deeper and more specific rules an added level produces are
+         visible rather than buried under the big ones at the top. */
+      initialSort: { key: 'level', dir: 1 }
     })));
 
     /* ---- what the model says is wrong ---- */

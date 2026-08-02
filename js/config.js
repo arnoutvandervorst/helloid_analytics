@@ -114,6 +114,24 @@
     map: {}                         // product name -> [{ system, permission, source }]
   };
 
+  /* --- role pyramid ----------------------------------------------------------
+     threshold decides when a group is uniform enough to call a rule; minSize decides
+     how small a group may be before a rule about it means nothing. minSize is the one
+     that silently caps granularity: a department splits into job titles of two or three
+     people, so a floor of five discards every deeper level and adding one looks like it
+     did nothing. Three is small enough for a real team and large enough that one
+     person's access cannot become a role on its own. */
+  const DEFAULT_PYRAMID = {
+    threshold: 0.9,                 // share of a group that must hold it
+    minSize: 3,                     // members a group needs before it can carry a rule
+    maxLevels: 4,
+    combos: true,
+    maxConditions: 2,
+    minComboGain: 3,
+    pollutionBelow: 0.1,
+    levels: []                      // empty = use the suggested order
+  };
+
   const DEFAULTS = {
     currency: 'EUR',
     categories: DEFAULT_CATEGORIES,
@@ -123,6 +141,7 @@
     risk: DEFAULT_RISK,
     correlation: DEFAULT_CORRELATION,
     products: DEFAULT_PRODUCTS,
+    pyramid: DEFAULT_PYRAMID,
     rarityThreshold: 3,             // held by <= N accounts counts as rare
     skipReview: false,              // skip the configuration review on import
     severityBands: { critical: 70, high: 45, medium: 20 }

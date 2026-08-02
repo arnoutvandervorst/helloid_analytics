@@ -150,7 +150,16 @@
       }
     }
 
-    return { nodes, root, rules, levels: levels.slice() };
+    /* Groups too small to carry a rule. Without this number a level that adds nothing
+       looks like a level that found nothing, and the two have different fixes. */
+    const tooSmall = Array.from(nodes.values())
+      .filter(n => n.level > 0 && n.members.length && n.members.length < opts.minSize);
+
+    return {
+      nodes, root, rules, levels: levels.slice(),
+      tooSmall,
+      skippedPeople: U.sum(tooSmall, n => n.members.length)
+    };
   }
 
   /**
@@ -365,6 +374,8 @@
     const result = {
       people, attributes, suggestion, levels, combos, weight,
       nodes: mined.nodes, root: mined.root, rules: mined.rules,
+      tooSmall: mined.tooSmall, skippedPeople: mined.skippedPeople,
+      threshold: cfg.threshold, minSize: cfg.minSize,
       stats,
       summary: {
         people: people.length,
@@ -377,7 +388,10 @@
         explained: stats.explainedCount,
         under: stats.under.length,
         pollution: stats.pollution.length,
-        isolated: stats.isolated
+        isolated: stats.isolated,
+        tooSmall: mined.tooSmall.length,
+        rulesPerLevel: levels.map((_, i) =>
+          mined.rules.filter(r => r.node.level === i + 1).length)
       }
     };
     model._pyramid = result;
