@@ -114,16 +114,22 @@
       return null;
     }
 
-    function explainPermissionUnmanaged(account, perm) {
+    function explainPermissionUnmanaged(account, perm, record) {
+      /* The reconciliation row carries spellings the activity export may not: the
+         permission's configuration and its sub-permission. Both are offered to the
+         lookup, because tenants split the same entitlement across those fields
+         differently. */
+      const config = record ? record.permissionConfig : '';
+      const sub = record ? record.subPermission : '';
+
       /* The strongest evidence of all: HelloID itself says it granted this. Then the
          assignment is not outside the identity system at all. */
       if (activity && account.personRaw) {
         if (granted && !granted.empty &&
-            activity.grantedIndex.has(activity.grantedKey(account.personRaw, perm.system, perm.name))) {
+            activity.isGranted(account.personRaw, perm.system, perm.name, config, sub)) {
           return { kind: 'helloid-granted', strength: 'strong', params: { name: perm.name } };
         }
-        const pairKey = activity.pairKey(account.personRaw, perm.system, perm.name);
-        const last = activity.lastAction.get(pairKey);
+        const last = activity.lastActionFor(account.personRaw, perm.system, perm.name, config, sub);
         if (last && /grant/i.test(last.operation) && /succeed/i.test(last.result)) {
           return { kind: 'history-granted', strength: 'strong',
             params: { date: last.createdOn ? U.fmtDate(last.createdOn).split(',')[0] : '—',
@@ -134,7 +140,7 @@
             params: { date: last.createdOn ? U.fmtDate(last.createdOn).split(',')[0] : '—',
               result: last.result } };
         }
-        const blocked = activity.blockedAction.get(pairKey);
+        const blocked = activity.blockedActionFor(account.personRaw, perm.system, perm.name, config, sub);
         if (blocked) {
           return { kind: 'action-blocked', strength: 'likely',
             params: { origins: blocked.origins.join(', ') } };
@@ -185,10 +191,10 @@
       return null;
     }
 
-    function explainPermissionMissing(account, perm) {
+    function explainPermissionMissing(account, perm, record) {
       if (activity && perm && account.personRaw) {
-        const pairKey = activity.pairKey(account.personRaw, perm.system, perm.name);
-        const failure = activity.failedGrant.get(pairKey);
+        const failure = activity.failedGrantFor(account.personRaw, perm.system, perm.name,
+          record ? record.permissionConfig : '', record ? record.subPermission : '');
         if (failure) {
           return { kind: 'grant-attempt-failed', strength: 'strong',
             params: { date: failure.createdOn ? U.fmtDate(failure.createdOn).split(',')[0] : '—',
@@ -216,9 +222,9 @@
       } else if (record.issue === model.ISSUE_ACCOUNT && account) {
         explanation = explainAccountUnmanaged(account);
       } else if (record.issue === model.ISSUE_PERM_UNMANAGED && account && perm) {
-        explanation = explainPermissionUnmanaged(account, perm);
+        explanation = explainPermissionUnmanaged(account, perm, record);
       } else if (record.issue === model.ISSUE_PERM_MISSING && account) {
-        explanation = explainPermissionMissing(account, perm);
+        explanation = explainPermissionMissing(account, perm, record);
       }
 
       rows.push({

@@ -1,6 +1,6 @@
 # HelloID Analytics
 
-A local, dependency-free dashboard for HelloID exports. Drop a `ReconciliationReport.csv`
+A self-hostable, dependency-free dashboard for HelloID exports. Drop a `ReconciliationReport.csv`
 on the page and it builds the account ↔ entitlement ↔ person graph, scores risk, prices the
 licence drift, and diffs the run against any earlier import.
 
@@ -12,7 +12,9 @@ entitlements into modelled, draft-only and unmodelled; **granted entitlements** 
 recorded", and turn a missing entitlement into a failed grant on a date; the **entitlement
 catalogue** names what HelloID still lists that the target system no longer has.
 
-Nothing leaves the browser: no build step, no CDN, no network calls.
+Serve it from a laptop, a NUC or any static host — it is plain files, with no build step,
+no CDN and no back end. Wherever it runs, the exports are read and analysed in the browser
+that opened the page: they are never uploaded to the host serving it.
 
 ## Run it
 

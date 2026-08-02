@@ -1,0 +1,32 @@
+{
+ "kind": "helloid-analytics-demo",
+ "generatedOn": "2026-08-02",
+ "seed": 1,
+ "synthetic": true,
+ "files": [
+  {
+   "slot": "recon",
+   "file": "recon.csv"
+  },
+  {
+   "slot": "vault",
+   "file": "vault.json"
+  },
+  {
+   "slot": "rules",
+   "file": "rules.csv"
+  },
+  {
+   "slot": "granted",
+   "file": "granted.csv"
+  },
+  {
+   "slot": "history",
+   "file": "history.csv"
+  },
+  {
+   "slot": "catalogue",
+   "file": "catalogue.csv"
+  }
+ ]
+}

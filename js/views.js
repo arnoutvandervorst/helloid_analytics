@@ -127,7 +127,8 @@
     if (st.history) rows.push({
       kind: T('src.history'), loaded: st.importedAt.history,
       dataDate: st.history.meta.to ? +st.history.meta.to : null,
-      detail: T('src.historyDetail', { n: U.fmtInt(st.history.meta.rowCount), days: st.history.meta.days }),
+      detail: T('src.historyDetail', { n: U.fmtInt(st.history.meta.rowCount),
+        days: st.history.meta.activeDays, span: st.history.meta.spanDays == null ? '—' : st.history.meta.spanDays }),
       file: st.history.meta.fileName
     });
 
@@ -217,7 +218,9 @@
             : T('src.grantedDetail', { n: U.fmtInt(st.granted.meta.rowCount) }) };
       case 'history':
         return st.history && { file: st.history.meta.fileName, loaded: st.importedAt.history,
-          detail: T('src.historyDetail', { n: U.fmtInt(st.history.meta.rowCount), days: st.history.meta.days }) };
+          detail: T('src.historyDetail', { n: U.fmtInt(st.history.meta.rowCount),
+            days: st.history.meta.activeDays,
+            span: st.history.meta.spanDays == null ? '—' : st.history.meta.spanDays }) };
       case 'catalogue':
         return st.catalogue && { file: st.catalogue.meta.fileName, loaded: st.importedAt.catalogue,
           detail: T('src.catalogueDetail', { n: U.fmtInt(st.catalogue.meta.rowCount),

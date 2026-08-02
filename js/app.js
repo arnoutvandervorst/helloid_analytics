@@ -202,7 +202,8 @@
     if (parsed.empty) {
       U.toast(T('toast.activityEmpty', { kind: T('act.kind.' + parsed.kind) }), 6000);
     } else if (parsed.kind === 'history') {
-      U.toast(T('toast.historyLoaded', { n: U.fmtInt(parsed.meta.rowCount), days: parsed.meta.days }), 5000);
+      U.toast(T('toast.historyLoaded', { n: U.fmtInt(parsed.meta.rowCount), days: parsed.meta.activeDays,
+        span: parsed.meta.spanDays == null ? '\u2014' : parsed.meta.spanDays }), 5000);
     } else if (parsed.kind === 'catalogue') {
       U.toast(T('toast.catalogueLoaded', {
         n: U.fmtInt(parsed.meta.rowCount), gone: U.fmtInt(parsed.meta.orphanedCount),

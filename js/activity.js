@@ -26,7 +26,19 @@
      entitlement still exists in the target system. */
   const CATALOGUE_HEADERS = ['systemdisplayname', 'entitlementdisplayname', 'rulescount', 'intargetsystem'];
 
+  /* Keys join three free-text fields; without a separator "AD"+"min" and "ADmin"+""
+     are the same key. Unit separator never appears in an export. */
+  const SEP = '\u001f';
+
   const normHeader = h => String(h || '').toLowerCase().replace(/[^a-z]/g, '');
+
+  /** "OperatorGroup - Applicatiebeheerders" -> {type, leaf}; a plain name -> {leaf} only. */
+  function splitSub(name) {
+    const i = String(name || '').indexOf(' - ');
+    return i > 0
+      ? { type: name.slice(0, i).trim(), leaf: name.slice(i + 3).trim() }
+      : { type: '', leaf: String(name || '').trim() };
+  }
 
   function classify(header) {
     const cols = header.map(normHeader);
@@ -73,6 +85,11 @@
       const ent = HR.parse.splitParenthetical(entitlementRaw);
       const person = HR.parse.splitParenthetical(personRaw);
 
+      /* Some tenants name an entitlement "<permission type> - <name>" — "OperatorGroup -
+         Applicatiebeheerders", "Security Group - Office 365 E3" — with the type repeated
+         in PermissionConfigurationDisplayName. The reconciliation export of the same
+         tenant may carry only one half of that, so both halves are kept for matching. */
+      const parts = splitSub(ent.name);
       const record = {
         i: rows.length,
         personRaw,
@@ -81,8 +98,12 @@
         system: get(r, 'system') || 'Unknown system',
         entitlementRaw,
         entitlement: ent.name,
+        entitlementType: parts.type,
+        entitlementLeaf: parts.leaf,
         path: ent.extra,
-        configuration: get(r, 'permissionconfigurationdisplayname')
+        configuration: get(r, 'permissionconfigurationdisplayname'),
+        /* "Account" and "Account Access" are the account itself, not a group on it. */
+        isAccount: /^account( access)?$/i.test(ent.name)
       };
 
       if (kind === 'history') {
@@ -178,7 +199,7 @@
     /* Per person + entitlement, so a single row can be asked "what happened to this". */
     const byPair = new Map();
     for (const r of rows) {
-      const key = r.personRaw + '' + r.system + '' + r.entitlement;
+      const key = r.personRaw + SEP + r.system + SEP + r.entitlement;
       if (!byPair.has(key)) byPair.set(key, []);
       byPair.get(key).push(r);
     }
@@ -230,7 +251,12 @@
         persons: new Set(rows.map(r => r.personRaw)).size,
         entitlements: new Set(rows.map(r => r.entitlement)).size,
         from, to,
+        /* perDay counts days that saw an action. Reporting that as "days" read as the
+           span of the export, which for a two-month file with fourteen busy days is a
+           different claim entirely. */
         days: perDay.size,
+        activeDays: perDay.size,
+        spanDays: (from && to) ? Math.round((to - from) / 86400000) + 1 : null,
         failedCount: failed.length,
         blockedCount: blocked.length,
         fingerprint: U.hash(text.length + '|' + rows.length + '|' + text.slice(0, 4096))
@@ -242,29 +268,65 @@
    * What the two exports say about the reconciliation model: which assignments HelloID
    * granted itself, and which ones it tried to change and could not.
    */
+  /**
+   * What the activity exports say about the reconciliation model: which assignments
+   * HelloID granted itself, and which ones it tried to change and could not.
+   *
+   * An entitlement can be written down differently on either side of this join. Some
+   * tenants export "OperatorGroup - Applicatiebeheerders" here while the reconciliation
+   * calls it "Applicatiebeheerders" and puts "Operator Groups" in its configuration
+   * column. Both spellings are indexed, and a lookup offers every spelling the
+   * reconciliation row can supply, so the two meet without either side guessing.
+   */
   function reconcile(model, granted, history) {
-    const key = (system, name) => String(system || '').toLowerCase() + '' + String(name || '').toLowerCase();
+    const key = (system, name) => String(system || '').toLowerCase() + SEP + String(name || '').toLowerCase();
 
-    /* HelloID's own view of what is granted, keyed the way the recon rows are. */
+    const indexKeys = (personRaw, system, entitlement, leaf) => {
+      const out = [personRaw + SEP + key(system, entitlement)];
+      if (leaf && leaf !== entitlement) out.push(personRaw + SEP + key(system, leaf));
+      return out;
+    };
+
+    const lookupKeys = (personRaw, system, name, config, sub) => {
+      const out = [personRaw + SEP + key(system, name)];
+      if (config) out.push(personRaw + SEP + key(system, config + ' - ' + name));
+      if (sub) {
+        out.push(personRaw + SEP + key(system, sub));
+        out.push(personRaw + SEP + key(system, name + ' - ' + sub));
+      }
+      return out;
+    };
+
+    const firstHit = (map, keys) => {
+      for (const k of keys) { const v = map.get(k); if (v) return v; }
+      return null;
+    };
+
+    /* HelloID's own view of what is granted. */
     const grantedIndex = new Map();
     if (granted) {
       for (const r of granted.rows) {
-        grantedIndex.set(r.personRaw + '' + key(r.system, r.entitlement), r);
+        for (const k of indexKeys(r.personRaw, r.system, r.entitlement, r.entitlementLeaf)) {
+          if (!grantedIndex.has(k)) grantedIndex.set(k, r);
+        }
       }
     }
 
-    /* The last thing that happened to each person+entitlement pair. */
+    /* The last thing that happened to each person + entitlement pair. */
     const lastAction = new Map();
     const failedGrant = new Map();
     const blockedAction = new Map();
     if (history) {
-      for (const [pairKey, list] of history.byPair) {
+      for (const list of history.byPair.values()) {
+        const sample = list[0];
         const last = list[list.length - 1];
-        lastAction.set(pairKey, last);
         const failure = list.slice().reverse().find(r => /fail/i.test(r.result));
-        if (failure) failedGrant.set(pairKey, failure);
         const block = list.slice().reverse().find(r => r.origins.some(o => /blocked/i.test(o)));
-        if (block) blockedAction.set(pairKey, block);
+        for (const k of indexKeys(sample.personRaw, sample.system, sample.entitlement, sample.entitlementLeaf)) {
+          if (!lastAction.has(k)) lastAction.set(k, last);
+          if (failure && !failedGrant.has(k)) failedGrant.set(k, failure);
+          if (block && !blockedAction.has(k)) blockedAction.set(k, block);
+        }
       }
     }
 
@@ -273,8 +335,15 @@
       lastAction,
       failedGrant,
       blockedAction,
-      pairKey: (personRaw, system, name) => personRaw + '' + key(system, name),
-      grantedKey: (personRaw, system, name) => personRaw + '' + key(system, name),
+      /* Callers ask about a reconciliation row, not about a key. */
+      isGranted: (personRaw, system, name, config, sub) =>
+        !!firstHit(grantedIndex, lookupKeys(personRaw, system, name, config, sub)),
+      lastActionFor: (personRaw, system, name, config, sub) =>
+        firstHit(lastAction, lookupKeys(personRaw, system, name, config, sub)),
+      failedGrantFor: (personRaw, system, name, config, sub) =>
+        firstHit(failedGrant, lookupKeys(personRaw, system, name, config, sub)),
+      blockedActionFor: (personRaw, system, name, config, sub) =>
+        firstHit(blockedAction, lookupKeys(personRaw, system, name, config, sub)),
       summary: {
         granted: granted ? granted.rows.length : 0,
         history: history ? history.rows.length : 0,
@@ -285,5 +354,5 @@
     };
   }
 
-  HR.activity = { parse, classify, reconcile, parseDate };
+  HR.activity = { parse, classify, reconcile, parseDate, splitSub };
 })(window.HR);

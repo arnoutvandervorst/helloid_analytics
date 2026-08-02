@@ -57,7 +57,7 @@ window.HR = window.HR || {};
     'fi.catalogue-no-rule.detail': '{system}',
     'nav.sources': 'Imports',
     'src.pageTitle': 'Imports',
-    'src.pageLead': 'Each HelloID export is loaded on its own. Everything is processed in your browser \u2014 nothing leaves this machine.',
+    'src.pageLead': 'Each HelloID export is loaded on its own, and read in this browser \u2014 files are never uploaded to the server hosting this page.',
     'src.slotLoaded': 'Loaded',
     'src.slotRequired': 'Required',
     'src.slotOptional': 'Optional',
@@ -70,7 +70,7 @@ window.HR = window.HR || {};
     'src.otherNote': 'Not HelloID exports: a settings file restores your configuration, a snapshot bundle restores earlier imports.',
     'src.settingsFile': 'Settings file (JSON)',
     'src.snapshotBundle': 'Snapshot bundle (JSON)',
-    'src.privacy': 'Files are read in the browser. Nothing is uploaded, and imports are kept in this browser\u2019s local storage only.',
+    'src.privacy': 'Files are read in the browser and kept in this browser\u2019s own storage. Nothing is sent to the server hosting this page, wherever it is hosted.',
     'src.slot.recon.unlocks': 'The base of the analysis: accounts, entitlements and the differences HelloID found.',
     'src.slot.recon.where': 'HelloID \u2192 Reconciliation \u2192 Export.',
     'src.slot.vault.unlocks': 'People and contracts. Makes rule conditions evaluable, and separates leavers from unowned accounts.',
@@ -101,7 +101,7 @@ window.HR = window.HR || {};
     'src.rulesDetail': '{n} rules · {live} live',
     'src.vaultDetail': '{n} persons · {c} contracts',
     'src.grantedDetail': '{n} granted entitlements',
-    'src.historyDetail': '{n} actions · {days} days',
+    'src.historyDetail': '{n} actions on {days} days, spanning {span} days',
     'src.cKind': 'Source',
     'src.cFile': 'File',
     'src.cContents': 'Contents',
@@ -124,7 +124,7 @@ window.HR = window.HR || {};
     'nx.needs.history': 'Import the historic-actions export to see what HelloID actually did, when, and whether it worked.',
     'nx.needs.granted': 'Import the granted-entitlements export to see what HelloID believes is granted right now.',
 
-    'toast.historyLoaded': 'History loaded: {n} actions across {days} days',
+    'toast.historyLoaded': 'History loaded: {n} actions on {days} days, spanning {span} days',
     'toast.grantedLoaded': 'Granted entitlements loaded: {n} rows',
     'toast.activityEmpty': 'That {kind} export contains no rows — nothing is granted, or the export was taken before provisioning ran.',
     'act.kind.granted': 'granted-entitlements',
@@ -507,7 +507,7 @@ window.HR = window.HR || {};
     'st.ruleMatches': '{n} in this import',
 
     'empty.title': 'Import a HelloID reconciliation export',
-    'empty.body': 'Open Imports for a slot per HelloID export, or drag a file anywhere on this page. Everything is processed in your browser — nothing is uploaded.',
+    'empty.body': 'Open Imports for a slot per HelloID export, or drag a file anywhere on this page. Files are read in this browser and never uploaded to the host.',
     'empty.sample': 'Load the export from this folder',
     'empty.columns': 'Expected columns: System, Person, AccountDisplayName, AccountUserName, AccountEnabled, PermissionDisplayName, PermissionConfigurationDisplayName, SubPermissionDisplayName, Issue, Resolution.',
 
@@ -795,7 +795,7 @@ window.HR = window.HR || {};
 
     /* ---- snapshots ---- */
     'sn.title': 'Snapshots',
-    'sn.lead': 'Every import is stored locally so later exports can be compared against it. Nothing leaves the browser.',
+    'sn.lead': 'Every import is stored in this browser so later exports can be compared against it. Nothing is sent to the host.',
     'sn.exportAll': 'Export all (JSON)',
     'sn.importJson': 'Import JSON',
     'sn.noStorage': 'Persistent storage is unavailable (the page is running from the filesystem, so the browser gives it an opaque origin). Snapshots live only in this tab — export them to JSON to keep them, or serve the folder over http with ./serve.sh.',
@@ -1273,7 +1273,7 @@ window.HR = window.HR || {};
     'fi.catalogue-no-rule.detail': '{system}',
     'nav.sources': 'Imports',
     'src.pageTitle': 'Imports',
-    'src.pageLead': 'Elke HelloID-export laad je apart. Alles wordt in je browser verwerkt \u2014 er gaat niets van deze machine af.',
+    'src.pageLead': 'Elke HelloID-export laad je apart en wordt in deze browser gelezen \u2014 bestanden gaan nooit naar de server die deze pagina host.',
     'src.slotLoaded': 'Geladen',
     'src.slotRequired': 'Vereist',
     'src.slotOptional': 'Optioneel',
@@ -1286,7 +1286,7 @@ window.HR = window.HR || {};
     'src.otherNote': 'Geen HelloID-exports: een instellingenbestand zet je configuratie terug, een momentopname-bundel eerdere imports.',
     'src.settingsFile': 'Instellingenbestand (JSON)',
     'src.snapshotBundle': 'Momentopname-bundel (JSON)',
-    'src.privacy': 'Bestanden worden in de browser gelezen. Er wordt niets geüpload; imports staan alleen in de lokale opslag van deze browser.',
+    'src.privacy': 'Bestanden worden in de browser gelezen en in de opslag van deze browser bewaard. Er gaat niets naar de server die deze pagina host, waar die ook draait.',
     'src.slot.recon.unlocks': 'De basis van de analyse: accounts, rechten en de verschillen die HelloID vond.',
     'src.slot.recon.where': 'HelloID \u2192 Reconciliatie \u2192 Export.',
     'src.slot.vault.unlocks': 'Personen en contracten. Maakt regelvoorwaarden evalueerbaar en scheidt uitdiensttreders van accounts zonder eigenaar.',
@@ -1317,7 +1317,7 @@ window.HR = window.HR || {};
     'src.rulesDetail': '{n} regels · {live} actief',
     'src.vaultDetail': '{n} personen · {c} contracten',
     'src.grantedDetail': '{n} toegekende rechten',
-    'src.historyDetail': '{n} acties · {days} dagen',
+    'src.historyDetail': '{n} acties op {days} dagen, over {span} dagen',
     'src.cKind': 'Bron',
     'src.cFile': 'Bestand',
     'src.cContents': 'Inhoud',
@@ -1340,7 +1340,7 @@ window.HR = window.HR || {};
     'nx.needs.history': 'Importeer de historische-acties-export om te zien wat HelloID daadwerkelijk deed, wanneer, en of het lukte.',
     'nx.needs.granted': 'Importeer de export met toegekende rechten om te zien wat HelloID nu denkt te hebben toegekend.',
 
-    'toast.historyLoaded': 'Historie geladen: {n} acties over {days} dagen',
+    'toast.historyLoaded': 'Historie geladen: {n} acties op {days} dagen, over {span} dagen',
     'toast.grantedLoaded': 'Toegekende rechten geladen: {n} regels',
     'toast.activityEmpty': 'Die {kind}-export bevat geen regels — er is niets toegekend, of de export is gemaakt voordat provisioning liep.',
     'act.kind.granted': 'toegekende-rechten',
@@ -1723,7 +1723,7 @@ window.HR = window.HR || {};
     'st.ruleMatches': '{n} in deze import',
 
     'empty.title': 'Importeer een HelloID-reconciliatie-export',
-    'empty.body': 'Open Imports voor een vak per HelloID-export, of sleep een bestand ergens op deze pagina. Alles wordt in je browser verwerkt — er gaat niets naar buiten.',
+    'empty.body': 'Open Imports voor een vak per HelloID-export, of sleep een bestand ergens op deze pagina. Bestanden worden in deze browser gelezen en nooit naar de host gestuurd.',
     'empty.sample': 'Laad de export uit deze map',
     'empty.columns': 'Verwachte kolommen: System, Person, AccountDisplayName, AccountUserName, AccountEnabled, PermissionDisplayName, PermissionConfigurationDisplayName, SubPermissionDisplayName, Issue, Resolution.',
 
@@ -2001,7 +2001,7 @@ window.HR = window.HR || {};
     'df.fieldRisk': 'risico',
 
     'sn.title': 'Momentopnames',
-    'sn.lead': 'Elke import wordt lokaal bewaard zodat latere exports ermee vergeleken kunnen worden. Er gaat niets de browser uit.',
+    'sn.lead': 'Elke import wordt in deze browser bewaard zodat latere exports ermee vergeleken kunnen worden. Er gaat niets naar de host.',
     'sn.exportAll': 'Alles exporteren (JSON)',
     'sn.importJson': 'JSON importeren',
     'sn.noStorage': 'Blijvende opslag is niet beschikbaar (de pagina draait vanaf het bestandssysteem, waardoor de browser geen eigen oorsprong toekent). Momentopnames bestaan alleen in dit tabblad — exporteer ze naar JSON, of serveer de map via http met ./serve.sh.',
