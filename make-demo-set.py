@@ -453,35 +453,6 @@ class DemoSet:
                 ]))
         return rows
 
-    # -------------------------------------------------------------------- catalogue
-    def build_catalogue(self):
-        """One row per entitlement HelloID knows, with its rule count and target state."""
-        rnd = self.rnd
-        counts = {}
-        for r in self.rules_rows:
-            for ent in r['Entitlements'].split('|'):
-                name = ent.split(' - ', 1)[1]
-                counts[name] = counts.get(name, 0) + 1
-
-        seen = {}
-        for acc in self.accounts:
-            for perm in acc['perms']:
-                seen.setdefault((acc['system'], perm), True)
-        for system in SYSTEMS[:self.args.systems]:
-            seen[(system, 'Account')] = True
-        # The rule points at it; the target system no longer has it.
-        seen[(SYSTEMS[0], f'{self.stale_entitlement} (avo.local/Sample/Groups/{self.stale_entitlement})')] = True
-
-        lines = [csv_line(['SystemDisplayName', 'EntitlementDisplayName', 'RulesCount', 'InTargetSystem'])]
-        for (system, perm) in sorted(seen):
-            bare = perm.split(' (')[0]
-            count = counts.get(perm, counts.get(bare, 0))
-            if bare == 'Account':
-                count = max(count, 1)
-            gone = bare == self.stale_entitlement or (bare != 'Account' and rnd.random() < 0.012)
-            lines.append(csv_line([system, perm, count, 'False' if gone else 'True']))
-        return lines
-
     # ---------------------------------------------------------------------- granted
     def build_granted(self):
         """What HelloID says it granted — a subset, so both answers appear in the data."""
@@ -549,7 +520,6 @@ class DemoSet:
         recon = self.build_recon()
         self.build_vault()
         rules = self.build_rules()
-        catalogue = self.build_catalogue()
         granted = self.build_granted()
         history = self.build_history()
         self.products = self.build_products()
@@ -558,7 +528,6 @@ class DemoSet:
         files = {
             'recon.csv': '\n'.join(recon) + '\n',
             'rules.csv': '\n'.join(rules) + '\n',
-            'catalogue.csv': '\n'.join(catalogue) + '\n',
             'granted.csv': '\n'.join(granted) + '\n',
             'history.csv': '\n'.join(history) + '\n',
             'vault.json': json.dumps(self.vault, indent=1, ensure_ascii=False) + '\n',
@@ -580,7 +549,6 @@ class DemoSet:
                 {'slot': 'rules', 'file': 'rules.csv'},
                 {'slot': 'granted', 'file': 'granted.csv'},
                 {'slot': 'history', 'file': 'history.csv'},
-                {'slot': 'catalogue', 'file': 'catalogue.csv'},
                 {'slot': 'products', 'file': 'products.json'},
                 {'slot': 'assignments', 'file': 'product-assignments.csv'}
             ]
@@ -593,7 +561,7 @@ class DemoSet:
             path = os.path.join(outdir, name)
             print(f'{path}: {os.path.getsize(path) // 1024} KiB')
         print(f"{len(recon) - 1} reconciliation rows, {len(self.vault['Persons'])} persons, "
-              f'{len(self.rules_rows)} rules, {len(catalogue) - 1} entitlements, '
+              f'{len(self.rules_rows)} rules, '
               f'{len(granted) - 1} granted, {len(history) - 1} actions, '
               f"{len(self.products['products'])} products, {len(assignments) - 1} assignments")
 

@@ -119,11 +119,6 @@
       detail: st.granted.empty ? T('act.grantedEmpty') : T('src.grantedDetail', { n: U.fmtInt(st.granted.meta.rowCount) }),
       file: st.granted.meta.fileName
     });
-    if (st.catalogue) rows.push({
-      kind: T('src.catalogue'), loaded: st.importedAt.catalogue, dataDate: null,
-      detail: T('src.catalogueDetail', { n: U.fmtInt(st.catalogue.meta.rowCount), gone: st.catalogue.meta.orphanedCount }),
-      file: st.catalogue.meta.fileName, loadedOnly: true
-    });
     if (st.products) rows.push({
       kind: T('src.products'), loaded: st.importedAt.products, dataDate: null,
       detail: T('src.productsDetail', { n: st.products.meta.rowCount, tasks: st.products.meta.withActions }),
@@ -202,7 +197,6 @@
     { kind: 'rules',     accept: '.csv' },
     { kind: 'granted',   accept: '.csv' },
     { kind: 'history',   accept: '.csv' },
-    { kind: 'catalogue', accept: '.csv' },
     { kind: 'products', accept: '.json' },
     { kind: 'assignments', accept: '.csv' }
   ];
@@ -243,10 +237,6 @@
         return st.assignments && { file: st.assignments.meta.fileName, loaded: st.importedAt.assignments,
           detail: T('src.assignmentsDetail', { n: U.fmtInt(st.assignments.meta.rowCount),
             open: U.fmtInt(st.assignments.meta.openCount) }) };
-      case 'catalogue':
-        return st.catalogue && { file: st.catalogue.meta.fileName, loaded: st.importedAt.catalogue,
-          detail: T('src.catalogueDetail', { n: U.fmtInt(st.catalogue.meta.rowCount),
-            gone: st.catalogue.meta.orphanedCount }) };
       default: return null;
     }
   }

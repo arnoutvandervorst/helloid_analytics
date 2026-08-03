@@ -18,7 +18,6 @@
     vault: null,           // parsed HelloID Vault export: persons, contracts, attributes
     granted: null,         // what HelloID believes is granted right now
     history: null,         // what HelloID did, when, why, and whether it worked
-    catalogue: null,       // the entitlement catalogue: rules per entitlement, still in target?
     demo: null,            // set while showing the published fictional tenant
     products: null,        // Service Automation product catalogue
     assignments: null,     // who holds which product, and who approved it
@@ -113,7 +112,7 @@
 
     state.parsed = parsed;
     state.model = HR.model.build(parsed.records, { ruleSet: state.ruleSet, vault: state.vault,
-      granted: state.granted, history: state.history, catalogue: state.catalogue,
+      granted: state.granted, history: state.history,
       products: state.products, assignments: state.assignments });
 
     const snap = HR.store.makeSnapshot(parsed, state.model);
@@ -194,7 +193,7 @@
 
   /** Drop a companion source without clearing the rest — each one stands on its own. */
   function clearSource(kind) {
-    if (!['rules', 'vault', 'granted', 'history', 'catalogue', 'products', 'assignments'].includes(kind)) return;
+    if (!['rules', 'vault', 'granted', 'history', 'products', 'assignments'].includes(kind)) return;
     state[kind] = null;
     if (kind === 'rules') state.ruleSet = null;
     delete state.raw[kind];
@@ -233,11 +232,6 @@
     } else if (parsed.kind === 'history') {
       U.toast(T('toast.historyLoaded', { n: U.fmtInt(parsed.meta.rowCount), days: parsed.meta.activeDays,
         span: parsed.meta.spanDays == null ? '\u2014' : parsed.meta.spanDays }), 5000);
-    } else if (parsed.kind === 'catalogue') {
-      U.toast(T('toast.catalogueLoaded', {
-        n: U.fmtInt(parsed.meta.rowCount), gone: U.fmtInt(parsed.meta.orphanedCount),
-        unruled: U.fmtInt(parsed.meta.unruledCount)
-      }), 6000);
     } else {
       U.toast(T('toast.grantedLoaded', { n: U.fmtInt(parsed.meta.rowCount) }), 5000);
     }
@@ -464,7 +458,7 @@
       state.baselineId = id;
       state.baselineSnapshot = snap;
       state.baselineModel = HR.model.build(snap.records, { ruleSet: state.ruleSet, vault: state.vault,
-        granted: state.granted, history: state.history, catalogue: state.catalogue,
+        granted: state.granted, history: state.history,
       products: state.products, assignments: state.assignments });
       await recomputeDiff();
       if (!quiet) U.toast(T('toast.baselineSet', { name: snap.name }));
@@ -484,7 +478,7 @@
     state.currentSnapshotId = id;
     state.parsed = { records: snap.records, meta: { fileName: snap.fileName, fingerprint: snap.fingerprint } };
     state.model = HR.model.build(snap.records, { ruleSet: state.ruleSet, vault: state.vault,
-      granted: state.granted, history: state.history, catalogue: state.catalogue,
+      granted: state.granted, history: state.history,
       products: state.products, assignments: state.assignments });
     if (state.baselineId === id) await setBaseline(null);
     await recomputeDiff();
@@ -517,7 +511,7 @@
   function rebuild() {
     if (batching) { rebuildPending = true; return; }
     const opts = { ruleSet: state.ruleSet, vault: state.vault,
-      granted: state.granted, history: state.history, catalogue: state.catalogue,
+      granted: state.granted, history: state.history,
       products: state.products, assignments: state.assignments };
     if (state.parsed) state.model = HR.model.build(state.parsed.records, opts);
     if (state.baselineSnapshot) state.baselineModel = HR.model.build(state.baselineSnapshot.records, opts);
@@ -541,7 +535,6 @@
     if (state.vault) sources.push(T('src.vault') + ': ' + state.vault.persons.length);
     if (state.granted) sources.push(T('src.granted') + ': ' + state.granted.meta.rowCount);
     if (state.history) sources.push(T('src.history') + ': ' + U.fmtInt(state.history.meta.rowCount));
-    if (state.catalogue) sources.push(T('src.catalogue') + ': ' + U.fmtInt(state.catalogue.meta.rowCount));
     if (state.products) sources.push(T('src.products') + ': ' + U.fmtInt(state.products.meta.rowCount));
     if (state.assignments) sources.push(T('src.assignments') + ': ' + U.fmtInt(state.assignments.meta.rowCount));
 
@@ -648,21 +641,20 @@
     const restoreContext = HR.store.loadContext().then(ctx => {
       if (!ctx) return;
       state.raw = { rules: ctx.rules, vault: ctx.vault, granted: ctx.granted, history: ctx.history,
-        catalogue: ctx.catalogue, products: ctx.products, assignments: ctx.assignments };
+        products: ctx.products, assignments: ctx.assignments };
       /* Context saved before import times were tracked still has one useful timestamp:
          when it was written. Better than showing nothing for every restored file. */
       state.importedAt = ctx.importedAt || {};
       state.fileNames = ctx.fileNames || {};
       state.demo = ctx.demo || null;
       const named = (k, fallback) => state.fileNames[k] || fallback;
-      ['rules', 'vault', 'granted', 'history', 'catalogue', 'products', 'assignments'].forEach(k => {
+      ['rules', 'vault', 'granted', 'history', 'products', 'assignments'].forEach(k => {
         if (ctx[k] && !state.importedAt[k]) state.importedAt[k] = ctx.savedAt || null;
       });
       try { if (ctx.rules) state.ruleSet = HR.rules.parse(ctx.rules, named('rules', 'rules.csv')); } catch (e) { /* stale */ }
       try { if (ctx.vault) state.vault = HR.vault.parse(ctx.vault, named('vault', 'vault.json')); } catch (e) { /* stale */ }
       try { if (ctx.granted) state.granted = HR.activity.parse(ctx.granted, named('granted', 'entitlements.csv')); } catch (e) { /* stale */ }
       try { if (ctx.history) state.history = HR.activity.parse(ctx.history, named('history', 'historicactions.csv')); } catch (e) { /* stale */ }
-      try { if (ctx.catalogue) state.catalogue = HR.activity.parse(ctx.catalogue, named('catalogue', 'entitlements.csv')); } catch (e) { /* stale */ }
       try { if (ctx.products) state.products = HR.products.parseProducts(ctx.products, named('products', 'products.json')); } catch (e) { /* stale */ }
       try { if (ctx.assignments) state.assignments = HR.products.parseAssignments(ctx.assignments, named('assignments', 'product-assignments.csv')); } catch (e) { /* stale */ }
     });
