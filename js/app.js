@@ -494,7 +494,28 @@
   }
 
   /** Re-run the whole pipeline after a settings change. */
+  /**
+   * Loading several exports at once rebuilt the whole model after each one.
+   *
+   * Every import is a companion to the same reconciliation, so the first seven builds are
+   * thrown away by the eighth — on the demo set that was eight full builds, five seconds,
+   * for one useful result. Inside a batch the rebuild is remembered and run once at the
+   * end; outside one nothing changes.
+   */
+  let batching = 0;
+  let rebuildPending = false;
+
+  async function batch(fn) {
+    batching++;
+    try { return await fn(); }
+    finally {
+      batching--;
+      if (!batching && rebuildPending) { rebuildPending = false; rebuild(); }
+    }
+  }
+
   function rebuild() {
+    if (batching) { rebuildPending = true; return; }
     const opts = { ruleSet: state.ruleSet, vault: state.vault,
       granted: state.granted, history: state.history, catalogue: state.catalogue,
       products: state.products, assignments: state.assignments };
@@ -660,7 +681,7 @@
 
   const REPO_URL = 'https://github.com/arnoutvandervorst/helloid_analytics';
 
-  HR.app = { REPO_URL, state, go, rebuild, loadSnapshot, setBaseline, refreshSnapshots, importText, render, applyChrome,
+  HR.app = { REPO_URL, state, go, rebuild, batch, loadSnapshot, setBaseline, refreshSnapshots, importText, render, applyChrome,
     importFileAs, clearSource, detectKind, loadSample, findSample, sampleName: () => sampleFile || null,
     demoAvailable: () => demoManifest };
   document.addEventListener('DOMContentLoaded', init);

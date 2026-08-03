@@ -44,20 +44,26 @@
     HR.app.state.demo = { generatedOn: m.generatedOn, seed: m.seed, files: m.files.length };
     HR.app.applyChrome();
 
-    for (const entry of m.files) {
-      let text;
-      try {
-        const res = await fetch(DIR + entry.file);
-        if (!res.ok) throw new Error(res.status + ' ' + res.statusText);
-        text = HR.parse.decode(await res.arrayBuffer()).text;
-      } catch (e) {
-        U.toast(T('demo.loadFail', { file: entry.file, msg: e.message }), 8000);
-        return false;
+    /* One batch for the whole set: the files are companions to the same reconciliation,
+       so the model is worth building once they are all in rather than once per file. */
+    let failed = null;
+    await HR.app.batch(async () => {
+      for (const entry of m.files) {
+        let text;
+        try {
+          const res = await fetch(DIR + entry.file);
+          if (!res.ok) throw new Error(res.status + ' ' + res.statusText);
+          text = HR.parse.decode(await res.arrayBuffer()).text;
+        } catch (e) {
+          failed = { file: entry.file, msg: e.message };
+          return;
+        }
+        /* Still awaited one at a time: the vault has to be in place before the rules
+           are compared against it. */
+        await HR.app.importText(text, 'demo-' + entry.file, { quiet: true });
       }
-      /* Awaited one at a time: each import rebuilds the model, and the vault has to be
-         in place before the rules are compared against it. */
-      await HR.app.importText(text, 'demo-' + entry.file, { quiet: true });
-    }
+    });
+    if (failed) { U.toast(T('demo.loadFail', failed), 8000); return false; }
 
     HR.store.saveContext({ demo: HR.app.state.demo });
     HR.usage.action('demo-load');
