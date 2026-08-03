@@ -38,7 +38,9 @@
     sources: 'M12 3v12m0 0l-4-4m4 4l4-4M4 17v3h16v-3',
     board: 'M4 4h16v14H4V4zm4 10V9m4 5V7m4 7v-3M9 21h6',
     settings: 'M12 9a3 3 0 100 6 3 3 0 000-6zM19 12a7 7 0 00-.1-1l2-1.5-2-3.4-2.3 1a7 7 0 00-1.7-1L14.5 3h-4l-.4 2.6a7 7 0 00-1.7 1l-2.3-1-2 3.4 2 1.5a7 7 0 000 2l-2 1.5 2 3.4 2.3-1a7 7 0 001.7 1l.4 2.6h4l.4-2.6a7 7 0 001.7-1l2.3 1 2-3.4-2-1.5c.1-.3.1-.7.1-1z',
-    star: 'M12 4l2.4 5 5.6.8-4 3.9 1 5.5-5-2.6-5 2.6 1-5.5-4-4 5.6-.7L12 4z'
+    star: 'M12 4l2.4 5 5.6.8-4 3.9 1 5.5-5-2.6-5 2.6 1-5.5-4-4 5.6-.7L12 4z',
+    collapse: 'M15 5l-7 7 7 7M20 5v14',
+    expand: 'M9 5l7 7-7 7M4 5v14'
   };
 
   /* The groups are the questions somebody arrives with, not the modules that answer them. */
@@ -121,15 +123,6 @@
     nav.innerHTML = '';
     nav.classList.toggle('collapsed', state.collapsed);
 
-    nav.appendChild(el('button', {
-      class: 'nav-toggle',
-      title: T(state.collapsed ? 'nav.expand' : 'nav.collapse'),
-      onclick: toggleCollapsed
-    }, [
-      el('span', { class: 'nav-chevron', text: state.collapsed ? '›' : '‹' }),
-      el('span', { class: 'nav-label', text: T('nav.collapse') })
-    ]));
-
     /* Favourites first, because that is the point of them. */
     const favourites = state.favourites.filter(v => HR.views[v]);
     if (favourites.length) {
@@ -144,6 +137,17 @@
       nav.appendChild(el('div', { class: 'nav-group-label', text: T('nav.g.' + group.key) }));
       views.forEach(view => nav.appendChild(item(view, current)));
     });
+
+    /* Last, and pushed to the bottom: a control you use once a session should not sit
+       where the ones you use constantly are. */
+    nav.appendChild(el('button', {
+      class: 'nav-toggle',
+      title: T(state.collapsed ? 'nav.expand' : 'nav.collapse'),
+      onclick: toggleCollapsed
+    }, [
+      icon(state.collapsed ? 'expand' : 'collapse'),
+      el('span', { class: 'nav-label', text: T('nav.collapse') })
+    ]));
   }
 
   function init() {

@@ -126,10 +126,13 @@ input[type=range] { accent-color: var(--series-1); }
 label.inline { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); }
 
 /* ---------- layout ---------- */
-.shell { display: grid; grid-template-columns: 200px 1fr; align-items: start; }
+.shell { display: grid; grid-template-columns: 216px 1fr; align-items: start; }
 .sidenav {
-  position: sticky; top: 47px; display: flex; flex-direction: column; gap: 1px;
-  padding: 10px 8px; height: calc(100vh - 47px); border-right: 1px solid var(--border);
+  /* The offset is measured rather than assumed: the demo banner sits between the top bar
+     and the shell, and a hard-coded 47px pushed the rail's bottom — and the collapse
+     control with it — below the viewport. */
+  position: sticky; top: var(--chrome-h, 47px); display: flex; flex-direction: column; gap: 1px;
+  padding: 10px 8px; height: calc(100vh - var(--chrome-h, 47px)); border-right: 1px solid var(--border);
   background: var(--surface-1); overflow-y: auto; overflow-x: hidden;
 }
 /* A row is the button plus its star; the star only shows on hover or when it is set,
@@ -166,11 +169,15 @@ label.inline { display: inline-flex; align-items: center; gap: 6px; font-size: 1
 .nav-divider { height: 1px; background: var(--border); margin: 6px 8px; }
 .nav-toggle {
   appearance: none; background: transparent; border: 0; cursor: pointer; color: var(--muted);
-  font: inherit; font-size: 12px; padding: 5px 8px; border-radius: 8px; display: flex;
-  align-items: center; gap: 10px; margin-bottom: 2px;
+  font: inherit; font-size: 12px; padding: 8px; border-radius: 8px; display: flex;
+  align-items: center; gap: 10px;
+  /* Sits at the bottom of the rail whatever the list length. Sticky rather than merely
+     last, so a list taller than the viewport does not scroll it out of reach. */
+  margin-top: auto; border-top: 1px solid var(--border); padding-top: 10px; border-radius: 0;
+  position: sticky; bottom: 0; background: var(--surface-1); z-index: 1;
 }
 .nav-toggle:hover { background: var(--hover); color: var(--text-primary); }
-.nav-chevron { width: 16px; text-align: center; font-size: 15px; line-height: 1; }
+.sidenav.collapsed .nav-toggle { justify-content: center; }
 
 /* Collapsed: icons only, labels gone, the shell narrows to match. */
 .sidenav.collapsed { padding: 10px 6px; }

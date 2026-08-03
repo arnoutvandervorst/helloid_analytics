@@ -1705,7 +1705,7 @@ window.HR = window.HR || {};
     'nav.expand': 'Uitklappen',
     'nav.board': 'Directierapport',
     'nav.overview': 'Overzicht',
-    'nav.risk': 'Risico & bevindingen',
+    'nav.risk': 'Risico',
     'nav.cost': 'Kosten',
     'nav.accounts': 'Accounts',
     'nav.permissions': 'Rechten',

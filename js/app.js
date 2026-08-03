@@ -50,6 +50,14 @@
     root.scrollTop = 0;
   }
 
+  /** Everything above the shell, in pixels: the sidebar sizes itself against it. */
+  function measureChrome() {
+    const bar = document.querySelector('.topbar');
+    const host = document.getElementById('demo-host');
+    const h = (bar ? bar.offsetHeight : 47) + (host ? host.offsetHeight : 0);
+    document.documentElement.style.setProperty('--chrome-h', h + 'px');
+  }
+
   /* The banner is chrome, but it has to survive a re-render of the view it sits above. */
   function applyChromeBanner() {
     const host = document.getElementById('demo-host');
@@ -59,6 +67,7 @@
     host.innerHTML = '';
     const b = HR.demo.banner();
     if (b) host.appendChild(b);
+    measureChrome();
   }
 
   function emptyState(root) {
@@ -548,6 +557,7 @@
     host.innerHTML = '';
     const b = HR.demo.banner();
     if (b) host.appendChild(b);
+    measureChrome();
     updateTopbar();
   }
 
@@ -592,6 +602,8 @@
     } catch (e) { /* ignore */ }
 
     HR.nav.init();
+    measureChrome();
+    window.addEventListener('resize', measureChrome);
 
     /* drag & drop anywhere */
     const veil = document.getElementById('drop-veil');
