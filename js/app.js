@@ -46,8 +46,7 @@
         el('p', { class: 'note', text: String(err && err.stack || err) })
       ]));
     }
-    document.querySelectorAll('.sidenav button').forEach(b =>
-      b.classList.toggle('active', b.dataset.view === state.view));
+    if (HR.nav) HR.nav.render();
     root.scrollTop = 0;
   }
 
@@ -544,9 +543,7 @@
     ls.title = T('app.language');
     ls.value = HR.i18n.lang;
     document.getElementById('drop-veil-text').textContent = T('app.drop');
-    document.querySelectorAll('.sidenav button[data-view]').forEach(btn => {
-      btn.textContent = T('nav.' + btn.dataset.view);
-    });
+    if (HR.nav) HR.nav.render();
     const host = document.getElementById('demo-host');
     host.innerHTML = '';
     const b = HR.demo.banner();
@@ -594,10 +591,7 @@
       if (t) document.documentElement.setAttribute('data-theme', t);
     } catch (e) { /* ignore */ }
 
-    document.getElementById('sidenav').addEventListener('click', e => {
-      const b = e.target.closest('button[data-view]');
-      if (b) go(b.dataset.view);
-    });
+    HR.nav.init();
 
     /* drag & drop anywhere */
     const veil = document.getElementById('drop-veil');

@@ -2223,6 +2223,124 @@
   }
 
   /** A vault person: contracts, accounts, entitlements, and what the rules expect. */
+
+  /**
+   * Similar access, from one person outward.
+   *
+   * Two questions in one card: is the group of people who hold what this person holds a
+   * group at all — do they share a department, a title — and what does this person have
+   * or lack relative to them. The second is what "copy the access of a colleague" is
+   * really asking, and it is a bad practice only because nobody could see what they were
+   * copying. Here the copy is split by what it costs and what it exposes.
+   */
+  function peersCard(m, person) {
+    let r = null;
+    try { r = HR.peers.forPerson(m, person); } catch (e) { return null; }
+    if (!r) return null;
+
+    const nameOf = ent => (m.permissions.get(ent) || {}).name || ent;
+    const permLink = ent => {
+      const perm = m.permissions.get(ent);
+      return perm
+        ? el('a', { href: '#', text: perm.name,
+            onclick: e => { e.preventDefault(); drawerPermission(perm, m); } })
+        : el('span', { text: String(ent) });
+    };
+
+    if (!r.peers.length) {
+      return card(T('pe.title'), T('pe.note'), el('p', { class: 'note',
+        text: T('pe.none', { threshold: U.fmtPct(r.cfg.minSimilarity, 0) }) }));
+    }
+
+    /* Does this access group correspond to anything the organisation knows about? */
+    const top = r.cohesion[0];
+    const verdict = !top ? null
+      : top.share >= 0.8 ? T('pe.verdictTight', {
+          attr: T('py.attr.' + top.attr) || top.attr, share: U.fmtPct(top.share, 0) })
+      : top.share >= 0.5 ? T('pe.verdictLoose', {
+          attr: T('py.attr.' + top.attr) || top.attr, share: U.fmtPct(top.share, 0) })
+      : T('pe.verdictScattered', { n: r.cohesion.length ? r.cohesion[0].distinct : 0 });
+
+    const body = [
+      el('p', { class: 'note', text: T('pe.lead', {
+        n: r.peers.length, population: U.fmtInt(r.population),
+        threshold: U.fmtPct(r.cfg.minSimilarity, 0) }) }),
+      verdict ? el('p', { text: verdict }) : null,
+
+      HR.table.make({
+        columns: [
+          { key: 'name', label: T('pe.cPeer'), value: x => x.person.name,
+            render: x => el('a', { href: '#', text: x.person.name, onclick: e => {
+              e.preventDefault(); drawerVaultPerson(personRow(m, x.person.person), m);
+            } }) },
+          { key: 'similarity', label: T('pe.cSimilarity'), value: x => x.similarity,
+            render: x => scoreBar(Math.round(x.similarity * 100)) },
+          { key: 'title', label: T('org.cTitle'), value: x => x.person.labels.Title || '' },
+          { key: 'department', label: T('pp.department'), value: x => x.person.labels.Department || '' },
+          { key: 'shared', label: T('pe.cShared'), value: x => x.shared, align: 'right' },
+          { key: 'theirs', label: T('pe.cTheirs'), value: x => x.onlyTheirs.length, align: 'right',
+            hint: T('pe.cTheirsHint') }
+        ],
+        rows: r.peers, pageSize: 8, exportName: 'peers-' + person.externalId
+      })
+    ];
+
+    /* What this person is short of, and what they carry alone. */
+    if (r.profile.under.length) {
+      body.push(card(T('pe.underTitle'), T('pe.underNote', { consensus: U.fmtPct(r.cfg.consensus, 0) }),
+        HR.table.make({
+          columns: [
+            { key: 'ent', label: T('py.cEntitlement'), value: x => nameOf(x.ent), render: x => permLink(x.ent) },
+            { key: 'share', label: T('pe.cPeersHolding'), value: x => x.share,
+              render: x => scoreBar(Math.round(x.share * 100)) }
+          ],
+          rows: r.profile.under, pageSize: 6, exportName: 'peer-gaps'
+        })));
+    }
+    if (r.profile.over.length) {
+      body.push(card(T('pe.overTitle'), T('pe.overNote', { rare: U.fmtPct(r.cfg.rare, 0) }),
+        HR.table.make({
+          columns: [
+            { key: 'ent', label: T('py.cEntitlement'), value: x => nameOf(x.ent), render: x => permLink(x.ent) },
+            { key: 'share', label: T('pe.cPeersHolding'), value: x => x.share,
+              render: x => el('span', { text: U.fmtPct(x.share, 0) }) }
+          ],
+          rows: r.profile.over, pageSize: 6, exportName: 'peer-extras'
+        })));
+    }
+
+    /* The defensible version of "copy a colleague". */
+    const c = r.copy;
+    const listCard = (titleKey, noteKey, rows, cls) => rows.length
+      ? card(T(titleKey), T(noteKey), HR.table.make({
+          columns: [
+            { key: 'ent', label: T('py.cEntitlement'), value: x => nameOf(x.ent), render: x => permLink(x.ent) },
+            { key: 'share', label: T('pe.cPeersHolding'), value: x => x.share,
+              render: x => scoreBar(Math.round(x.share * 100)) },
+            { key: 'flags', label: T('pe.cWhy'), sortable: false,
+              render: x => el('span', {}, [
+                x.reasons.indexOf('sensitive') >= 0
+                  ? el('span', { class: 'sev high', text: T('pe.flagSensitive') }) : null,
+                x.price ? el('span', { class: 'pill', text: U.fmtMoney(x.price) + '/mo' }) : null
+              ].filter(Boolean)) }
+          ],
+          rows, pageSize: 8, exportName: 'copy-' + cls
+        }), cls)
+      : null;
+
+    body.push(card(T('pe.copyTitle'), T('pe.copyNote'), [
+      el('p', { text: T('pe.copyLead', {
+        standard: c.summary.standard, review: c.summary.review, exclude: c.summary.exclude,
+        whole: U.fmtMoney(c.summary.monthlyIfCopiedWhole),
+        sensitive: c.summary.sensitiveIfCopiedWhole }) }),
+      listCard('pe.copyStandard', 'pe.copyStandardNote', c.standard, 'ok'),
+      listCard('pe.copyReview', 'pe.copyReviewNote', c.review, 'warn'),
+      listCard('pe.copyExclude', 'pe.copyExcludeNote', c.exclude, 'bad')
+    ].filter(Boolean)));
+
+    return card(T('pe.title'), T('pe.note'), body.filter(Boolean));
+  }
+
   function drawerVaultPerson(row, m) {
     const p = row.person;
     const head = el('div', {}, [
@@ -2297,6 +2415,11 @@
         ].filter(Boolean)));
       }
     }
+
+    /* Who else looks like this, and what that says about the group. */
+    const peers = peersCard(m, p);
+    if (peers) body.appendChild(peers);
+
     openDrawer(head, body);
   }
 

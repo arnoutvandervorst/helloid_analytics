@@ -128,16 +128,61 @@ label.inline { display: inline-flex; align-items: center; gap: 6px; font-size: 1
 /* ---------- layout ---------- */
 .shell { display: grid; grid-template-columns: 200px 1fr; align-items: start; }
 .sidenav {
-  position: sticky; top: 47px; display: flex; flex-direction: column; gap: 2px;
-  padding: 14px 10px; height: calc(100vh - 47px); border-right: 1px solid var(--border);
-  background: var(--surface-1);
+  position: sticky; top: 47px; display: flex; flex-direction: column; gap: 1px;
+  padding: 10px 8px; height: calc(100vh - 47px); border-right: 1px solid var(--border);
+  background: var(--surface-1); overflow-y: auto; overflow-x: hidden;
 }
-.sidenav button {
+/* A row is the button plus its star; the star only shows on hover or when it is set,
+   so the resting state stays a plain list. */
+.nav-row { display: flex; align-items: center; gap: 2px; }
+.nav-item {
   appearance: none; text-align: left; background: transparent; border: 0; cursor: pointer;
-  color: var(--text-secondary); font: inherit; font-size: 13px; padding: 7px 10px; border-radius: 8px;
+  color: var(--text-secondary); font: inherit; font-size: 13px; padding: 7px 8px;
+  border-radius: 8px; display: flex; align-items: center; gap: 10px; flex: 1 1 auto;
+  min-width: 0; white-space: nowrap;
 }
-.sidenav button:hover { background: var(--hover); color: var(--text-primary); }
-.sidenav button.active { background: var(--hover); color: var(--text-primary); font-weight: 600; }
+.nav-item:hover { background: var(--hover); color: var(--text-primary); }
+.nav-item.active { background: var(--hover); color: var(--text-primary); font-weight: 600; }
+.nav-item.active .nav-icon { color: var(--series-1); }
+.nav-label { overflow: hidden; text-overflow: ellipsis; }
+.nav-icon {
+  width: 16px; height: 16px; flex: 0 0 16px; fill: none; stroke: currentColor;
+  stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; color: var(--muted);
+}
+.nav-item:hover .nav-icon { color: var(--text-secondary); }
+.nav-star {
+  appearance: none; background: transparent; border: 0; cursor: pointer; padding: 4px;
+  border-radius: 6px; opacity: 0; color: var(--muted); line-height: 0;
+}
+.nav-row:hover .nav-star, .nav-star.on { opacity: 1; }
+.nav-star:hover { background: var(--hover); color: var(--text-primary); }
+.nav-star.on { color: var(--warning); }
+.nav-star.on .nav-icon { fill: currentColor; color: var(--warning); }
+.nav-star .nav-icon { width: 13px; height: 13px; flex-basis: 13px; }
+.nav-group-label {
+  font-size: 10px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted);
+  padding: 12px 10px 4px; white-space: nowrap;
+}
+.nav-divider { height: 1px; background: var(--border); margin: 6px 8px; }
+.nav-toggle {
+  appearance: none; background: transparent; border: 0; cursor: pointer; color: var(--muted);
+  font: inherit; font-size: 12px; padding: 5px 8px; border-radius: 8px; display: flex;
+  align-items: center; gap: 10px; margin-bottom: 2px;
+}
+.nav-toggle:hover { background: var(--hover); color: var(--text-primary); }
+.nav-chevron { width: 16px; text-align: center; font-size: 15px; line-height: 1; }
+
+/* Collapsed: icons only, labels gone, the shell narrows to match. */
+.sidenav.collapsed { padding: 10px 6px; }
+.sidenav.collapsed .nav-label { display: none; }
+.sidenav.collapsed .nav-star { display: none; }
+.sidenav.collapsed .nav-item { justify-content: center; padding: 8px 0; }
+.sidenav.collapsed .nav-group-label {
+  padding: 10px 0 4px; text-align: center; overflow: hidden; height: 14px;
+}
+.shell { transition: grid-template-columns .12s ease; }
+body.nav-collapsed .shell { grid-template-columns: 56px 1fr; }
+
 main { padding: 20px 24px 60px; min-width: 0; }
 /* Views append cards, grids and notes as siblings. Spacing them here rather than in
    each view means a new block is never flush against the one above it by omission;

@@ -135,6 +135,18 @@
     levels: []                      // empty = use the suggested order
   };
 
+  /* --- similar-access peers ---------------------------------------------------
+     How alike two people must be before they are peers, and how much of a peer group
+     has to agree before what this person lacks counts as a gap. Both are judgements
+     about an organisation rather than facts about the data. */
+  const DEFAULT_PEERS = {
+    minSimilarity: 0.5,
+    topN: 12,
+    consensus: 0.8,
+    rare: 0.2,
+    ignoreCommon: 0.9
+  };
+
   const DEFAULTS = {
     currency: 'EUR',
     categories: DEFAULT_CATEGORIES,
@@ -145,6 +157,7 @@
     correlation: DEFAULT_CORRELATION,
     products: DEFAULT_PRODUCTS,
     pyramid: DEFAULT_PYRAMID,
+    peers: DEFAULT_PEERS,
     rarityThreshold: 3,             // held by <= N accounts counts as rare
     skipReview: false,              // skip the configuration review on import
     severityBands: { critical: 70, high: 45, medium: 20 }
