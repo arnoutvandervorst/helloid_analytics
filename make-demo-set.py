@@ -164,17 +164,34 @@ class DemoSet:
                 'location': rnd.choice(LOCATIONS),
                 'type': rnd.choice(CONTRACT_TYPES)
             }
+            start_days = rnd.randint(120, 3000)
+            # One in ten moved here from another department, with the date on record.
+            moved = None
+            if rnd.random() < 0.10:
+                moved = {'from': rnd.choice([u for u in UNITS if u != unit]),
+                         'days': rnd.randint(30, 400)}
             slug = (first + '.' + last.split()[-1]).lower().replace('ë', 'e').replace(' ', '')
             user = f'{slug}{i % 97}'
             licence = rnd.choice(make_sample.LICENCES)
             leaver = rnd.random() < 0.08
 
             person = {'name': name, 'ext': ext, 'contract': contract, 'leaver': leaver,
-                      'user': user, 'display': name}
+                      'moved': moved, 'user': user, 'display': name,
+                      'start_days': start_days}
             self.people.append(person)
 
             enabled = leaver or rnd.random() > 0.06
             perms = self.entitlements_for(contract, licence)
+            # What a mover carries along: part of the old department's working set that
+            # nothing knew to withdraw.
+            if moved:
+                perms += [e for e in rnd.sample(self.model['department'][moved['from']], 2)
+                          if e not in perms]
+            # Creep: roughly one extra entitlement per two years of service.
+            extra_pool = make_sample.PAID_APPS + make_sample.FREE_APPS + make_sample.DEVICE
+            for e in rnd.sample(extra_pool, min(len(extra_pool), int(start_days / 730))):
+                if e not in perms:
+                    perms.append(e)
             acc = {'system': system, 'user': user, 'display': name,
                    'person': f'{name} ({ext})', 'enabled': enabled, 'perms': [],
                    'owner': person}
@@ -191,6 +208,28 @@ class DemoSet:
                                           f'{missing} (avo.local/Demo/Groups/{missing})', '', '',
                                           'Permission missing', 'None']))
             self.accounts.append(acc)
+
+        # A handful of signed contracts that have not started yet: the hiring pipeline.
+        for i in range(6):
+            first, last = rnd.choice(FIRST), rnd.choice(LAST)
+            ext = str(509000 + i)
+            self.people.append({
+                'name': f'{first} {last}', 'ext': ext,
+                'contract': {'unit': rnd.choice(UNITS), 'title': rnd.choice(TITLES),
+                             'location': rnd.choice(LOCATIONS), 'type': rnd.choice(CONTRACT_TYPES)},
+                'leaver': False, 'moved': None, 'user': '', 'display': f'{first} {last}',
+                'start_days': -rnd.randint(5, 75)
+            })
+
+        # Every department gets a manager from its own ranks — and in two departments the
+        # manager has left while the contracts still point at them, which is the finding.
+        self.unit_manager = {}
+        for u in UNITS:
+            members = [p for p in self.people if p['contract']['unit'] == u]
+            if members:
+                self.unit_manager[u] = rnd.choice(members)
+        for u in rnd.sample([u for u in UNITS if u in self.unit_manager], 2):
+            self.unit_manager[u]['leaver'] = True
 
         # Accounts nobody owns: admin, service and test, the way a directory accumulates them.
         for i in range(self.args.orphans):
@@ -241,13 +280,21 @@ class DemoSet:
         self.person_by_display = {p['DisplayName']: p for p in persons}
         return self.vault
 
+    def manager_ref(self, unit, ext):
+        mgr = getattr(self, 'unit_manager', {}).get(unit)
+        if not mgr or mgr['ext'] == ext:
+            return {}
+        return {'PersonId': f"p-{mgr['ext']}", 'ExternalId': mgr['ext'],
+                'DisplayName': f"{mgr['name']} ({mgr['ext']})"}
+
     def person(self, name, ext, src, leaver):
         rnd = self.rnd
         unit = src['contract']['unit']
         title = src['contract']['title']
         first, last = (name.split(' ', 1) + [''])[:2]
 
-        start = self.today - timedelta(days=rnd.randint(120, 3000))
+        start = self.today - timedelta(days=src.get('start_days', rnd.randint(120, 3000)))
+        src['start_date'] = start
         end = None
         if leaver:
             # Long enough ago that nobody can argue the account is "still being wrapped up".
@@ -268,9 +315,25 @@ class DemoSet:
             'CostCenter': {'Code': f'KP{rnd.randint(100, 999)}'},
             'Employer': {'Code': 'AVO', 'Name': 'Avondrood Zorggroep'},
             'Details': {'Sequence': 1},
+            'Manager': self.manager_ref(unit, ext),
             'Custom': {}
         }
         contracts = [contract]
+
+        # A mover: the old department's contract, closed on the day the new one began.
+        if src.get('moved'):
+            move_date = self.today - timedelta(days=src['moved']['days'])
+            old_unit = src['moved']['from']
+            old = json.loads(json.dumps(contract))
+            old['ExternalId'] = f'{ext}-0'
+            old['StartDate'] = (move_date - timedelta(days=rnd.randint(300, 1500))).strftime('%Y-%m-%dT00:00:00Z')
+            old['EndDate'] = move_date.strftime('%Y-%m-%dT00:00:00Z')
+            old['Department'] = {'ExternalId': unit_code(old_unit), 'DisplayName': unit_label(old_unit),
+                                 'Code': unit_code(old_unit)}
+            old['Details'] = {'Sequence': 0}
+            old['Manager'] = self.manager_ref(old_unit, ext)
+            contract['StartDate'] = move_date.strftime('%Y-%m-%dT00:00:00Z')
+            contracts = [old, contract]
 
         # A second contract for some: two departments, which is where rule conditions
         # stop being a single lookup and start needing a "which contract?" answer.
@@ -292,7 +355,7 @@ class DemoSet:
             'Status': {'Blocked': False},
             'Excluded': False,
             'Contracts': contracts,
-            'PrimaryContract': contracts[0],
+            'PrimaryContract': contracts[-1],
             'Custom': {},
             'Accounts': []
         }
@@ -427,8 +490,15 @@ class DemoSet:
                 # Rules-covered entitlements are the ones HelloID would have granted.
                 if bare not in self.ruled_perms or rnd.random() > 0.75:
                     continue
-                when = self.today - timedelta(days=rnd.randint(1, 500),
-                                              hours=rnd.randint(0, 23), minutes=rnd.randint(0, 59))
+                owner = acc.get('owner')
+                started = owner.get('start_date') if owner else None
+                if started and (self.today - started).days < 480:
+                    # A joiner inside the history window: provisioning followed the start.
+                    when = started + timedelta(days=rnd.randint(0, 14) if rnd.random() < 0.25 else rnd.randint(0, 2),
+                                               hours=rnd.randint(1, 23))
+                else:
+                    when = self.today - timedelta(days=rnd.randint(1, 500),
+                                                  hours=rnd.randint(0, 23), minutes=rnd.randint(0, 59))
                 lines.append(csv_line([acc['person'], acc['system'], perm, '', us_stamp(when)]))
                 self.granted_pairs.append((acc['person'], acc['system'], perm, when))
         return lines
@@ -623,8 +693,15 @@ class DemoSet:
                 # Rules-covered entitlements are the ones HelloID would have granted.
                 if bare not in self.ruled_perms or rnd.random() > 0.75:
                     continue
-                when = self.today - timedelta(days=rnd.randint(1, 500),
-                                              hours=rnd.randint(0, 23), minutes=rnd.randint(0, 59))
+                owner = acc.get('owner')
+                started = owner.get('start_date') if owner else None
+                if started and (self.today - started).days < 480:
+                    # A joiner inside the history window: provisioning followed the start.
+                    when = started + timedelta(days=rnd.randint(0, 14) if rnd.random() < 0.25 else rnd.randint(0, 2),
+                                               hours=rnd.randint(1, 23))
+                else:
+                    when = self.today - timedelta(days=rnd.randint(1, 500),
+                                                  hours=rnd.randint(0, 23), minutes=rnd.randint(0, 59))
                 lines.append(csv_line([acc['person'], acc['system'], perm, '', us_stamp(when)]))
                 self.granted_pairs.append((acc['person'], acc['system'], perm, when))
         return lines

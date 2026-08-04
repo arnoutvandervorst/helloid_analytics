@@ -951,6 +951,23 @@
       }, prose('vault-duplicate-id', { n: hits.length }));
     },
 
+    /* Still named as manager, already gone: every approval aimed at them stalls. */
+    function staleManagers(m) {
+      let mg = null;
+      try { mg = HR.workforce.managers(m.vault); } catch (e) { return null; }
+      if (!mg || !mg.stale.length) return null;
+      return Object.assign({
+        id: 'vault-stale-manager', severity: 'high', category: T('fi.cat.process'),
+        entities: mg.stale.slice(0, 80).map(r => ({
+          type: 'person', key: r.name, label: r.name,
+          detail: T('fi.vault-stale-manager.detail', { n: r.span })
+        })),
+        impactMonthly: 0
+      }, prose('vault-stale-manager', {
+        n: mg.stale.length, reports: mg.summary.affectedReports
+      }));
+    },
+
     /* Contracts about to end: the only warning a reconciliation cannot give, because
        everything it reports has already happened. */
     function contractsEndingSoon(m) {

@@ -162,10 +162,186 @@
     f.appendChild(HR.viewkit.tabbed('org', [
       { id: 'walk', label: T('org.tab.walk'), build: () => walk },
       { id: 'scorecards', label: T('org.tab.scorecards'), build: () => scorecardCard(m, tree) },
+      { id: 'workforce', label: T('org.tab.workforce'), build: () => workforceCard(m) },
       { id: 'quality', label: T('org.tab.quality'), count: q.summary.anomalies + q.summary.deadTitles,
         build: () => quality }
     ], params));
     return f;
+  }
+
+
+  /**
+   * The workforce section: the contract history read as history.
+   *
+   * Flow, movers and their residue, manager routing, onboarding latency, creep, and the
+   * cost of the hiring pipeline — none of which any per-system report can say.
+   */
+  function workforceCard(m) {
+    const wrap = el('div', {});
+    const vault = m.vault;
+
+    /* ---- flow ---- */
+    const fl = HR.workforce.flow(vault);
+    if (fl.series.length >= 2) {
+      wrap.appendChild(card(T('wf.flowTitle'), T('wf.flowNote', {
+        joined: U.fmtInt(fl.summary.joined), left: U.fmtInt(fl.summary.left),
+        months: fl.summary.months,
+        tenure: fl.summary.medianTenure != null ? U.fmtNum(fl.summary.medianTenure, 1) : '—' }),
+        C.line([
+          { label: T('wf.joiners'), color: C.slot(3),
+            points: fl.series.map((s, i) => ({ x: i, y: s.joined })) },
+          { label: T('wf.leavers'), color: C.STATUS.critical,
+            points: fl.series.map((s, i) => ({ x: i, y: s.left })) }
+        ], fl.series.map(s => s.month.slice(2)))));
+    }
+    if (fl.departments.length) {
+      wrap.appendChild(card(T('wf.attritionTitle'), T('wf.attritionNote'), HR.table.make({
+        columns: [
+          { key: 'dept', label: T('pp.department'), value: d => d.dept },
+          { key: 'current', label: T('sc.cPeople'), value: d => d.current, align: 'right' },
+          { key: 'left', label: T('wf.cLeft12'), value: d => d.left12, align: 'right' },
+          { key: 'attrition', label: T('wf.cAttrition'), value: d => d.attrition,
+            hint: T('wf.cAttritionHint'),
+            render: d => el('span', { class: d.attrition >= 0.25 ? 'sev high' : '',
+              text: U.fmtPct(d.attrition, 0) }) },
+          { key: 'tenure', label: T('wf.cTenure'), value: d => d.medianTenure || 0, align: 'right',
+            render: d => el('span', { text: d.medianTenure != null ? U.fmtNum(d.medianTenure, 1) : '—' }) }
+        ],
+        rows: fl.departments, pageSize: 10, exportName: 'attrition',
+        initialSort: { key: 'attrition', dir: -1 }
+      })));
+    }
+
+    /* ---- movers and residue ---- */
+    const res = HR.workforce.moverResidue(m, vault);
+    if (res) {
+      const body = [el('p', { text: T('wf.moversLead', {
+        moves: U.fmtInt(res.summary.moves), dept: U.fmtInt(res.summary.deptMoves),
+        withResidue: U.fmtInt(res.summary.withResidue), ents: U.fmtInt(res.summary.residueEnts) }) })];
+      if (res.rows.length) {
+        body.push(HR.table.make({
+          columns: [
+            { key: 'person', label: T('py.cPerson'), value: r => r.move.person.displayName,
+              render: r => el('a', { href: '#', text: r.move.person.displayName,
+                onclick: e => { e.preventDefault(); drawerVaultPerson(personRow(m, r.move.person), m); } }) },
+            { key: 'from', label: T('wf.cFrom'), value: r => r.move.from.dept },
+            { key: 'to', label: T('wf.cTo'), value: r => r.move.to.dept },
+            { key: 'when', label: T('wf.cWhen'), value: r => r.move.daysAgo, align: 'right',
+              render: r => el('span', { text: T('wf.daysAgo', { n: U.fmtInt(r.move.daysAgo) }) }) },
+            { key: 'residue', label: T('wf.cResidue'), value: r => r.residue.length, align: 'right',
+              hint: T('wf.cResidueHint'),
+              render: r => el('span', { class: 'sev medium', text: String(r.residue.length) }) },
+            { key: 'what', label: T('wf.cWhat'), sortable: false,
+              render: r => el('span', { class: 'trunc',
+                title: r.residue.map(e => (m.permissions.get(e) || {}).name || e).join(', '),
+                text: r.residue.map(e => (m.permissions.get(e) || {}).name || e).join(', ') }) }
+          ],
+          rows: res.rows, pageSize: 10, exportName: 'mover-residue'
+        }));
+      } else {
+        body.push(el('p', { class: 'note', text: T('wf.noResidue') }));
+      }
+      wrap.appendChild(card(T('wf.moversTitle'), T('wf.moversNote'), body));
+    }
+
+    /* ---- managers ---- */
+    const mg = HR.workforce.managers(vault);
+    if (mg.rows.length) {
+      const body = [el('div', { class: 'grid g4' }, [
+        tile(T('wf.kManagers'), U.fmtInt(mg.summary.managers),
+          T('wf.kManagersFoot', { median: mg.summary.medianSpan })),
+        tile(T('wf.kWide'), U.fmtInt(mg.summary.wide), T('wf.kWideFoot'),
+          { severity: mg.summary.wide ? 'medium' : 'good' }),
+        tile(T('wf.kStale'), U.fmtInt(mg.summary.stale),
+          T('wf.kStaleFoot', { n: U.fmtInt(mg.summary.affectedReports) }),
+          { severity: mg.summary.stale ? 'critical' : 'good' }),
+        tile(T('wf.kMax'), U.fmtInt(mg.summary.maxSpan), T('wf.kMaxFoot'))
+      ])];
+      if (mg.stale.length) {
+        body.push(card(T('wf.staleTitle'), T('wf.staleNote'), HR.table.make({
+          columns: [
+            { key: 'name', label: T('wf.cManager'), value: r => r.name },
+            { key: 'span', label: T('wf.cReports'), value: r => r.span, align: 'right' },
+            { key: 'people', label: T('wf.cWho'), sortable: false,
+              render: r => el('span', { class: 'trunc',
+                title: r.reports.map(p => p.displayName).join(', '),
+                text: r.reports.map(p => p.displayName).join(', ') }) }
+          ],
+          rows: mg.stale, pageSize: 8, exportName: 'stale-managers'
+        })));
+      }
+      wrap.appendChild(card(T('wf.managersTitle'), T('wf.managersNote'), body));
+    }
+
+    /* ---- onboarding latency ---- */
+    const lat = HR.workforce.onboardingLatency(vault, m.history);
+    if (lat) {
+      wrap.appendChild(card(T('wf.latencyTitle'), T('wf.latencyNote'), [
+        el('div', { class: 'grid g4' }, [
+          tile(T('wf.kJoiners'), U.fmtInt(lat.summary.joiners), T('wf.kJoinersFoot')),
+          tile(T('wf.kMedianLat'), T('wf.days', { n: U.fmtInt(lat.summary.median) }),
+            T('wf.kMedianLatFoot')),
+          tile(T('wf.kBeforeStart'), U.fmtInt(lat.summary.beforeStart), T('wf.kBeforeStartFoot'),
+            { severity: 'good' }),
+          tile(T('wf.kOverWeek'), U.fmtInt(lat.summary.overWeek), T('wf.kOverWeekFoot'),
+            { severity: lat.summary.overWeek ? 'high' : 'good' })
+        ]),
+        HR.table.make({
+          columns: [
+            { key: 'person', label: T('py.cPerson'), value: r => r.person.displayName },
+            { key: 'dept', label: T('pp.department'), value: r => r.dept },
+            { key: 'start', label: T('wf.cStart'), value: r => +r.start,
+              render: r => el('span', { text: U.fmtDate(r.start).split(',')[0] }) },
+            { key: 'days', label: T('wf.cLatency'), value: r => r.days, align: 'right',
+              render: r => el('span', { class: r.days > 7 ? 'sev high' : r.days <= 0 ? 'sev good' : '',
+                text: T('wf.days', { n: U.fmtInt(r.days) }) }) }
+          ],
+          rows: lat.rows, pageSize: 8, exportName: 'onboarding-latency'
+        })
+      ]));
+    }
+
+    /* ---- creep ---- */
+    const cr = HR.workforce.creep(m, vault);
+    if (cr) {
+      wrap.appendChild(card(T('wf.creepTitle'),
+        T('wf.creepNote', { slope: U.fmtNum(cr.slope, 1), mean: U.fmtNum(cr.mean, 1) }),
+        C.scatter(cr.points.map(p => ({
+          x: Math.round(p.x * 10) / 10, y: p.y, r: 4,
+          color: C.slot(1),
+          tip: '<div class="t-title">' + U.esc(p.holder.name) + '</div>' +
+            '<div class="t-row"><span>' + T('wf.cTenure') + '</span><b>' + U.fmtNum(p.x, 1) + '</b></div>' +
+            '<div class="t-row"><span>' + T('dr.permsHeld') + '</span><b>' + p.y + '</b></div>'
+        })), { xLabel: T('wf.creepX'), yLabel: T('dr.permsHeld'), height: 260 })));
+    }
+
+    /* ---- forecast ---- */
+    const fc = HR.workforce.forecast(m, vault);
+    if (fc) {
+      wrap.appendChild(card(T('wf.forecastTitle'), T('wf.forecastNote'), [
+        el('p', { text: T('wf.forecastLead', {
+          n: U.fmtInt(fc.summary.starters), days: fc.summary.horizonDays,
+          monthly: U.fmtMoney(fc.summary.monthly) }) }),
+        HR.table.make({
+          columns: [
+            { key: 'person', label: T('py.cPerson'), value: r => r.person.displayName },
+            { key: 'dept', label: T('pp.department'), value: r => r.dept },
+            { key: 'days', label: T('wf.cStartsIn'), value: r => r.days, align: 'right',
+              render: r => el('span', { text: T('wf.days', { n: U.fmtInt(r.days) }) }) },
+            { key: 'monthly', label: T('wf.cExpected'), value: r => r.monthly, align: 'right',
+              hint: T('wf.cExpectedHint'),
+              render: r => el('span', { text: U.fmtMoney(r.monthly) + (r.estimated ? ' *' : '') }) }
+          ],
+          rows: fc.rows, pageSize: 8, exportName: 'licence-forecast'
+        }),
+        el('p', { class: 'note', text: T('wf.forecastFoot') })
+      ]));
+    }
+
+    if (!wrap.childNodes.length) {
+      wrap.appendChild(card(T('wf.title'), null, el('p', { class: 'note', text: T('wf.empty') })));
+    }
+    return wrap;
   }
 
   /**

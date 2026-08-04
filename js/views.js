@@ -1362,6 +1362,30 @@
       }
     }
 
+    /* The career, where the vault records one: moves, and what travelled along. */
+    try {
+      const myMoves = HR.workforce.moves(m.vault).filter(x => x.person === p);
+      if (myMoves.length) {
+        const res = HR.workforce.moverResidue(m, m.vault);
+        const mine = res ? res.rows.filter(r => r.move.person === p) : [];
+        body.appendChild(card(T('wf.careerTitle'), T('wf.careerNote'), [
+          el('ul', { class: 'clean' }, myMoves.map(mv => el('li', { class: 'note' }, [
+            el('span', { class: 'mono', text: U.fmtDate(mv.date).split(',')[0] + '  ' }),
+            document.createTextNode(
+              (mv.deptChanged ? mv.from.dept + ' \u2192 ' + mv.to.dept : '') +
+              (mv.deptChanged && mv.titleChanged ? ' \u00b7 ' : '') +
+              (mv.titleChanged ? mv.from.title + ' \u2192 ' + mv.to.title : ''))
+          ]))),
+          mine.length ? el('div', {}, [
+            el('h3', { text: T('wf.careerResidue', { n: mine[0].residue.length }) }),
+            el('div', {}, mine[0].residue.map(e => el('span', {
+              class: 'pill', style: 'margin:0 4px 4px 0; display:inline-block',
+              text: (m.permissions.get(e) || {}).name || e })))
+          ] ) : null
+        ].filter(Boolean)));
+      }
+    } catch (e) { /* career is optional */ }
+
     /* Who else looks like this, and what that says about the group. */
     const peers = peersCard(m, p);
     if (peers) body.appendChild(peers);
