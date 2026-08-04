@@ -718,6 +718,150 @@
     return result;
   }
 
+  /**
+   * Condense sibling rules into "one of" conditions.
+   *
+   * The pyramid gives every attribute value its own node, so three job titles in a
+   * department become three rules even where they hand out the same access. HelloID does
+   * not require that: a condition takes a list, and one rule can read
+   * "Department = Zorg AND Title one of (A, B, C)".
+   *
+   * Merging only rules that grant exactly the same set is too strict to be useful — on a
+   * real tenant nothing matches. So the siblings are transposed instead: for every group
+   * of rules that differ in one attribute, each entitlement is asked which values grant
+   * it, and every distinct answer becomes one rule listing those values. Two titles
+   * sharing four of five entitlements produce one rule for the four and one for the odd
+   * one out, rather than two rules repeating four.
+   *
+   * This deliberately breaks the pyramid's shape. The nesting is what found the rules,
+   * not something the rules have to keep — and nobody maintaining a rule set thanks you
+   * for the hierarchy that produced it.
+   */
+  function condense(model, pyramid) {
+    /* Every mined rule as a flat condition list, whatever produced it. */
+    const flat = [];
+    pyramid.ruleGroups.forEach((grants, node) => {
+      if (!node.path.length) return;                 // the baseline has no condition to merge
+      flat.push({
+        conds: node.path.map(p => ({ attr: p.attr, value: p.value, label: p.label, byId: p.byId })),
+        grants: grants.slice(), members: node.members.slice()
+      });
+    });
+    pyramid.comboGroups.forEach(group => flat.push({
+      conds: group.conds.map(c => ({ attr: c.attr, value: c.value, label: c.label, byId: c.byId })),
+      grants: group.rules.slice(), members: group.members.slice()
+    }));
+
+    const before = flat.length;
+    const SEPX = '\u001e';
+
+    /* Rules are siblings when they agree on every condition but one. Trying each
+       attribute in turn as the odd one out finds the axis worth condensing along. */
+    const merged = [];
+    const consumed = new Set();
+
+    for (const axis of pyramid.levels.concat(pyramid.attributes)) {
+      const groups = new Map();
+      flat.forEach((rule, i) => {
+        if (consumed.has(i)) return;
+        const pivot = rule.conds.find(c => c.attr === axis);
+        if (!pivot) return;
+        const context = rule.conds.filter(c => c.attr !== axis)
+          .map(c => c.attr + '=' + c.value).sort().join('|');
+        if (!groups.has(context)) groups.set(context, []);
+        groups.get(context).push({ rule, i, pivot });
+      });
+
+      groups.forEach(siblings => {
+        if (siblings.length < 2) return;
+
+        /* Which values grant each entitlement — the transpose. */
+        const holdersOf = new Map();
+        siblings.forEach(s => s.rule.grants.forEach(g => {
+          if (!holdersOf.has(g.ent)) holdersOf.set(g.ent, []);
+          holdersOf.get(g.ent).push(s);
+        }));
+
+        /* Entitlements granted by the same set of values become one rule. */
+        const byValueSet = new Map();
+        holdersOf.forEach((who, ent) => {
+          const key = who.map(s => s.pivot.value).sort().join(SEPX);
+          if (!byValueSet.has(key)) byValueSet.set(key, { who, ents: [] });
+          byValueSet.get(key).ents.push(ent);
+        });
+        if (byValueSet.size >= siblings.length) return;   // no saving on this axis
+
+        const context = siblings[0].rule.conds.filter(c => c.attr !== axis);
+        byValueSet.forEach(entry => {
+          const grantByEnt = new Map();
+          entry.who.forEach(s => s.rule.grants.forEach(g => grantByEnt.set(g.ent, g)));
+          merged.push({
+            conds: context.map(c => ({ attr: c.attr, values: [c.value], labels: [c.label], byId: c.byId }))
+              .concat([{
+                attr: axis,
+                values: U.uniq(entry.who.map(s => s.pivot.value)),
+                labels: U.uniq(entry.who.map(s => s.pivot.label || s.pivot.value)),
+                byId: entry.who[0].pivot.byId
+              }]),
+            grants: entry.ents.map(e => grantByEnt.get(e)),
+            members: U.uniq(entry.who.flatMap(s => s.rule.members)),
+            from: entry.who.length
+          });
+        });
+        siblings.forEach(s => consumed.add(s.i));
+      });
+    }
+
+    /* Whatever never found a sibling stays as it was. */
+    flat.forEach((rule, i) => {
+      if (consumed.has(i)) return;
+      merged.push({
+        conds: rule.conds.map(c => ({ attr: c.attr, values: [c.value], labels: [c.label], byId: c.byId })),
+        grants: rule.grants, members: rule.members, from: 1
+      });
+    });
+
+    merged.sort((a, b) => b.members.length - a.members.length);
+    const withLists = merged.filter(r => r.conds.some(c => c.values.length > 1));
+    return {
+      rules: merged, before,
+      summary: {
+        before,
+        after: merged.length,
+        saved: before - merged.length,
+        share: before ? (before - merged.length) / before : 0,
+        withLists: withLists.length,
+        widest: merged.reduce((max, r) =>
+          Math.max(max, Math.max.apply(null, r.conds.map(c => c.values.length))), 1),
+        /* Coverage must not move: the same entitlements reach the same people. */
+        grants: U.sum(merged, r => r.grants.length)
+      }
+    };
+  }
+
+  /** The condensed set, in the export shape HelloID reads back. */
+  function condensedToRulesCsv(model, condensed) {
+    const entName = key => {
+      const perm = model.permissions.get(key);
+      return perm ? (perm.system + ' - ' + perm.name + (perm.path ? ' (' + perm.path + ')' : '')) : key;
+    };
+    const rows = condensed.rules.map(rule => ({
+      Name: 'Voorstel - ' + rule.conds.map(c =>
+        (c.labels.length > 1 ? c.labels.slice(0, 3).join(' / ') + (c.labels.length > 3 ? '\u2026' : '')
+          : (c.labels[0] || c.values[0]))).join(' + '),
+      EntitlementCount: rule.grants.length,
+      PersonsLatestEvaluation: rule.members.length,
+      Categories: rule.conds.some(c => c.values.length > 1) ? 'Condensed' : 'Mined',
+      Status: 'proposal',
+      /* "one of" already takes a list; this is the shape HelloID writes itself. */
+      Conditions: rule.conds.map(c =>
+        c.attr + (c.byId ? '.ExternalId' : '.Name') + ', one of: ' + c.values.join(', ')).join('|'),
+      Entitlements: rule.grants.map(g => entName(g.ent)).join('|')
+    }));
+    return U.toCSV(rows, ['Name', 'EntitlementCount', 'PersonsLatestEvaluation', 'Categories',
+      'Status', 'Conditions', 'Entitlements']);
+  }
+
   /** The coverage-first rule set, in the same export shape. */
   function greedyToRulesCsv(model, result) {
     const entName = key => {
@@ -788,5 +932,5 @@
   }
 
   HR.pyramid = { build, mine, account, suggestLevels, mineCombos, population, greedy,
-    sweep, baseline, availableAttributes, toRulesCsv, greedyToRulesCsv, ATTRIBUTES };
+    sweep, baseline, condense, condensedToRulesCsv, availableAttributes, toRulesCsv, greedyToRulesCsv, ATTRIBUTES };
 })(window.HR);

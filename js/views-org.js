@@ -446,6 +446,58 @@
     ])));
   }
 
+  /**
+   * The same model with "one of" conditions, which is what HelloID actually allows.
+   *
+   * Fewer rules for the same access is the whole point, so the saving leads and the
+   * merged rules are shown as they would be written. Where nothing merges that is a fact
+   * about the tenant — every group grants something of its own — and it is said outright.
+   */
+  function condensedCard(m, P) {
+    let c = null;
+    try { c = HR.pyramid.condense(m, P); } catch (e) { return null; }
+    if (!c || !c.rules.length) return null;
+
+    const s = c.summary;
+    const condText = rule => rule.conds.map(x => (T('py.attr.' + x.attr) || x.attr) +
+      (x.values.length > 1
+        ? ' ' + T('py.oneOf', { values: x.labels.join(', ') })
+        : ' = ' + (x.labels[0] || x.values[0]))).join(T('py.and'));
+
+    const body = [
+      el('p', { text: s.saved
+        ? T('py.cdLead', { before: s.before, after: s.after, share: U.fmtPct(s.share, 0),
+            lists: s.withLists, widest: s.widest })
+        : T('py.cdNothing', { n: s.before }) })
+    ];
+
+    if (s.withLists) {
+      body.push(HR.table.make({
+        columns: [
+          { key: 'conds', label: T('py.cRule'), value: r => condText(r) },
+          { key: 'from', label: T('py.cdFrom'), value: r => r.from, align: 'right',
+            hint: T('py.cdFromHint') },
+          { key: 'members', label: T('py.cGroup'), value: r => r.members.length, align: 'right' },
+          { key: 'grants', label: T('py.cGrants'), value: r => r.grants.length, align: 'right' },
+          { key: 'list', label: T('py.cGets'), sortable: false,
+            render: r => el('span', { class: 'trunc',
+              title: r.grants.map(g => (m.permissions.get(g.ent) || {}).name || g.ent).join(', '),
+              text: r.grants.map(g => (m.permissions.get(g.ent) || {}).name || g.ent).join(', ') }) }
+        ],
+        rows: c.rules.filter(r => r.conds.some(x => x.values.length > 1)),
+        pageSize: 10, exportName: 'condensed-rules'
+      }));
+      body.push(el('div', { class: 'slot-actions' }, [
+        el('button', { class: 'btn', text: T('py.cdExport'), onclick: () => {
+          U.download('condensed-rules.csv', HR.pyramid.condensedToRulesCsv(m, c), 'text/csv');
+          HR.usage.exported('condensed-rules');
+        } })
+      ]));
+      body.push(el('p', { class: 'note', text: T('py.cdLossless') }));
+    }
+    return card(T('py.cdTitle'), T('py.cdNote'), body);
+  }
+
   /** One mined rule: its condition, what it grants, and who does not have it yet. */
   function drawerPyramidRule(m, P, row) {
     const body = document.createDocumentFragment();
@@ -783,6 +835,7 @@
       pyramidDiagram(m, P),
       chips,
       knobs,
+      el('p', { class: 'note', text: T('py.knobsNote') }),
       el('p', { class: 'note', style: 'margin-top:10px', text: P.suggestion.steps.length
         ? T('py.suggestion', {
             steps: P.suggestion.steps.map(x => (T('py.attr.' + x.attr) || x.attr) +
@@ -793,6 +846,8 @@
 
     const bl = baselineCard(m, P);
     if (bl) f.appendChild(bl);
+    const condensed = condensedCard(m, P);
+    if (condensed) f.appendChild(condensed);
     const cov = coverageCard(m, P);
     if (cov) f.appendChild(cov);
     f.appendChild(pyramidJourney(m, P));
