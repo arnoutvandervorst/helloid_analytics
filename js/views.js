@@ -1176,7 +1176,6 @@
     f.appendChild(el('div', { style: 'margin-top:14px' }, card(null, null, HR.table.make({
       columns: [
         { key: 'name', label: T('c.person') },
-        { key: 'externalId', label: T('c.employeeId') },
         { key: 'accountCount', label: T('pp.accounts'), num: true },
         { key: 'enabledAccounts', label: T('c.enabled'), num: true },
         { key: 'permCount', label: T('c.perms'), num: true },
@@ -1185,7 +1184,7 @@
       ],
       rows: m.personList, pageSize: 40, exportName: 'people',
       initialSort: { key: 'permCount', dir: -1 },
-      search: (r, q) => (r.name + ' ' + r.externalId).toLowerCase().includes(q),
+      search: (r, q) => r.name.toLowerCase().includes(q),
       onRowClick: p => drawerPerson(p, m)
     }))));
     return f;
@@ -2834,7 +2833,6 @@
       [T('c.system'), a.system],
       [T('c.displayName'), a.displayName],
       [T('c.person'), a.personRaw || T('dr.notLinked')],
-      [T('c.employeeId'), a.personId || '—'],
       [T('dr.permsHeld'), String(a.permCount)],
       [T('dr.unmanagedAssign'), String(a.unmanagedPermCount)],
       [T('dr.missingEnt'), String(a.missingCount)],
@@ -2932,7 +2930,6 @@
     const head = el('div', {}, [
       el('h2', { text: per.name }),
       el('div', { class: 'row' }, [
-        el('span', { class: 'pill', text: per.externalId || T('dr.noId') }),
         el('span', { class: 'pill', text: T('dr.accountsN', { n: per.accountCount }) }),
         el('span', { class: 'pill', text: U.fmtMoney(per.monthlyCost) + '/mo' })
       ])
