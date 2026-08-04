@@ -167,15 +167,17 @@
       const issue = g(row, 'issue');
       if (!userName && !issue) continue;
       const personRaw = g(row, 'person');
-      const p = splitParenthetical(personRaw);
       const permRaw = g(row, 'permission');
       const perm = splitParenthetical(permRaw);
       records.push({
         i: records.length,
         system: g(row, 'system') || 'Unknown system',
         personRaw,
-        personName: p.name,
-        personId: p.extra,
+        /* The person column is a display name, nothing more. Some tenants format it as
+           "Name (employeeId)", many do not — parentheses can as easily be part of the
+           name — so nothing is read out of it. Employee ids come from the vault. */
+        personName: personRaw,
+        personId: '',
         accountDisplayName: g(row, 'accountDisplayName'),
         userName,
         enabled: parseBool(g(row, 'accountEnabled')),
