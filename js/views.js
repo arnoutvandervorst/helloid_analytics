@@ -1510,6 +1510,17 @@
       g.appendChild(card(T('sn.unownedOverTime'), T('sn.perImport'), C.line(
         [{ label: T('ov.unownedAccounts'), color: C.STATUS.critical, points: ordered.map((s, i) => ({ x: i, y: s.summary.orphanAccounts })) }],
         labels)));
+      /* The two lines a business reads: is the drift shrinking, is the spend moving. */
+      g.appendChild(card(T('sn.driftOverTime'), T('sn.perImport'), C.line(
+        [{ label: T('ov.unmanagedEnt'), color: C.slot(1),
+           points: ordered.map((s, i) => ({ x: i, y: s.summary.unmanagedPermissionRows })) }],
+        labels)));
+      g.appendChild(card(T('sn.moneyOverTime'), T('sn.perImport'), C.line([
+        { label: T('ov.licenceSpend'), color: C.slot(4),
+          points: ordered.map((s, i) => ({ x: i, y: Math.round(s.summary.monthlyCost || 0) })) },
+        { label: T('ov.recoverable'), color: C.STATUS.warning,
+          points: ordered.map((s, i) => ({ x: i, y: Math.round(s.summary.wasteMonthly || 0) })) }
+      ], labels)));
       f.appendChild(g);
     }
 

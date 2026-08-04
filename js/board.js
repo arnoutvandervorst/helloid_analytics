@@ -296,6 +296,23 @@
           t2,
           el('p', { class: 'footnote', text: T('bd.changeFoot') })
         );
+
+        /* With more than two imports there is a direction, not just a difference, and
+           the direction is the sentence a board actually remembers. */
+        const history = st.snapshots.slice().sort((a, b) => a.importedAt - b.importedAt);
+        if (history.length >= 3) {
+          const first = history[0], latest = history[history.length - 1];
+          const driftThen = first.summary.unmanagedPermissionRows || 0;
+          const driftNow = latest.summary.unmanagedPermissionRows || 0;
+          const pct = driftThen ? Math.round((driftNow - driftThen) / driftThen * 100) : 0;
+          changeChildren.push(el('p', { class: 'lead', text: T('bd.trendLine', {
+            n: history.length,
+            since: U.fmtDate(first.importedAt).split(',')[0],
+            drift: (pct > 0 ? '+' : '') + pct + '%',
+            risk: first.summary.riskScore + ' \u2192 ' + latest.summary.riskScore,
+            spend: U.fmtMoney(first.summary.monthlyCost || 0) + ' \u2192 ' + U.fmtMoney(latest.summary.monthlyCost || 0)
+          }) }));
+        }
       }
       paper.appendChild(page(changeChildren));
 

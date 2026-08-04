@@ -21,7 +21,7 @@
 
   let orgCursor = null;
 
-  function orgView(m) {
+  function orgView(m, params) {
     const f = document.createDocumentFragment();
     if (!m.vault) {
       f.appendChild(partialNotice(['vault']));
@@ -44,6 +44,7 @@
       f.appendChild(el('p', { class: 'note', style: 'margin-bottom:12px', text: T('org.flat') }));
     }
 
+    const walk = el('div', {});
     const node = orgCursor ? tree.byId(orgCursor) : null;
     const crumb = el('div', { class: 'crumbs' }, [
       el('button', { class: 'btn sm' + (node ? '' : ' primary'), text: T('org.whole'),
@@ -56,7 +57,7 @@
             onclick: () => { orgCursor = n.id; HR.app.render(); } }));
       });
     }
-    f.appendChild(crumb);
+    walk.appendChild(crumb);
 
     /* ---- stat row for wherever we are ---- */
     const stats = el('div', { class: 'grid g4', style: 'margin:12px 0' });
@@ -81,7 +82,7 @@
           { severity: q.departmentsWithoutManager.length ? 'medium' : 'good' })
       );
     }
-    f.appendChild(stats);
+    walk.appendChild(stats);
 
     /* ---- go deeper ---- */
     const kids = node ? node.children : tree.roots;
@@ -112,7 +113,7 @@
             bar
           ]);
         }));
-      f.appendChild(card(node ? T('org.deeper') : T('org.top'), null, cards));
+      walk.appendChild(card(node ? T('org.deeper') : T('org.top'), null, cards));
     }
 
     /* ---- people right here ---- */
@@ -122,7 +123,7 @@
         person: entry.person, contract: entry.contract,
         life: HR.vault.lifecycle(entry.person)
       }));
-      f.appendChild(card(T('org.peopleIn', { name: node.name, n: node.people.length }), null,
+      walk.appendChild(card(T('org.peopleIn', { name: node.name, n: node.people.length }), null,
         HR.table.make({
           columns: [
             { key: 'name', label: T('org.cPerson'), value: r => r.person.displayName,
@@ -140,8 +141,8 @@
     }
 
     /* ---- job titles across the whole organisation ---- */
-    if (!node) {
-      f.appendChild(card(T('org.titlesTitle'), T('org.titlesNote'), HR.table.make({
+    const quality = el('div', {});
+    quality.appendChild(card(T('org.titlesTitle'), T('org.titlesNote'), HR.table.make({
         columns: [
           { key: 'name', label: T('org.cTitleName'), value: t => t.name },
           { key: 'active', label: T('org.cActive'), value: t => t.active, align: 'right' },
@@ -156,10 +157,110 @@
         ],
         rows: q.titles, pageSize: 15, exportName: 'job-titles'
       })));
+    quality.appendChild(vaultQualityCard(m));
 
-      f.appendChild(vaultQualityCard(m));
-    }
+    f.appendChild(HR.viewkit.tabbed('org', [
+      { id: 'walk', label: T('org.tab.walk'), build: () => walk },
+      { id: 'scorecards', label: T('org.tab.scorecards'), build: () => scorecardCard(m, tree) },
+      { id: 'quality', label: T('org.tab.quality'), count: q.summary.anomalies + q.summary.deadTitles,
+        build: () => quality }
+    ], params));
     return f;
+  }
+
+  /**
+   * The league table: every department on the numbers a manager answers for.
+   *
+   * HelloID reports per system because that is how provisioning is built; nobody owns a
+   * system. Cutting the same data by department turns totals into comparisons, and the
+   * comparison is what makes a number actionable — spend per head only means something
+   * next to the other departments' spend per head.
+   */
+  function scorecardCard(m, tree) {
+    let sc = null;
+    try { sc = HR.scorecard.build(m); } catch (e) { return card(T('sc.title'), null,
+      el('p', { class: 'note', text: String(e && e.message || e) })); }
+    if (!sc) return card(T('sc.title'), null, el('p', { class: 'note', text: T('sc.needsVault') }));
+
+    const wrap = el('div', {});
+    const s = sc.summary;
+
+    wrap.appendChild(el('div', { class: 'grid g4' }, [
+      tile(T('sc.kDepartments'), U.fmtInt(s.departments), T('sc.kDepartmentsFoot', { n: U.fmtInt(s.people) })),
+      tile(T('sc.kSpend'), U.fmtMoney(s.monthlyCost) + '/mo',
+        sc.medianCostPerHead != null
+          ? T('sc.kSpendFoot', { median: U.fmtMoney(sc.medianCostPerHead) }) : ''),
+      tile(T('sc.kDrift'), U.fmtInt(s.driftRows), T('sc.kDriftFoot')),
+      tile(T('sc.kLeavers'), U.fmtInt(s.leaversWithAccess),
+        T('sc.kLeaversFoot', { cost: U.fmtMoney(s.leaverCost) }),
+        { severity: s.leaversWithAccess ? 'critical' : 'good' })
+    ]));
+
+    /* What to look at first, said in words before the table asks for reading. */
+    if (sc.outliers.length) {
+      wrap.appendChild(card(T('sc.outliersTitle'), null,
+        el('ul', { class: 'clean' }, sc.outliers.slice(0, 5).map(o => el('li', { class: 'note' }, [
+          el('span', { class: 'sev ' + (o.why === 'leavers' ? 'critical' : 'medium') }),
+          document.createTextNode(' '),
+          el('strong', { text: o.row.name || o.row.key }),
+          document.createTextNode(' \u2014 ' + (o.why === 'cost'
+            ? T('sc.outlierCost', { factor: U.fmtNum(o.factor, 1),
+                head: U.fmtMoney(o.row.costPerHead) })
+            : T('sc.outlierLeavers', { n: o.row.leaversWithAccess,
+                cost: U.fmtMoney(o.row.leaverCost) })))
+        ])))));
+    }
+
+    const label = r => r.key === sc.UNASSIGNED ? T('sc.unassigned')
+      : r.key === sc.UNOWNED ? T('sc.unowned') : r.name;
+
+    const goWalk = r => {
+      if (r.key === sc.UNASSIGNED || r.key === sc.UNOWNED) return;
+      const node = Array.from(tree.nodes.values())
+        .find(n => n.name === r.key || n.id === r.key);
+      if (!node) return;
+      orgCursor = node.id;
+      HR.app.go('org', { tab: 'walk' });
+    };
+
+    wrap.appendChild(card(T('sc.tableTitle'), T('sc.tableNote'), HR.table.make({
+      columns: [
+        { key: 'dept', label: T('pp.department'), value: r => label(r),
+          render: r => (r.key === sc.UNASSIGNED || r.key === sc.UNOWNED)
+            ? el('span', { class: 'note', text: label(r) })
+            : el('a', { href: '#', text: label(r),
+                onclick: e => { e.preventDefault(); goWalk(r); } }) },
+        { key: 'people', label: T('sc.cPeople'), value: r => r.people, align: 'right' },
+        { key: 'accounts', label: T('sc.cAccounts'), value: r => r.accounts, align: 'right' },
+        { key: 'cost', label: T('sc.cSpend'), value: r => r.monthlyCost, align: 'right',
+          render: r => el('span', { text: U.fmtMoney(r.monthlyCost) }) },
+        { key: 'head', label: T('sc.cPerHead'), value: r => r.costPerHead || 0, align: 'right',
+          hint: T('sc.cPerHeadHint'),
+          render: r => {
+            if (r.costPerHead == null) return el('span', { class: 'note', text: '\u2014' });
+            const hot = sc.medianCostPerHead && r.people >= 3 && r.costPerHead > sc.medianCostPerHead * 2;
+            return el('span', { class: hot ? 'sev high' : '', text: U.fmtMoney(r.costPerHead) });
+          } },
+        { key: 'drift', label: T('sc.cDrift'), value: r => r.driftRows, align: 'right',
+          hint: T('sc.cDriftHint') },
+        { key: 'baseline', label: T('sc.cBaseline'), value: r => r.outsideBaseline, align: 'right',
+          hint: T('sc.cBaselineHint'),
+          render: r => r.outsideBaseline
+            ? el('span', { class: 'sev medium', text: String(r.outsideBaseline) })
+            : el('span', { class: 'note', text: '0' }) },
+        { key: 'leavers', label: T('sc.cLeavers'), value: r => r.leaversWithAccess, align: 'right',
+          render: r => r.leaversWithAccess
+            ? el('span', { class: 'sev critical', text: String(r.leaversWithAccess) })
+            : el('span', { class: 'note', text: '0' }) },
+        { key: 'risk', label: T('sc.cRisk'), value: r => Math.round(r.avgRisk), align: 'right',
+          render: r => scoreBar(Math.round(r.avgRisk)) }
+      ],
+      rows: sc.rows, pageSize: 20, exportName: 'department-scorecards',
+      initialSort: { key: 'cost', dir: -1 }
+    })));
+
+    wrap.appendChild(el('p', { class: 'note', text: T('sc.foot') }));
+    return wrap;
   }
 
   /** What is missing from the vault, measured against what it usually contains. */
