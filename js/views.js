@@ -279,7 +279,7 @@
      old it is, and one button that only accepts that kind of file.                */
 
   const SOURCE_SLOTS = [
-    { kind: 'recon',     accept: '.csv', required: true },
+    { kind: 'recon',     accept: '.csv' },
     { kind: 'vault',     accept: '.json' },
     { kind: 'rules',     accept: '.csv' },
     { kind: 'granted',   accept: '.csv' },
@@ -341,11 +341,11 @@
     const st = slotState(slot.kind);
     const days = st && st.loaded ? Math.round((Date.now() - st.loaded) / 86400000) : null;
 
+    /* Every import is optional now, so the only status worth a badge is "loaded". */
     const head = el('div', { class: 'slot-head' }, [
-      el('span', { class: 'sev ' + (st ? 'good' : (slot.required ? 'high' : 'none')) }),
+      el('span', { class: 'sev ' + (st ? 'good' : 'none') }),
       el('strong', { text: T('src.' + slot.kind) }),
-      el('span', { class: 'pill ' + (st ? 'ok' : 'muted'),
-        text: st ? T('src.slotLoaded') : (slot.required ? T('src.slotRequired') : T('src.slotOptional')) })
+      st ? el('span', { class: 'pill ok', text: T('src.slotLoaded') }) : null
     ]);
 
     const body = st
