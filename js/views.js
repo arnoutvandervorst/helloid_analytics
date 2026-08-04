@@ -704,13 +704,14 @@
   function findingCard(fd, m) {
     const d = el('details', { class: 'finding' });
     const sum = el('summary');
-    sum.append(
+    /* append() stringifies a null argument into the literal text "null", so filter. */
+    sum.append(...[
       el('span', { class: 'sev ' + fd.severity, text: T('c.' + fd.severity) }),
       el('span', { class: 'f-title', text: fd.title }),
       el('span', { class: 'pill', text: fd.category }),
       el('span', { class: 'pill solid', text: T(fd.count === 1 ? 'rk.item' : 'rk.items', { n: fd.count }) }),
       fd.impactMonthly ? el('span', { class: 'pill', text: U.fmtMoney(fd.impactMonthly) + '/mo · ' + T(fd.recoverable ? 'rk.recoverable' : 'rk.atStake') }) : null
-    );
+    ].filter(Boolean));
     d.appendChild(sum);
     const body = el('div', { class: 'f-body' });
     body.appendChild(dl([
