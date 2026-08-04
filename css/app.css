@@ -565,3 +565,6 @@ table.board-tbl .owner-cell { border-bottom: 1px solid #e3e2dc; min-width: 90px;
 }
 .tab.active .tab-count { color: var(--text-secondary); }
 .tab-body > * + * { margin-top: 14px; }
+/* Sections built as one wrapper div stack their cards inside it; without this, only the
+   wrapper itself was spaced and its children sat flush. .stack spaces itself. */
+.tab-body > div:not(.stack) > * + * { margin-top: 14px; }

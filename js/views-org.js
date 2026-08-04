@@ -163,12 +163,81 @@
       { id: 'walk', label: T('org.tab.walk'), build: () => walk },
       { id: 'scorecards', label: T('org.tab.scorecards'), build: () => scorecardCard(m, tree) },
       { id: 'workforce', label: T('org.tab.workforce'), build: () => workforceCard(m) },
+      { id: 'attest', label: T('org.tab.attest'), build: () => attestCard(m) },
       { id: 'quality', label: T('org.tab.quality'), count: q.summary.anomalies + q.summary.deadTitles,
         build: () => quality }
     ], params));
     return f;
   }
 
+
+
+  /**
+   * Attestation packs: the review, assembled.
+   *
+   * An access review stalls on assembly, not judgement. Each manager gets one file —
+   * their people, everything each holds, cost, sensitivity, and the best available
+   * answer to "why do they have this" — with an empty Decision column, because that
+   * column is the review. Unexplained rows sort first: they are the reading order.
+   */
+  function attestCard(m) {
+    const wrap = el('div', {});
+    let a = null;
+    try { a = HR.attest.build(m); } catch (e) {
+      wrap.appendChild(card(T('at.title'), null, el('p', { class: 'note', text: String(e && e.message || e) })));
+      return wrap;
+    }
+    if (!a) {
+      wrap.appendChild(card(T('at.title'), null, el('p', { class: 'note', text: T('at.needsManagers') })));
+      return wrap;
+    }
+
+    wrap.appendChild(el('div', { class: 'grid g4' }, [
+      tile(T('at.kManagers'), U.fmtInt(a.summary.managers), T('at.kManagersFoot')),
+      tile(T('at.kRows'), U.fmtInt(a.summary.rows), T('at.kRowsFoot')),
+      tile(T('at.kUnexplained'), U.fmtInt(a.summary.unexplained), T('at.kUnexplainedFoot'),
+        { severity: a.summary.unexplained ? 'medium' : 'good' }),
+      tile(T('at.kStale'), U.fmtInt(a.summary.stale), T('at.kStaleFoot'),
+        { severity: a.summary.stale ? 'critical' : 'good' })
+    ]));
+
+    wrap.appendChild(card(T('at.tableTitle'), T('at.tableNote'), [
+      HR.table.make({
+        columns: [
+          { key: 'manager', label: T('wf.cManager'), value: p => p.manager.name,
+            render: p => el('span', {}, [
+              document.createTextNode(p.manager.name + ' '),
+              p.manager.stale ? el('span', { class: 'sev critical', text: T('at.staleTag') }) : null
+            ].filter(Boolean)) },
+          { key: 'reports', label: T('wf.cReports'), value: p => p.summary.reports, align: 'right' },
+          { key: 'ents', label: T('at.cEnts'), value: p => p.summary.entitlements, align: 'right' },
+          { key: 'unexplained', label: T('at.cUnexplained'), value: p => p.summary.unexplained,
+            align: 'right', hint: T('at.cUnexplainedHint'),
+            render: p => p.summary.unexplained
+              ? el('span', { class: 'sev medium', text: String(p.summary.unexplained) })
+              : el('span', { class: 'note', text: '0' }) },
+          { key: 'sensitive', label: T('at.cSensitive'), value: p => p.summary.sensitive, align: 'right' },
+          { key: 'monthly', label: T('sc.cSpend'), value: p => p.summary.monthly, align: 'right',
+            render: p => el('span', { text: U.fmtMoney(p.summary.monthly) }) },
+          { key: 'export', label: '', sortable: false,
+            render: p => el('button', { class: 'btn sm', text: T('at.export'), onclick: () => {
+              const safe = p.manager.name.replace(/[^\w.-]+/g, '_').slice(0, 60);
+              U.download('attestation-' + safe + '.csv', HR.attest.toCsv(m, [p]), 'text/csv');
+              HR.usage.exported('attestation-pack');
+            } }) }
+        ],
+        rows: a.packs, pageSize: 15, exportName: 'attestation-overview'
+      }),
+      el('div', { class: 'slot-actions' }, [
+        el('button', { class: 'btn primary', text: T('at.exportAll'), onclick: () => {
+          U.download('attestation-packs.csv', HR.attest.toCsv(m, a.packs), 'text/csv');
+          HR.usage.exported('attestation-all');
+        } })
+      ]),
+      el('p', { class: 'note', text: T('at.foot') })
+    ]));
+    return wrap;
+  }
 
   /**
    * The workforce section: the contract history read as history.
