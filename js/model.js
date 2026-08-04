@@ -133,6 +133,9 @@
 
     const model = {
       records, accounts, permissions, persons, systems,
+      /* The model builds from whichever exports are present; views that can only
+         speak about reconciliation rows check this rather than assuming them. */
+      hasRecon: records.length > 0,
       accountList: Array.from(accounts.values()),
       permissionList: Array.from(permissions.values()),
       personList: Array.from(persons.values()),

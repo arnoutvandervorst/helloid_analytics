@@ -40,7 +40,8 @@
     settings: 'M12 9a3 3 0 100 6 3 3 0 000-6zM19 12a7 7 0 00-.1-1l2-1.5-2-3.4-2.3 1a7 7 0 00-1.7-1L14.5 3h-4l-.4 2.6a7 7 0 00-1.7 1l-2.3-1-2 3.4 2 1.5a7 7 0 000 2l-2 1.5 2 3.4 2.3-1a7 7 0 001.7 1l.4 2.6h4l.4-2.6a7 7 0 001.7-1l2.3 1 2-3.4-2-1.5c.1-.3.1-.7.1-1z',
     star: 'M12 4l2.4 5 5.6.8-4 3.9 1 5.5-5-2.6-5 2.6 1-5.5-4-4 5.6-.7L12 4z',
     collapse: 'M15 5l-7 7 7 7M20 5v14',
-    expand: 'M9 5l7 7-7 7M4 5v14'
+    expand: 'M9 5l7 7-7 7M4 5v14',
+    lock: 'M6 11h12v9H6zM9 11V8a3 3 0 016 0v3'
   };
 
   /* The groups are the questions somebody arrives with, not the modules that answer them. */
@@ -107,14 +108,19 @@
 
   /** One row: icon, label, and a star that appears on hover or when it is set. */
   function item(view, current) {
+    /* A view whose imports are missing stays clickable — the page it opens says
+       exactly what to import — but wears a lock so nobody hunts for hidden data. */
+    const missing = HR.views.missingFor ? HR.views.missingFor(view) : [];
+    const needs = missing.map(req => req.split('|').map(k => T('src.' + k)).join(' / ')).join(', ');
     const button = el('button', {
-      class: 'nav-item' + (view === current ? ' active' : ''),
+      class: 'nav-item' + (view === current ? ' active' : '') + (missing.length ? ' gated' : ''),
       'data-view': view,
-      title: T('nav.' + view),
+      title: T('nav.' + view) + (missing.length ? ' \u2014 ' + T('nav.needs', { list: needs }) : ''),
       onclick: () => HR.app.go(view)
     }, [
       icon(view),
-      el('span', { class: 'nav-label', text: T('nav.' + view) })
+      el('span', { class: 'nav-label', text: T('nav.' + view) }),
+      missing.length ? icon('lock', 'nav-lock') : null
     ]);
 
     const star = el('button', {

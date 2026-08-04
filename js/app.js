@@ -36,8 +36,9 @@
     const worksEmpty = state.view === 'settings' || state.view === 'snapshots' || state.view === 'sources';
     if (!state.model && !worksEmpty) { emptyState(root); return; }
     const fn = HR.views[state.view] || HR.views.overview;
+    const missing = HR.views.missingFor ? HR.views.missingFor(state.view) : [];
     try {
-      root.appendChild(fn(state.model, state.params));
+      root.appendChild(missing.length ? HR.views.gatePage(state.view, missing) : fn(state.model, state.params));
     } catch (err) {
       console.error(err);
       root.appendChild(el('div', { class: 'card' }, [
@@ -205,7 +206,7 @@
     delete state.importedAt[kind];
     delete state.fileNames[kind];
     HR.store.saveContext({ [kind]: null, importedAt: state.importedAt, fileNames: state.fileNames });
-    if (state.model) rebuild(); else render();
+    rebuild();
     U.toast(T('toast.sourceCleared', { kind: T('src.' + kind) }), 4000);
   }
 
@@ -254,7 +255,6 @@
       U.toast(T('toast.grantedLoaded', { n: U.fmtInt(parsed.meta.rowCount) }), 5000);
     }
     HR.usage.imported(parsed.kind, parsed.meta.rowCount);
-    if (!state.model) { render(); return; }
     rebuild();
     go('activity');
   }
@@ -275,11 +275,6 @@
     state.fileNames.assignments = fileName;
     HR.store.saveContext({ assignments: text, importedAt: state.importedAt, fileNames: state.fileNames });
     HR.usage.imported('assignments', parsed.meta.rowCount);
-    if (!state.model) {
-      U.toast(T('toast.assignmentsNoRecon', { n: U.fmtInt(parsed.meta.rowCount) }), 6000);
-      render();
-      return;
-    }
     rebuild();
     U.toast(T('toast.assignmentsLoaded', {
       n: U.fmtInt(parsed.meta.rowCount), open: U.fmtInt(parsed.meta.openCount),
@@ -300,11 +295,6 @@
     state.fileNames.products = fileName;
     HR.store.saveContext({ products: text, importedAt: state.importedAt, fileNames: state.fileNames });
     HR.usage.imported('products', parsed.meta.rowCount);
-    if (!state.model) {
-      U.toast(T('toast.productsNoRecon', { n: parsed.meta.rowCount }), 6000);
-      render();
-      return;
-    }
     rebuild();
     U.toast(T('toast.productsLoaded', {
       n: parsed.meta.rowCount, tasks: parsed.meta.withActions
@@ -364,11 +354,6 @@
     state.importedAt.vault = Date.now();
     state.fileNames.vault = fileName;
     HR.store.saveContext({ vault: text, importedAt: state.importedAt, fileNames: state.fileNames });
-    if (!state.model) {
-      U.toast(T('toast.vaultNoRecon', { n: vault.persons.length }), 6000);
-      render();
-      return;
-    }
     HR.usage.imported('vault', vault.persons.length);
     rebuild();
     U.toast(T('toast.vaultLoaded', {
@@ -389,11 +374,6 @@
     state.importedAt.rules = Date.now();
     state.fileNames.rules = fileName;
     HR.store.saveContext({ rules: text, importedAt: state.importedAt, fileNames: state.fileNames });
-    if (!state.model) {
-      U.toast(T('toast.rulesNoRecon', { n: ruleSet.rules.length }), 6000);
-      render();
-      return;
-    }
     HR.usage.imported('rules', ruleSet.rules.length);
     rebuild();
     U.toast(T('toast.rulesLoaded', { n: ruleSet.rules.length }));
@@ -531,7 +511,11 @@
     const opts = { ruleSet: state.ruleSet, vault: state.vault,
       granted: state.granted, history: state.history,
       products: state.products, assignments: state.assignments };
-    if (state.parsed) state.model = HR.model.build(state.parsed.records, opts);
+    /* Any export is enough to build on: a vault alone already answers people and
+       organisation questions. The reconciliation deepens the model, it does not gate it. */
+    const anySource = state.parsed || state.vault || state.ruleSet || state.granted ||
+      state.history || state.products || state.assignments;
+    state.model = anySource ? HR.model.build(state.parsed ? state.parsed.records : [], opts) : null;
     if (state.baselineSnapshot) state.baselineModel = HR.model.build(state.baselineSnapshot.records, opts);
     recomputeDiff();
     updateTopbar();
@@ -548,7 +532,9 @@
        bar now counts the sources and names them on hover. */
     const sources = [];
     const cur = state.snapshots.find(x => x.id === state.currentSnapshotId);
-    sources.push(T('src.recon') + ': ' + ((cur && cur.name) || (state.parsed && state.parsed.meta.fileName) || '—'));
+    if (state.parsed || cur) {
+      sources.push(T('src.recon') + ': ' + ((cur && cur.name) || (state.parsed && state.parsed.meta.fileName) || '—'));
+    }
     if (state.ruleSet) sources.push(T('src.rules') + ': ' + state.ruleSet.rules.length);
     if (state.vault) sources.push(T('src.vault') + ': ' + state.vault.persons.length);
     if (state.granted) sources.push(T('src.granted') + ': ' + state.granted.meta.rowCount);
@@ -556,12 +542,10 @@
     if (state.products) sources.push(T('src.products') + ': ' + U.fmtInt(state.products.meta.rowCount));
     if (state.assignments) sources.push(T('src.assignments') + ': ' + U.fmtInt(state.assignments.meta.rowCount));
 
-    const parts = [
-      T('app.sources', { n: sources.length }),
-      U.fmtInt(s.accounts) + ' ' + T('app.accounts')
-    ];
+    const parts = [T('app.sources', { n: sources.length })];
+    if (state.model.hasRecon) parts.push(U.fmtInt(s.accounts) + ' ' + T('app.accounts'));
     if (state.vault) parts.push(U.fmtInt(state.vault.persons.length) + ' ' + T('app.persons'));
-    parts.push(T('app.riskShort') + ' ' + s.riskScore);
+    if (state.model.hasRecon) parts.push(T('app.riskShort') + ' ' + s.riskScore);
     if (state.baselineSnapshot) parts.push(T('app.vs') + ' ' + state.baselineSnapshot.name);
 
     sub.textContent = parts.join(' · ');
@@ -684,7 +668,7 @@
         await loadSnapshot(state.snapshots[0].id);
         if (state.snapshots.length > 1) await setBaseline(state.snapshots[1].id, true);
       } else {
-        render();
+        rebuild();
       }
     });
   }

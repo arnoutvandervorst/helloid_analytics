@@ -56,6 +56,51 @@
     ]);
   }
 
+  /* ------------------------------------------------------------ import gates */
+  /* What each view cannot say anything without. Every entry is required; a
+     pipe-separated entry is satisfied by any one of its options. Views absent
+     here run on whatever is loaded and degrade with partialNotice instead. */
+  const REQUIRES = {
+    overview: ['recon'], risk: ['recon'], cost: ['recon'],
+    accounts: ['recon'], permissions: ['recon'],
+    people: ['vault|recon'], org: ['vault'],
+    mining: ['vault', 'recon|granted'], rules: ['rules'],
+    products: ['products|assignments'], activity: ['granted|history'],
+    explain: ['recon'], diff: ['recon'], board: ['recon']
+  };
+
+  function hasSource(k) {
+    const st = HR.app.state;
+    if (k === 'recon') return !!(st.model && st.model.hasRecon);
+    if (k === 'rules') return !!st.ruleSet;
+    return !!st[k];
+  }
+
+  const missingFor = view => (REQUIRES[view] || []).filter(req => !req.split('|').some(hasSource));
+
+  /* The whole page, when a view has nothing to stand on: name the view, name the
+     export(s) that unlock it, say what each one is and where in HelloID it lives. */
+  function gatePage(view, missing) {
+    const f = document.createDocumentFragment();
+    f.appendChild(el('div', { class: 'view-head' }, el('div', {}, [
+      el('h1', { text: T('nav.' + view) }),
+      el('p', { text: T('gate.lead') })
+    ])));
+    const rows = [];
+    missing.forEach(req => req.split('|').forEach((k, i) => {
+      if (i > 0) rows.push(el('p', { class: 'note', text: T('gate.or') }));
+      rows.push(el('div', { class: 'gate-source' }, [
+        el('strong', { text: T('src.' + k) }),
+        el('p', { text: T('src.slot.' + k + '.unlocks') }),
+        el('p', { class: 'note', text: T('src.slot.' + k + '.where') })
+      ]));
+    }));
+    rows.push(el('p', { style: 'margin-top:12px' },
+      el('button', { class: 'btn primary', text: T('empty.sources'), onclick: () => HR.app.go('sources') })));
+    f.appendChild(card(T('gate.title'), null, rows));
+    return f;
+  }
+
   function bandPill(band) { return el('span', { class: 'sev ' + band, text: T('c.' + band) }); }
 
   function scoreBar(score) {
@@ -2917,7 +2962,8 @@
     overview, risk: riskView, cost: costView, accounts: accountsView,
     permissions: permissionsView, people: peopleView, diff: diffView,
     snapshots: snapshotsView, settings: settingsView, sources: sourcesView,
-    openDrawer, closeDrawer, drawerAccount, drawerPermission, drawerPerson, card, tile
+    openDrawer, closeDrawer, drawerAccount, drawerPermission, drawerPerson, card, tile,
+    missingFor, gatePage
   };
 
   /* What the split-out view files build with. Everything here was already shared inside

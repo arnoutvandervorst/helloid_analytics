@@ -162,6 +162,11 @@ label.inline { display: inline-flex; align-items: center; gap: 6px; font-size: 1
 .nav-star.on { color: var(--warning); }
 .nav-star.on .nav-icon { fill: currentColor; color: var(--warning); }
 .nav-star .nav-icon { width: 13px; height: 13px; flex-basis: 13px; }
+.nav-item.gated .nav-label { color: var(--muted); }
+.nav-lock { width: 11px; height: 11px; flex: 0 0 11px; margin-left: auto; opacity: .7; }
+.sidenav.collapsed .nav-lock { display: none; }
+.gate-source { padding: 10px 12px; border: 1px solid var(--border-strong); border-radius: 8px; }
+.gate-source p { margin: 4px 0 0; }
 .nav-group-label {
   font-size: 10px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted);
   padding: 12px 10px 4px; white-space: nowrap;
