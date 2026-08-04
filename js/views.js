@@ -1583,8 +1583,10 @@
   }
 
   /* =============================================================== SETTINGS */
-  function settingsView() {
-    const cfg = HR.config.clone(HR.config.get());
+  /* Edits live in a draft until saved, so switching tabs does not throw them away. */
+  let settingsDraft = null;
+  function settingsView(m, params) {
+    const cfg = settingsDraft || (settingsDraft = HR.config.clone(HR.config.get()));
     const f = document.createDocumentFragment();
     f.appendChild(el('div', { class: 'view-head' }, [
       el('div', {}, [
@@ -1593,8 +1595,8 @@
         el('p', { class: 'note', text: T('st.persistNote') })
       ]),
       el('div', { class: 'row' }, [
-        el('button', { class: 'btn primary', text: T('st.save'), onclick: () => { HR.config.save(cfg); HR.app.rebuild(); U.toast(T('toast.settingsSaved')); } }),
-        el('button', { class: 'btn', text: T('st.reset'), onclick: () => { if (confirm(T('st.resetConfirm'))) { HR.config.reset(); HR.app.rebuild(); HR.app.go('settings'); } } }),
+        el('button', { class: 'btn primary', text: T('st.save'), onclick: () => { HR.config.save(cfg); settingsDraft = null; HR.app.rebuild(); U.toast(T('toast.settingsSaved')); } }),
+        el('button', { class: 'btn', text: T('st.reset'), onclick: () => { if (confirm(T('st.resetConfirm'))) { settingsDraft = null; HR.config.reset(); HR.app.rebuild(); HR.app.go('settings'); } } }),
         el('button', { class: 'btn', text: T('st.exportFile'), onclick: () => {
           HR.config.save(cfg);
           U.download('analytics-settings.json', HR.config.exportJson(), 'application/json');
@@ -1605,6 +1607,7 @@
             const file = e.target.files[0]; if (!file) return;
             try {
               const counts = HR.config.importJson(await file.text());
+              settingsDraft = null;
               HR.app.applyChrome(); HR.app.rebuild(); HR.app.go('settings');
               U.toast(T('toast.settingsImported', counts), 5000);
             } catch (err) { U.toast(err.message, 7000); }
@@ -1659,23 +1662,29 @@
       return card(title, note, body);
     };
 
-    const g = el('div', { class: 'grid' });
+    const grid = cards => {
+      const g = el('div', { class: 'grid' });
+      cards.filter(Boolean).forEach(c => g.appendChild(c));
+      return g;
+    };
 
-    g.appendChild(editableList(T('st.priceBook'), T('st.priceBookNote'),
-      cfg.priceBook,
-      [{ key: 'label', label: T('st.label') }, { key: 'pattern', label: T('st.pattern') },
-       { key: 'price', label: T('st.price'), num: true, step: '0.01' }],
-      () => ({ label: 'New SKU', pattern: '^LIC-', price: 0, unit: 'month' }), { target: 'permission' }));
+    const pricingTab = () => grid([
+      editableList(T('st.priceBook'), T('st.priceBookNote'),
+        cfg.priceBook,
+        [{ key: 'label', label: T('st.label') }, { key: 'pattern', label: T('st.pattern') },
+         { key: 'price', label: T('st.price'), num: true, step: '0.01' }],
+        () => ({ label: 'New SKU', pattern: '^LIC-', price: 0, unit: 'month' }), { target: 'permission' }),
 
-    g.appendChild(editableList(T('st.categories'), T('st.categoriesNote'),
-      cfg.categories,
-      [{ key: 'label', label: T('c.category'), translated: true }, { key: 'pattern', label: T('st.patternShort') }, { key: 'sensitivity', label: T('st.sensitivity'), num: true, step: '0.1' }],
-      () => ({ id: 'custom' + Date.now(), label: 'New category', pattern: '^X', sensitivity: 1, color: 2 }), { target: 'permission' }));
+      editableList(T('st.categories'), T('st.categoriesNote'),
+        cfg.categories,
+        [{ key: 'label', label: T('c.category'), translated: true }, { key: 'pattern', label: T('st.patternShort') }, { key: 'sensitivity', label: T('st.sensitivity'), num: true, step: '0.1' }],
+        () => ({ id: 'custom' + Date.now(), label: 'New category', pattern: '^X', sensitivity: 1, color: 2 }), { target: 'permission' }),
 
-    g.appendChild(editableList(T('st.classes'), T('st.classesNote'),
-      cfg.accountClasses,
-      [{ key: 'label', label: T('c.class'), translated: true }, { key: 'pattern', label: T('st.patternShort') }, { key: 'weight', label: T('st.weight'), num: true, step: '0.1' }],
-      () => ({ id: 'custom' + Date.now(), label: 'New class', pattern: '^X', weight: 1 }), { target: 'account' }));
+      editableList(T('st.classes'), T('st.classesNote'),
+        cfg.accountClasses,
+        [{ key: 'label', label: T('c.class'), translated: true }, { key: 'pattern', label: T('st.patternShort') }, { key: 'weight', label: T('st.weight'), num: true, step: '0.1' }],
+        () => ({ id: 'custom' + Date.now(), label: 'New class', pattern: '^X', weight: 1 }), { target: 'account' })
+    ]);
 
     const numField = (obj, key, label, step) => {
       const w = el('label', { class: 'inline' });
@@ -1685,7 +1694,8 @@
       return w;
     };
 
-    g.appendChild(card(T('st.riskWeights'), T('st.riskWeightsNote'), el('div', { class: 'row' }, [
+    const weightsTab = () => grid([
+      card(T('st.riskWeights'), T('st.riskWeightsNote'), el('div', { class: 'row' }, [
       numField(cfg.risk.issueWeights, 'Account unmanaged', T('st.wAccountUnmanaged')),
       numField(cfg.risk.issueWeights, 'Permission unmanaged', T('st.wPermUnmanaged')),
       numField(cfg.risk.issueWeights, 'Permission missing', T('st.wPermMissing')),
@@ -1696,17 +1706,17 @@
       numField(cfg.risk, 'rarityBonus', T('st.wRarity')),
       numField(cfg.risk, 'outlierBonus', T('st.wOutlier')),
       numField(cfg.risk, 'stackedLicenceBonus', T('st.wStacked'))
-    ])));
+      ])),
 
-    g.appendChild(card(T('st.effort'), T('st.effortNote'), el('div', { class: 'row' }, [
+      card(T('st.effort'), T('st.effortNote'), el('div', { class: 'row' }, [
       numField(cfg.effort, 'hourlyRate', T('st.hourlyRate')),
       numField(cfg.effort, 'minutesPerUnmanagedPermission', T('st.minPerm')),
       numField(cfg.effort, 'minutesPerUnmanagedAccount', T('st.minAccount')),
       numField(cfg.effort, 'minutesPerMissingPermission', T('st.minMissing')),
       numField(cfg.effort, 'minutesPerPrivilegedReview', T('st.minPriv'))
-    ])));
+      ])),
 
-    g.appendChild(card(T('st.thresholds'), null, el('div', { class: 'row' }, [
+      card(T('st.thresholds'), null, el('div', { class: 'row' }, [
       numField(cfg.severityBands, 'critical', T('st.criticalAt')),
       numField(cfg.severityBands, 'high', T('st.highAt')),
       numField(cfg.severityBands, 'medium', T('st.mediumAt')),
@@ -1718,10 +1728,11 @@
         w.append(document.createTextNode(T('st.currency')), s);
         return w;
       })()
-    ])));
+      ]))
+    ]);
 
     /* ---- account-to-person matching, with the effect of the current numbers ---- */
-    (() => {
+    const matchingCard = () => {
       const c = cfg.correlation;
       const m = HR.app.state.model;
       const stats = (m && m.vault) ? HR.correlate.attributionStats(m, m.vault, m.correlation) : null;
@@ -1739,7 +1750,7 @@
         oninput: e => c.strongThreshold = parseFloat(e.target.value) || 0 });
       threshold.style.width = '80px';
 
-      g.appendChild(card(T('st.matching'), T('st.matchingNote'), [
+      return card(T('st.matching'), T('st.matchingNote'), [
         el('div', { class: 'row' }, [
           toggle('useVaultCorrelation', 'st.mUseVault'),
           toggle('useReconPerson', 'st.mUseRecon'),
@@ -1760,12 +1771,14 @@
           vault: U.fmtInt(stats.byLayer.vault || 0), recon: U.fmtInt(stats.byLayer.recon || 0),
           name: U.fmtInt(stats.byLayer.name || 0), left: U.fmtInt(stats.unattributed)
         }) }) : el('p', { class: 'note', style: 'margin-top:10px', text: T('st.mNoVault') })
-      ]));
-    })();
+      ]);
+    };
 
-    if (HR.app.state.model) {
-      g.appendChild(card(T('rv.tester'), T('rv.testerNote'), regexTester(HR.app.state.model)));
-    }
+    const matchingTab = () => grid([
+      matchingCard(),
+      HR.app.state.model
+        ? card(T('rv.tester'), T('rv.testerNote'), regexTester(HR.app.state.model)) : null
+    ]);
 
     /* ---- branding: icon, wordmark, report title block ---- */
     const B = HR.brand.state;
@@ -1791,7 +1804,7 @@
         ])
       ]);
     };
-    g.appendChild(card(T('st.branding'), T('st.brandingNote'), [
+    const brandingTab = () => grid([card(T('st.branding'), T('st.brandingNote'), [
       el('div', { class: 'brand-slots' }, [
         slotRow('icon', 'st.slotIcon', 'logo-sample'),
         slotRow('logo', 'st.slotLogo', 'logo-sample'),
@@ -1806,9 +1819,14 @@
         })()
       ]),
       el('p', { class: 'note', text: T('st.logoHint') })
-    ]));
+    ])]);
 
-    f.appendChild(g);
+    f.appendChild(tabbed('settings', [
+      { id: 'pricing', label: T('st.tab.pricing'), build: pricingTab },
+      { id: 'weights', label: T('st.tab.weights'), build: weightsTab },
+      { id: 'matching', label: T('st.tab.matching'), build: matchingTab },
+      { id: 'branding', label: T('st.tab.branding'), build: brandingTab }
+    ], params));
     return f;
   }
 

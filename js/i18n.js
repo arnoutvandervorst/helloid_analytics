@@ -75,7 +75,7 @@ window.HR = window.HR || {};
     'src.slot.vault.where': 'HelloID \u2192 Vault \u2192 Export (JSON).',
     'src.slot.rules.unlocks': 'The business rules. Splits entitlements into modelled, draft-only and unmodelled.',
     'src.slot.rules.where': 'HelloID \u2192 Business rules \u2192 Export (CSV).',
-    'src.slot.granted.unlocks': 'What HelloID believes it granted \u2014 the difference between \u201cgranted outside HelloID\u201d and \u201cgranted by HelloID, not recorded\u201d.',
+    'src.slot.granted.unlocks': 'What HelloID has confirmed as granted \u2014 the difference between \u201cgranted outside HelloID\u201d and \u201cgranted by HelloID, not recorded\u201d.',
     'src.slot.granted.where': 'HelloID \u2192 Business \u2192 Entitlements \u2192 Granted tab \u2192 Export (CSV).',
     'src.slot.history.unlocks': 'What HelloID did, when, and whether it worked \u2014 turns a missing entitlement into a failed grant on a date.',
     'src.slot.history.where': 'HelloID \u2192 Business \u2192 Entitlements \u2192 Historic actions tab \u2192 Export (CSV).',
@@ -706,7 +706,7 @@ window.HR = window.HR || {};
     'nx.needs.vault': 'These people are only the ones the reconciliation export happens to mention. Import the HelloID Vault export to see everyone, their contracts, and whether each contract is future, current or past.',
     'nx.needs.rules': 'Import the business-rule export to see which access is described by a rule and which is not.',
     'nx.needs.history': 'Import the historic-actions export to see what HelloID actually did, when, and whether it worked.',
-    'nx.needs.granted': 'Import the granted-entitlements export to see what HelloID believes is granted right now.',
+    'nx.needs.granted': 'Import the granted-entitlements export to see what HelloID has confirmed as granted right now.',
 
     'toast.historyLoaded': 'History loaded: {n} actions on {days} days, spanning {span} days',
     'toast.grantedLoaded': 'Granted entitlements loaded: {n} rows',
@@ -746,7 +746,7 @@ window.HR = window.HR || {};
     'act.churnNote': 'granted and revoked repeatedly for the same person — a condition that flips, not a person changing job',
     'act.cFlips': 'Flips',
     'act.grantedTable': 'Currently granted',
-    'act.grantedTableNote': 'what HelloID believes it has granted, across {n} people',
+    'act.grantedTableNote': 'what HelloID has confirmed as granted, across {n} people',
     'act.cChanged': 'Last changed',
 
     'ex.kind.org-shaped': 'Explained by where this person works',
@@ -1133,8 +1133,8 @@ window.HR = window.HR || {};
     'rv.invalid': 'Invalid pattern: {msg}',
     'st.ruleMatches': '{n} in this import',
 
-    'empty.title': 'Import a HelloID reconciliation export',
-    'empty.body': 'Open Imports for a slot per HelloID export, or drag a file anywhere on this page. Files are read in this browser and never uploaded to the host.',
+    'empty.title': 'Import your HelloID exports',
+    'empty.body': 'It starts with the reconciliation export; every other export adds a layer on top. Open Imports for a slot per HelloID export, or drag a file anywhere on this page. Files are read in this browser and never uploaded to the host.',
     'empty.sample': 'Load the export from this folder',
     'empty.columns': 'Expected columns: System, Person, AccountDisplayName, AccountUserName, AccountEnabled, PermissionDisplayName, PermissionConfigurationDisplayName, SubPermissionDisplayName, Issue, Resolution.',
 
@@ -1443,6 +1443,10 @@ window.HR = window.HR || {};
 
     /* ---- settings ---- */
     'st.title': 'Settings',
+    'st.tab.pricing': 'Pricing & classification',
+    'st.tab.weights': 'Weights & thresholds',
+    'st.tab.matching': 'Matching',
+    'st.tab.branding': 'Branding',
     'st.lead': 'The model is deliberately explicit: prices, sensitivities and weights are assumptions, and they belong to you. Changing anything here re-scores the loaded snapshot immediately.',
     'st.save': 'Save & re-score',
     'st.exportFile': 'Export settings file',
@@ -1920,7 +1924,7 @@ window.HR = window.HR || {};
     'src.slot.vault.where': 'HelloID \u2192 Vault \u2192 Export (JSON).',
     'src.slot.rules.unlocks': 'De business rules. Splitst rechten in gemodelleerd, alleen-concept en niet-gemodelleerd.',
     'src.slot.rules.where': 'HelloID \u2192 Business rules \u2192 Export (CSV).',
-    'src.slot.granted.unlocks': 'Wat HelloID denkt te hebben toegekend \u2014 het verschil tussen \u201cbuiten HelloID om gegeven\u201d en \u201cdoor HelloID gegeven, niet vastgelegd\u201d.',
+    'src.slot.granted.unlocks': 'Wat HelloID bevestigd heeft toegekend \u2014 het verschil tussen \u201cbuiten HelloID om gegeven\u201d en \u201cdoor HelloID gegeven, niet vastgelegd\u201d.',
     'src.slot.granted.where': 'HelloID \u2192 Business \u2192 Entitlements \u2192 Granted tab \u2192 Export (CSV).',
     'src.slot.history.unlocks': 'Wat HelloID deed, wanneer, en of het lukte \u2014 maakt van een ontbrekend recht een mislukte toekenning op een datum.',
     'src.slot.history.where': 'HelloID \u2192 Business \u2192 Entitlements \u2192 tabblad Historic actions \u2192 Export (CSV).',
@@ -2551,7 +2555,7 @@ window.HR = window.HR || {};
     'nx.needs.vault': 'Dit zijn alleen de mensen die de reconciliatie-export toevallig noemt. Importeer de HelloID Vault-export om iedereen te zien, met hun contracten en of een contract toekomstig, actief of verlopen is.',
     'nx.needs.rules': 'Importeer de business-rule-export om te zien welke toegang door een regel is beschreven en welke niet.',
     'nx.needs.history': 'Importeer de historische-acties-export om te zien wat HelloID daadwerkelijk deed, wanneer, en of het lukte.',
-    'nx.needs.granted': 'Importeer de export met toegekende rechten om te zien wat HelloID nu denkt te hebben toegekend.',
+    'nx.needs.granted': 'Importeer de export met toegekende rechten om te zien wat HelloID op dit moment bevestigd heeft toegekend.',
 
     'toast.historyLoaded': 'Historie geladen: {n} acties op {days} dagen, over {span} dagen',
     'toast.grantedLoaded': 'Toegekende rechten geladen: {n} regels',
@@ -2591,7 +2595,7 @@ window.HR = window.HR || {};
     'act.churnNote': 'herhaaldelijk toegekend en ingetrokken voor dezelfde persoon — een voorwaarde die omslaat, geen persoon die van functie wisselt',
     'act.cFlips': 'Wisselingen',
     'act.grantedTable': 'Nu toegekend',
-    'act.grantedTableNote': 'wat HelloID denkt te hebben toegekend, over {n} mensen',
+    'act.grantedTableNote': 'wat HelloID bevestigd heeft toegekend, over {n} mensen',
     'act.cChanged': 'Laatst gewijzigd',
 
     'ex.kind.org-shaped': 'Verklaard door waar deze persoon werkt',
@@ -2978,8 +2982,8 @@ window.HR = window.HR || {};
     'rv.invalid': 'Ongeldig patroon: {msg}',
     'st.ruleMatches': '{n} in deze import',
 
-    'empty.title': 'Importeer een HelloID-reconciliatie-export',
-    'empty.body': 'Open Imports voor een vak per HelloID-export, of sleep een bestand ergens op deze pagina. Bestanden worden in deze browser gelezen en nooit naar de host gestuurd.',
+    'empty.title': 'Importeer je HelloID-exports',
+    'empty.body': 'Het begint met de reconciliatie-export; elke andere export legt daar een laag bovenop. Open Imports voor een vak per HelloID-export, of sleep een bestand ergens op deze pagina. Bestanden worden in deze browser gelezen en nooit naar de host gestuurd.',
     'empty.sample': 'Laad de export uit deze map',
     'empty.columns': 'Verwachte kolommen: System, Person, AccountDisplayName, AccountUserName, AccountEnabled, PermissionDisplayName, PermissionConfigurationDisplayName, SubPermissionDisplayName, Issue, Resolution.',
 
@@ -3277,6 +3281,10 @@ window.HR = window.HR || {};
     'sn.deleteConfirm': 'Momentopname "{name}" verwijderen? Dit kan niet ongedaan worden gemaakt.',
 
     'st.title': 'Instellingen',
+    'st.tab.pricing': 'Prijzen & classificatie',
+    'st.tab.weights': 'Wegingen & drempels',
+    'st.tab.matching': 'Koppeling',
+    'st.tab.branding': 'Huisstijl',
     'st.lead': 'Het model is bewust expliciet: prijzen, gevoeligheden en wegingen zijn aannames en die zijn van jou. Elke wijziging herberekent de geladen momentopname direct.',
     'st.save': 'Opslaan & herberekenen',
     'st.exportFile': 'Instellingenbestand exporteren',
