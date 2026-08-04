@@ -31,7 +31,7 @@
         a = {
           key: ak, system: r.system, userName: r.userName,
           displayName: r.accountDisplayName || r.userName,
-          enabled: r.enabled, personRaw: r.personRaw, personName: r.personName, personId: r.personId,
+          enabled: r.enabled, personRaw: r.personRaw, personName: r.personRaw, personId: '',
           records: [], permKeys: new Set(), missingPermKeys: new Set(),
           issues: { total: 0 }, resolutions: {},
           flagged: { accountUnmanaged: false }
@@ -40,7 +40,7 @@
       }
       // Fill in details that may only appear on some of an account's rows.
       if (a.enabled == null && r.enabled != null) a.enabled = r.enabled;
-      if (!a.personRaw && r.personRaw) { a.personRaw = r.personRaw; a.personName = r.personName; a.personId = r.personId; }
+      if (!a.personRaw && r.personRaw) { a.personRaw = r.personRaw; a.personName = r.personRaw; }
       if (!a.displayName && r.accountDisplayName) a.displayName = r.accountDisplayName;
       a.records.push(r);
       a.issues[r.issue] = (a.issues[r.issue] || 0) + 1;
@@ -74,7 +74,7 @@
       if (r.personRaw) {
         let per = persons.get(r.personRaw);
         if (!per) {
-          per = { key: r.personRaw, name: r.personName, externalId: r.personId, accountKeys: new Set(), issues: 0 };
+          per = { key: r.personRaw, name: r.personRaw, externalId: '', accountKeys: new Set(), issues: 0 };
           persons.set(r.personRaw, per);
         }
         per.accountKeys.add(ak);
