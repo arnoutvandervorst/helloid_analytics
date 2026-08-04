@@ -172,6 +172,69 @@
 
 
 
+
+  /** The pack, readable before it is a file: same rows, same order, same evidence. */
+  function drawerAttestPack(m, pack) {
+    const SEV = { unexplained: 'high', none: 'high', common: 'low',
+      product: 'info', baseline: 'good', rule: 'good' };
+    const body = el('div', { class: 'stack' });
+
+    body.appendChild(el('div', { class: 'grid g4' }, [
+      HR.viewkit.tile(T('wf.cReports'), U.fmtInt(pack.summary.reports), ''),
+      HR.viewkit.tile(T('at.cEnts'), U.fmtInt(pack.summary.entitlements), ''),
+      HR.viewkit.tile(T('at.cUnexplained'), U.fmtInt(pack.summary.unexplained), '',
+        { severity: pack.summary.unexplained ? 'medium' : 'good', small: true }),
+      HR.viewkit.tile(T('sc.cSpend'), U.fmtMoney(pack.summary.monthly), '', { small: true })
+    ]));
+
+    body.appendChild(HR.table.make({
+      columns: [
+        { key: 'person', label: T('py.cPerson'), value: r => r.person.displayName,
+          render: r => el('span', {}, [
+            document.createTextNode(r.person.displayName + ' '),
+            r.life.state !== 'current'
+              ? el('span', { class: 'sev medium', text: stateLabel(r.life.state) }) : null
+          ].filter(Boolean)) },
+        { key: 'ent', label: T('py.cEntitlement'), value: r => r.perm ? r.perm.name : '',
+          render: r => r.perm
+            ? el('a', { href: '#', text: r.perm.name,
+                onclick: e => { e.preventDefault(); drawerPermission(r.perm, m); } })
+            : el('span', { class: 'note', text: '—' }) },
+        { key: 'sensitive', label: T('at.cSensitive'), value: r => r.perm && r.perm.sensitivity >= 1.6 ? 1 : 0,
+          render: r => r.perm && r.perm.sensitivity >= 1.6
+            ? el('span', { class: 'sev high', text: '●' }) : el('span', { text: '' }) },
+        { key: 'cost', label: T('c.costMo'), value: r => r.perm ? (r.perm.monthlyPrice || 0) : 0,
+          align: 'right',
+          render: r => r.perm && r.perm.monthlyPrice
+            ? el('span', { text: U.fmtMoney(r.perm.monthlyPrice) })
+            : el('span', { class: 'note', text: '—' }) },
+        { key: 'how', label: T('at.cHow'), value: r => r.reason.text,
+          render: r => el('span', { class: 'sev ' + (SEV[r.reason.kind] || 'low'),
+            text: r.reason.text }) }
+      ],
+      rows: pack.rows, pageSize: 15, exportName: 'attestation-preview',
+      search: (r, q) => ((r.person.displayName + ' ' + (r.perm ? r.perm.name : '') + ' ' +
+        r.reason.text).toLowerCase().includes(q))
+    }));
+
+    body.appendChild(el('div', { class: 'slot-actions' }, [
+      el('button', { class: 'btn primary', text: T('at.export'), onclick: () => {
+        const safe = pack.manager.name.replace(/[^\w.-]+/g, '_').slice(0, 60);
+        U.download('attestation-' + safe + '.csv', HR.attest.toCsv(m, [pack]), 'text/csv');
+        HR.usage.exported('attestation-pack');
+      } })
+    ]));
+
+    openDrawer(el('div', {}, [
+      el('div', {}, [
+        document.createTextNode(pack.manager.name + ' '),
+        pack.manager.stale ? el('span', { class: 'sev critical', text: T('at.staleTag') }) : null
+      ].filter(Boolean)),
+      el('span', { class: 'note', text: T('at.previewNote', {
+        n: pack.rows.length, unexplained: pack.summary.unexplained }) })
+    ]), body);
+  }
+
   /**
    * Attestation packs: the review, assembled.
    *
@@ -206,7 +269,9 @@
         columns: [
           { key: 'manager', label: T('wf.cManager'), value: p => p.manager.name,
             render: p => el('span', {}, [
-              document.createTextNode(p.manager.name + ' '),
+              el('a', { href: '#', text: p.manager.name,
+                onclick: e => { e.preventDefault(); drawerAttestPack(m, p); } }),
+              document.createTextNode(' '),
               p.manager.stale ? el('span', { class: 'sev critical', text: T('at.staleTag') }) : null
             ].filter(Boolean)) },
           { key: 'reports', label: T('wf.cReports'), value: p => p.summary.reports, align: 'right' },
