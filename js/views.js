@@ -181,7 +181,7 @@
     const rows = [];
 
     const snapshot = st.snapshots.find(x => x.id === st.currentSnapshotId);
-    rows.push({
+    if (snapshot || st.parsed) rows.push({
       kind: T('src.recon'), loaded: snapshot ? snapshot.importedAt : null,
       dataDate: null,
       detail: T('src.reconDetail', { rows: U.fmtInt(m.summary.rows), accounts: m.summary.accounts }),
@@ -233,6 +233,7 @@
     const oldest = dataDates.length ? Math.min.apply(null, dataDates) : null;
 
     const missing = [];
+    if (!st.parsed && !st.currentSnapshotId) missing.push(T('src.recon'));
     if (!st.ruleSet) missing.push(T('src.rules'));
     if (!st.vault) missing.push(T('src.vault'));
     if (!st.history) missing.push(T('src.history'));
@@ -291,7 +292,7 @@
     const st = HR.app.state;
     switch (kind) {
       case 'recon': {
-        if (!st.model) return null;
+        if (!st.parsed && !st.currentSnapshotId) return null;
         const snap = st.snapshots.find(x => x.id === st.currentSnapshotId);
         return {
           file: snap ? snap.fileName : (st.parsed ? st.parsed.meta.fileName : '—'),
@@ -1345,6 +1346,7 @@
       ])
     ]);
     const body = el('div', { class: 'stack' });
+    if (m && !m.hasRecon) body.appendChild(partialNotice(['recon']));
     body.appendChild(dl([
       [T('c.employeeId'), p.externalId || '—'],
       [T('pp.department'), row.department || '—'],
