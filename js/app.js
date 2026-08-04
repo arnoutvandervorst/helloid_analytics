@@ -100,6 +100,11 @@
     const activityKind = looksLikeActivityExport(text);
     if (activityKind) return importActivity(text, fileName, activityKind);
 
+    if (isRulesEntitlementExport(headerOf(text))) {
+      U.toast(T('toast.rulesEntitlements'), 10000);
+      return;
+    }
+
     let parsed;
     try { parsed = HR.parse.parse(text, fileName); }
     catch (err) {
@@ -202,6 +207,19 @@
     HR.store.saveContext({ [kind]: null, importedAt: state.importedAt, fileNames: state.fileNames });
     if (state.model) rebuild(); else render();
     U.toast(T('toast.sourceCleared', { kind: T('src.' + kind) }), 4000);
+  }
+
+  /* HelloID → Rules → Entitlements exports under the same name as the two files this
+     tool does read, so it will be dropped here sooner or later. It is the entitlement
+     list from the rules' point of view: how many rules grant each one, and whether the
+     target system still has it. Both are already derived from the business-rule export,
+     so there is no slot for it — but "not recognised" would be the wrong thing to say
+     about a file HelloID really produces. */
+  const RULES_ENTITLEMENTS = ['systemdisplayname', 'entitlementdisplayname', 'rulescount'];
+
+  function isRulesEntitlementExport(header) {
+    const cols = (header || []).map(h => String(h || '').toLowerCase().replace(/[^a-z]/g, ''));
+    return RULES_ENTITLEMENTS.every(c => cols.includes(c));
   }
 
   function headerOf(text) {
