@@ -1996,6 +1996,118 @@
   /* ==================================================== BUSINESS RULES ==== */
   /* The rule export next to the reconciliation export: what the model says should be
      granted, against what the target system hands out. */
+
+  /**
+   * Optimising the rules a tenant already runs, which is a different job from mining.
+   *
+   * Two halves that pull against each other: fewer rules for the same result, and more
+   * rules to cover what none of them do. Both are proposals — nothing here is applied to
+   * anything — and the first is priced in SOLL so the trade is visible rather than
+   * implied.
+   */
+  function condenseRulesCard(m) {
+    if (!m.ruleSet || !m.evaluation) return null;
+    let c = null;
+    try { c = HR.optimise.condenseRules(m, m.ruleSet, m.evaluation); } catch (e) { return null; }
+    if (!c) return null;
+
+    const s = c.summary;
+    if (!c.proposals.length) {
+      return card(T('op.cdTitle'), T('op.cdNote'), el('p', { class: 'note',
+        text: T('op.cdNothing', { n: s.rules }) }));
+    }
+
+    return card(T('op.cdTitle'), T('op.cdNote'), [
+      el('p', { text: T('op.cdLead', {
+        before: s.rules, after: s.after, merges: s.merges,
+        replaces: s.replaces, added: s.added }) }),
+      HR.table.make({
+        columns: [
+          { key: 'cond', label: T('op.cCondition'), value: p => p.facet + ': ' + p.values.join(', '),
+            render: p => el('span', {}, [
+              el('span', { class: 'pill', text: p.facet }),
+              el('span', { class: 'mono', text: ' ' + T('py.oneOf', { values: p.values.join(', ') }) })
+            ]) },
+          { key: 'replaces', label: T('op.cReplaces'), value: p => p.replaces, align: 'right' },
+          { key: 'ents', label: T('py.cGrants'), value: p => p.entitlements.length, align: 'right' },
+          { key: 'people', label: T('op.cPeople'), value: p => p.people.length, align: 'right' },
+          { key: 'trade', label: T('op.cTrade'), value: p => p.added.length,
+            hint: T('op.cTradeHint'),
+            render: p => p.added.length
+              ? el('a', { href: '#', class: 'sev medium',
+                  text: T('op.nPairs', { n: U.fmtInt(p.added.length) }),
+                  onclick: e => { e.preventDefault(); drawerTrade(m, p); } })
+              : el('span', { class: 'sev good', text: T('op.noTrade') }) },
+          { key: 'rules', label: T('op.cRules'), sortable: false,
+            render: p => el('span', { class: 'trunc', title: p.rules.map(r => r.name).join(', '),
+              text: p.rules.map(r => r.name).join(', ') }) }
+        ],
+        rows: c.proposals, pageSize: 10, exportName: 'condensed-rules'
+      }),
+      el('div', { class: 'slot-actions' }, [
+        el('button', { class: 'btn', text: T('op.cdExport'), onclick: () => {
+          U.download('condensed-rules.csv', HR.optimise.toRulesCsv(c.proposals), 'text/csv');
+          HR.usage.exported('condensed-rules');
+        } })
+      ]),
+      el('p', { class: 'note', text: T('op.cdFoot', { max: c.maxTrade }) })
+    ]);
+  }
+
+  /** Exactly who would gain what, for a merge that is not free. */
+  function drawerTrade(m, proposal) {
+    const body = el('div', { class: 'stack' }, [
+      el('p', { text: T('op.tradeLead', {
+        n: proposal.added.length, rules: proposal.replaces,
+        facet: proposal.facet, values: proposal.values.join(', ') }) }),
+      HR.table.make({
+        columns: [
+          { key: 'person', label: T('py.cPerson'), value: r => r.person.displayName },
+          { key: 'ent', label: T('py.cEntitlement'), value: r => r.ent.name },
+          { key: 'dept', label: T('pp.department'),
+            value: r => (r.person.primaryContract && r.person.primaryContract.department.name) || '' }
+        ],
+        rows: proposal.added, pageSize: 15, exportName: 'merge-trade-off'
+      })
+    ]);
+    openDrawer(el('div', {}, [
+      el('div', { text: T('op.tradeTitle') }),
+      el('span', { class: 'note', text: proposal.rules.map(r => r.name).join(' · ') })
+    ]), body);
+  }
+
+  /** What to add, ranked by the drift it would take out of the reconciliation. */
+  function extendRulesCard(m) {
+    if (!m.comparison || !m.vault) return null;
+    let P = null, e = null;
+    try { P = HR.pyramid.build(m); e = HR.optimise.extensions(m, m.comparison, P); }
+    catch (err) { return null; }
+    if (!e || !e.candidates.length) return null;
+
+    return card(T('op.exTitle'), T('op.exNote'), [
+      el('p', { text: T('op.exLead', {
+        n: e.summary.candidates, ents: e.summary.entitlements,
+        unmodelled: e.summary.unmodelled, drift: U.fmtInt(e.summary.drift),
+        share: U.fmtPct(e.summary.share, 0) }) }),
+      HR.table.make({
+        columns: [
+          { key: 'cond', label: T('op.cWho'),
+            value: c => c.conds.map(x => (x.labels[0] || x.values[0])).join(' + ') || T('py.everyone') },
+          { key: 'ents', label: T('op.cCovers'), value: c => c.entitlements.length, align: 'right' },
+          { key: 'people', label: T('op.cPeople'), value: c => c.members.length, align: 'right' },
+          { key: 'drift', label: T('op.cDrift'), value: c => c.drift, align: 'right',
+            hint: T('op.cDriftHint') },
+          { key: 'list', label: T('py.cGets'), sortable: false,
+            render: c => el('span', { class: 'trunc',
+              title: c.entitlements.map(x => x.perm && x.perm.name).filter(Boolean).join(', '),
+              text: c.entitlements.map(x => x.perm && x.perm.name).filter(Boolean).join(', ') }) }
+        ],
+        rows: e.candidates, pageSize: 10, exportName: 'rule-additions'
+      }),
+      el('p', { class: 'note', text: T('op.exFoot') })
+    ]);
+  }
+
   function rulesView(m) {
     const f = document.createDocumentFragment();
     const c = m.comparison;
@@ -2135,6 +2247,14 @@
       })));
     }
     if (g2.childNodes.length) f.appendChild(g2);
+
+    /* The point of the view: fewer rules for the same result, and rules for what none
+       of them cover. */
+    const condensed = condenseRulesCard(m);
+    if (condensed) f.appendChild(condensed);
+    const extend = extendRulesCard(m);
+    if (extend) f.appendChild(extend);
+
     f.appendChild(miningCard(m));
     return f;
   }
@@ -2173,7 +2293,7 @@
       }) }),
       el('div', { class: 'slot-actions' }, [
         el('button', { class: 'btn primary', text: T('ro.openPyramid'),
-          onclick: () => HR.app.go('pyramid') }),
+          onclick: () => HR.app.go('mining') }),
         el('button', { class: 'btn', text: T('py.export'), onclick: () => {
           U.download('pyramid-rules.csv', HR.pyramid.toRulesCsv(m, P), 'text/csv');
           HR.usage.exported('pyramid-rules');

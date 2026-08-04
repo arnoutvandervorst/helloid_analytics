@@ -172,6 +172,7 @@
       model.findings = model.findings.concat(HR.findings.runCorrelation(model));
     }
     if (ruleSet) {
+      model.ruleSet = ruleSet;
       model.comparison = HR.compare.compare(model, ruleSet);
 
       /* With person data the conditions stop being decoration: rules can be evaluated,

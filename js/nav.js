@@ -28,7 +28,7 @@
     permissions: 'M7 11V8a5 5 0 0110 0v3M5 11h14v10H5V11z',
     people: 'M3 20v-1a4 4 0 014-4h4a4 4 0 014 4v1M9 4a3.5 3.5 0 100 7 3.5 3.5 0 000-7zM17 20v-1a4 4 0 00-3-3.9M15.5 4.2a3.5 3.5 0 010 6.8',
     org: 'M12 3v4M6 21v-4m12 4v-4M4 7h16M6 17h12M9 7v4h6V7M12 11v6',
-    pyramid: 'M12 3L4 20h16L12 3zm-4 11h8M10 8h4',
+    mining: 'M12 3L4 20h16L12 3zm-4 11h8M10 8h4',
     activity: 'M3 12h4l3 8 4-16 3 8h4',
     products: 'M3 8l9-5 9 5-9 5-9-5zm0 8l9 5 9-5M3 12l9 5 9-5',
     explain: 'M12 3a9 9 0 100 18 9 9 0 000-18zm0 13v.5M12 8a2 2 0 012 2c0 1.5-2 1.6-2 3.5',
@@ -47,7 +47,7 @@
   const GROUPS = [
     { key: 'state', views: ['overview', 'risk', 'cost'] },
     { key: 'who', views: ['accounts', 'permissions', 'people', 'org'] },
-    { key: 'model', views: ['pyramid', 'rules', 'products', 'activity', 'explain'] },
+    { key: 'model', views: ['mining', 'rules', 'products', 'activity', 'explain'] },
     { key: 'data', views: ['diff', 'snapshots', 'sources'] },
     { key: 'out', views: ['board', 'settings'] }
   ];

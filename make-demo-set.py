@@ -110,6 +110,9 @@ class DemoSet:
 
         # The floor: everybody has these, give or take the people who slipped through.
         model['baseline'] = make_sample.SECURITY + ['APP-Intranet', 'APP-Office365']
+        # Written per department in the rules, held by everybody in them.
+        for unit in UNITS[:int(len(UNITS) * 0.6)][:4]:
+            model['department'][unit] = model['department'][unit] + ['APP-Selfservice']
         return model
 
     def entitlements_for(self, contract, licence):
@@ -341,6 +344,20 @@ class DemoSet:
                     f'Department.ExternalId, one of: {unit_code(unit)}'
                 ]),
                 'Entitlements': '|'.join([f'{system} - Account'] + [ent(e) for e in ents])
+            })
+
+        # Tenants grow rules one department at a time, and the same application ends up
+        # written into several of them. That repetition is what condensing is for.
+        shared = 'APP-Selfservice'
+        for unit in covered[:4]:
+            rows.append({
+                'Name': f'Selfservice - {unit_label(unit)}',
+                'EntitlementCount': 1,
+                'PersonsLatestEvaluation': sum(1 for p in self.people if p['contract']['unit'] == unit),
+                'Categories': 'Applicatie',
+                'Status': 'published',
+                'Conditions': f'Person: active|Department.ExternalId, one of: {unit_code(unit)}',
+                'Entitlements': ent(shared)
             })
 
         # A title rule that spans departments, which is the shape the pyramid cannot nest.

@@ -959,5 +959,8 @@
     return f;
   }
   HR.views.org = orgView;
+  HR.views.mining = pyramidView;
+  /* The view was called the role pyramid before it was one of two miners; old hashes
+     and pinned favourites still point at that name. */
   HR.views.pyramid = pyramidView;
 })(window.HR);
