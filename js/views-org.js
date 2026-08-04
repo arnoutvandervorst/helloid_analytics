@@ -714,7 +714,7 @@
     ]);
   }
 
-  function pyramidView(m) {
+  function pyramidView(m, params) {
     const f = document.createDocumentFragment();
     if (!m.vault) {
       const note = partialNotice(['vault']);
@@ -831,7 +831,7 @@
       slider('py.minSize', 'minSize', 1, 25, 1, v => U.fmtInt(v))
     ]);
 
-    f.appendChild(card(T('py.levelsTitle'), T('py.levelsNote'), [
+    const levelsCard = card(T('py.levelsTitle'), T('py.levelsNote'), [
       pyramidDiagram(m, P),
       chips,
       knobs,
@@ -842,16 +842,36 @@
               ' +' + U.fmtNum(x.gain * 100, 1) + 'pp').join(', '),
             coverage: U.fmtPct(P.suggestion.coverage, 0) })
         : T('py.noSuggestion') })
-    ]));
+    ]);
 
-    const bl = baselineCard(m, P);
-    if (bl) f.appendChild(bl);
-    const condensed = condensedCard(m, P);
-    if (condensed) f.appendChild(condensed);
-    const cov = coverageCard(m, P);
-    if (cov) f.appendChild(cov);
-    f.appendChild(pyramidJourney(m, P));
+    /* Sections rather than one long scroll, and only the one on screen is built —
+       mining a section is not free. */
+    f.appendChild(HR.viewkit.tabbed('mining', [
+      { id: 'model', label: T('py.tab.model'), build: () => {
+        const wrap = el('div', {});
+        wrap.appendChild(levelsCard);
+        const bl = baselineCard(m, P);
+        if (bl) wrap.appendChild(bl);
+        return wrap;
+      } },
+      { id: 'rules', label: T('py.tab.rules'), count: P.summary.rules + P.summary.combos,
+        build: () => {
+          const wrap = el('div', {});
+          wrap.appendChild(minedRulesCard());
+          const cd = condensedCard(m, P);
+          if (cd) wrap.appendChild(cd);
+          return wrap;
+        } },
+      { id: 'journey', label: T('py.tab.journey'), build: () => pyramidJourney(m, P) },
+      { id: 'coverage', label: T('py.tab.coverage'), build: () => coverageCard(m, P) || el('div', {}) },
+      { id: 'gaps', label: T('py.tab.gaps'), count: P.summary.under + P.summary.isolated,
+        build: () => gapsCard() }
+    ], params));
+    return f;
 
+    /* ---- the sections ---- */
+
+    function minedRulesCard() {
     /* ---- the rules, as rules ----
        One row per condition, the way HelloID stores them and the way the export writes
        them. Listing a row per granted entitlement made the table disagree with the CSV
@@ -890,7 +910,7 @@
       node: null
     })));
 
-    f.appendChild(card(T('py.rulesTitle'), T('py.rulesNote'), HR.table.make({
+    return card(T('py.rulesTitle'), T('py.rulesNote'), HR.table.make({
       columns: [
         { key: 'name', label: T('py.cRule'), value: r => r.name,
           render: r => el('a', { href: '#', text: r.name, title: conditionText(r),
@@ -917,8 +937,11 @@
       rows: ruleRows, pageSize: 15, exportName: 'pyramid-rules',
       /* By level, so the rules an added level produces are visible rather than buried. */
       initialSort: { key: 'level', dir: 1 }
-    })));
+    }));
+    }
 
+    function gapsCard() {
+    const wrap = el('div', {});
     /* ---- what the model says is wrong ---- */
     const under = P.stats.under.slice(0, 400).map(u => ({
       person: u.person.name, ent: m.permissions.get(u.ent), coverage: u.coverage,
@@ -926,7 +949,7 @@
         : u.combo.conds.map(c => c.label || c.value).join(' + ')
     }));
     if (under.length) {
-      f.appendChild(card(T('py.underTitle'), T('py.underNote'), HR.table.make({
+      wrap.appendChild(card(T('py.underTitle'), T('py.underNote'), HR.table.make({
         columns: [
           { key: 'person', label: T('py.cPerson'), value: r => r.person },
           { key: 'where', label: T('py.cBecause'), value: r => r.where },
@@ -944,7 +967,7 @@
       where: p.node.path.map(x => x.label || x.value).join(' › ') || T('py.everyone')
     }));
     if (isolated.length) {
-      f.appendChild(card(T('py.pollutionTitle'), T('py.pollutionNote'), HR.table.make({
+      wrap.appendChild(card(T('py.pollutionTitle'), T('py.pollutionNote'), HR.table.make({
         columns: [
           { key: 'person', label: T('py.cPerson'), value: r => r.person },
           { key: 'where', label: T('py.cIn'), value: r => r.where },
@@ -956,7 +979,12 @@
         rows: isolated, pageSize: 12, exportName: 'pollution'
       })));
     }
-    return f;
+    if (!wrap.childNodes.length) {
+      wrap.appendChild(card(T('py.gapsNone'), null,
+        el('p', { class: 'note', text: T('py.gapsNoneNote') })));
+    }
+    return wrap;
+    }
   }
   HR.views.org = orgView;
   HR.views.mining = pyramidView;

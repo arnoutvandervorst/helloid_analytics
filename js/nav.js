@@ -65,11 +65,21 @@
 
   let state = { collapsed: false, favourites: [] };
 
+  /* Views that have been renamed. A favourite pinned under the old name still points at
+     something real, so it is migrated rather than dropped — and rendered under the new
+     label instead of the missing translation key for the old one. */
+  const RENAMED = { pyramid: 'mining' };
+
   function load() {
     try {
       const stored = JSON.parse(localStorage.getItem(KEY) || 'null');
       if (stored) state = Object.assign(state, stored);
     } catch (e) { /* first run, or storage blocked */ }
+    const migrated = U.uniq((state.favourites || []).map(v => RENAMED[v] || v));
+    if (migrated.join() !== (state.favourites || []).join()) {
+      state.favourites = migrated;
+      save();
+    }
     return state;
   }
 

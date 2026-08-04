@@ -69,6 +69,47 @@
     return wrap;
   }
 
+  /**
+   * A view in sections, one on screen at a time.
+   *
+   * Four of these views had grown to eight or nine cards, which is a scroll rather than a
+   * page: nobody reads the ninth card because nobody knows it is there. Tabs also make
+   * them cheaper — only the section on screen is built, and the mining sections in
+   * particular are not free to build.
+   *
+   * The chosen tab lives in the route, so a link points at a section rather than a view.
+   */
+  function tabbed(view, sections, params) {
+    const usable = sections.filter(Boolean);
+    const wanted = (params && params.tab) || usable[0].id;
+    const active = usable.find(s => s.id === wanted) || usable[0];
+
+    const f = document.createDocumentFragment();
+    const bar = el('div', { class: 'tabs', role: 'tablist' }, usable.map(section =>
+      el('button', {
+        class: 'tab' + (section === active ? ' active' : ''),
+        role: 'tab',
+        onclick: () => HR.app.go(view, { tab: section.id })
+      }, [
+        document.createTextNode(section.label),
+        section.count != null
+          ? el('span', { class: 'tab-count', text: U.fmtInt(section.count) })
+          : null
+      ].filter(Boolean))));
+    f.appendChild(bar);
+
+    const body = el('div', { class: 'tab-body' });
+    let content = null;
+    try { content = active.build(); }
+    catch (err) {
+      console.error(err);
+      content = card(T('app.renderFail'), null, el('p', { class: 'note', text: String(err && err.message || err) }));
+    }
+    if (content) body.appendChild(content);
+    f.appendChild(body);
+    return f;
+  }
+
   const dl = pairs => {
     const d = el('dl', { class: 'kv' });
     pairs.forEach(([k, v]) => { if (v == null) return; d.append(el('dt', { text: k }), el('dd', {}, typeof v === 'string' ? document.createTextNode(v) : v)); });
@@ -382,6 +423,10 @@
     );
     f.appendChild(kpis2);
 
+    /* The shape of the answer, the rows themselves, and what is left over. */
+    const summary = el('div', {});
+    const rows = el('div', {});
+    const residue = el('div', {});
     const g = el('div', { class: 'grid g2' }); g.style.marginTop = '14px';
 
     /* issue mix */
@@ -507,10 +552,10 @@
       }
     }
 
-    f.appendChild(g);
+    summary.appendChild(g);
 
     if (m.systemList.length > 1) {
-      f.appendChild(el('div', { class: 'grid' }, card(T('ov.systems'), null, HR.table.make({
+      summary.appendChild(el('div', { class: 'grid' }, card(T('ov.systems'), null, HR.table.make({
         columns: [
           { key: 'name', label: T('c.system') },
           { key: 'accountCount', label: T('ov.accounts'), num: true },
@@ -519,6 +564,15 @@
         ], rows: m.systemList, pageSize: 20, exportName: 'systems'
       }))));
     }
+
+    f.appendChild(HR.viewkit.tabbed('explain', [
+      { id: 'summary', label: T('ex.tab.summary'), build: () => summary },
+      { id: 'rows', label: T('ex.tab.rows'), count: m.explanation.summary.total,
+        build: () => rows },
+      { id: 'residue', label: T('ex.tab.residue'), count: m.explanation.summary.unexplained,
+        build: () => residue.childNodes.length ? residue
+          : card(T('ex.tab.residue'), null, el('p', { class: 'note', text: T('ex.residueNone') })) }
+    ], params));
     return f;
   }
 
@@ -1740,7 +1794,7 @@
   /* What HelloID granted and what it did: the record of its own actions, which is the
      only evidence that separates "the identity system never touched this" from "it tried
      and could not". */
-  function activityView(m) {
+  function activityView(m, params) {
     const f = document.createDocumentFragment();
     const h = m.history, g = m.granted;
 
@@ -1770,6 +1824,13 @@
     );
     f.appendChild(k);
 
+    /* What happened, what went wrong, and what is held now — three questions that were
+       three quarters of a screen apart. Declared out here because the granted export can
+       arrive without any history beside it. */
+    const charts = el('div', {});
+    const problems = el('div', {});
+    const granted = el('div', {});
+
     if (h) {
       const gr = el('div', { class: 'grid g2', style: 'margin-top:14px' });
 
@@ -1784,7 +1845,7 @@
       gr.appendChild(card(T('act.origins'), T('act.originsNote'), C.barList(
         h.origins.map(([name, n], i) => ({ label: name, value: n, color: C.slot((i % 8) + 1) })),
         { valueLabel: T('act.cActions') })));
-      f.appendChild(gr);
+      charts.appendChild(gr);
 
       const gr2 = el('div', { class: 'grid g2', style: 'margin-top:14px' });
       gr2.appendChild(card(T('act.operations'), null, C.stackedBar(
@@ -1794,10 +1855,10 @@
           label: res, value: n,
           color: /succeed/i.test(res) ? C.STATUS.good : /fail/i.test(res) ? C.STATUS.critical : C.STATUS.warning
         })))));
-      f.appendChild(gr2);
+      charts.appendChild(gr2);
 
       if (h.failed.length) {
-        f.appendChild(el('div', { style: 'margin-top:14px' }, card(T('act.failures'), T('act.failuresNote'),
+        problems.appendChild(el('div', {}, card(T('act.failures'), T('act.failuresNote'),
           HR.table.make({
             columns: [
               { key: 'person', label: T('c.person'), value: r => r.personRaw },
@@ -1816,7 +1877,7 @@
       }
 
       if (h.churn.length) {
-        f.appendChild(el('div', { style: 'margin-top:14px' }, card(T('act.churn'), T('act.churnNote'),
+        problems.appendChild(el('div', {}, card(T('act.churn'), T('act.churnNote'),
           HR.table.make({
             columns: [
               { key: 'person', label: T('c.person'), value: c => c.sample.personRaw },
@@ -1835,7 +1896,7 @@
     }
 
     if (g && !g.empty) {
-      f.appendChild(el('div', { style: 'margin-top:14px' }, card(T('act.grantedTable'),
+      granted.appendChild(el('div', {}, card(T('act.grantedTable'),
         T('act.grantedTableNote', { n: g.meta.persons }), HR.table.make({
           columns: [
             { key: 'person', label: T('c.person'), value: r => r.personRaw },
@@ -1849,11 +1910,23 @@
           search: (r, q) => (r.personRaw + ' ' + r.entitlement).toLowerCase().includes(q)
         }))));
     }
+
+      f.appendChild(HR.viewkit.tabbed('activity', [
+        { id: 'flow', label: T('act.tab.flow'), build: () => charts },
+        { id: 'problems', label: T('act.tab.problems'),
+          count: m.history ? m.history.meta.failedCount + m.history.meta.blockedCount : null,
+          build: () => problems.childNodes.length ? problems
+            : card(T('act.tab.problems'), null, el('p', { class: 'note', text: T('act.noProblems') })) },
+        { id: 'granted', label: T('act.tab.granted'),
+          count: m.granted && !m.granted.empty ? m.granted.meta.rowCount : null,
+          build: () => granted.childNodes.length ? granted
+            : card(T('act.tab.granted'), null, el('p', { class: 'note', text: T('act.grantedEmpty') })) }
+      ], params));
     return f;
   }
 
   /* ===================================================== EXPLANATIONS ==== */
-  function explainView(m) {
+  function explainView(m, params) {
     const f = document.createDocumentFragment();
     const e = m.explanation;
     const s = e.summary;
@@ -1890,6 +1963,10 @@
     const note = partialNotice(missing);
     if (note) { note.style.marginTop = '14px'; f.appendChild(note); }
 
+    /* The shape of the answer, the rows themselves, and what is left over. */
+    const summary = el('div', {});
+    const rows = el('div', {});
+    const residue = el('div', {});
     const g = el('div', { class: 'grid g2', style: 'margin-top:14px' });
 
     /* what explains the rows */
@@ -1913,11 +1990,11 @@
         { key: 'strong', label: T('ex.cStrong'), num: true, value: r => r.b.strong }
       ], rows: issueRows, pageSize: 10, exportName: 'explained-by-issue'
     })));
-    f.appendChild(g);
+    summary.appendChild(g);
 
     /* the residue: what nobody can account for */
     if (e.residueByAccount.length) {
-      f.appendChild(el('div', { style: 'margin-top:14px' }, card(T('ex.residue'), T('ex.residueNote'), HR.table.make({
+      residue.appendChild(el('div', {}, card(T('ex.residue'), T('ex.residueNote'), HR.table.make({
         columns: [
           { key: 'account', label: T('ex.cAccount'), value: r => r.account.userName },
           { key: 'person', label: T('c.person'),
@@ -1951,7 +2028,7 @@
 
     /* every row, with its reason */
     const STRENGTH_SEV = { strong: 'good', likely: 'medium', weak: 'low' };
-    f.appendChild(el('div', { style: 'margin-top:14px' }, card(T('ex.table'), null, HR.table.make({
+    rows.appendChild(el('div', {}, card(T('ex.table'), null, HR.table.make({
       columns: [
         { key: 'issue', label: T('ex.cIssue'), value: r => r.issue },
         { key: 'account', label: T('ex.cAccount'), value: r => r.record.userName },
@@ -1990,6 +2067,14 @@
       onRowClick: r => { if (r.account) drawerAccount(r.account); }
     }))));
 
+
+    f.appendChild(HR.viewkit.tabbed('explain', [
+      { id: 'summary', label: T('ex.tab.summary'), build: () => summary },
+      { id: 'rows', label: T('ex.tab.rows'), count: e.summary.total, build: () => rows },
+      { id: 'residue', label: T('ex.tab.residue'), count: e.summary.unexplained,
+        build: () => residue.childNodes.length ? residue
+          : card(T('ex.tab.residue'), null, el('p', { class: 'note', text: T('ex.residueNone') })) }
+    ], params));
     return f;
   }
 
@@ -2108,7 +2193,7 @@
     ]);
   }
 
-  function rulesView(m) {
+  function rulesView(m, params) {
     const f = document.createDocumentFragment();
     const c = m.comparison;
 
@@ -2146,8 +2231,11 @@
     );
     f.appendChild(k);
 
+    /* Four questions, four sections: where the drift comes from, what the rules do,
+       what is wrong with them, and how to make the set better. */
+    const shape = el('div', {});
     /* ---- the split that decides where the work goes ---- */
-    f.appendChild(el('div', { class: 'grid', style: 'margin-top:14px' },
+    shape.appendChild(el('div', { class: 'grid', style: 'margin-top:14px' },
       card(T('ru.split'), T('ru.splitNote'), [
         C.stackedBar([
           { label: T('ru.splitModelled'), value: s.unmanagedModelled, color: C.slot(3) },
@@ -2158,7 +2246,7 @@
       ])));
 
     /* ---- every rule, against reality ---- */
-    f.appendChild(el('div', { style: 'margin-top:14px' }, card(T('ru.rulesTable'), T('ru.rulesTableNote'), HR.table.make({
+    shape.appendChild(el('div', { style: 'margin-top:14px' }, card(T('ru.rulesTable'), T('ru.rulesTableNote'), HR.table.make({
       columns: [
         { key: 'name', label: T('ru.cName'), value: r => r.rule.name },
         { key: 'status', label: T('ru.cStatus'), value: r => r.rule.status,
@@ -2193,7 +2281,7 @@
     }))));
 
     /* ---- the backlog: groups nothing describes ---- */
-    f.appendChild(el('div', { style: 'margin-top:14px' }, card(T('ru.backlog'), T('ru.backlogNote'), HR.table.make({
+    shape.appendChild(el('div', { style: 'margin-top:14px' }, card(T('ru.backlog'), T('ru.backlogNote'), HR.table.make({
       columns: [
         { key: 'name', label: T('ru.cGroup'), value: r => r.perm.name },
         { key: 'cat', label: T('c.category'), value: r => r.perm.categoryLabel },
@@ -2246,16 +2334,31 @@
         ], rows: c.overlapping, pageSize: 12, exportName: 'overlapping-rules'
       })));
     }
-    if (g2.childNodes.length) f.appendChild(g2);
+    if (g2.childNodes.length) shape.appendChild(g2);
 
     /* The point of the view: fewer rules for the same result, and rules for what none
        of them cover. */
     const condensed = condenseRulesCard(m);
-    if (condensed) f.appendChild(condensed);
+    if (condensed) shape.appendChild(condensed);
     const extend = extendRulesCard(m);
-    if (extend) f.appendChild(extend);
+    if (extend) shape.appendChild(extend);
 
-    f.appendChild(miningCard(m));
+
+    f.appendChild(HR.viewkit.tabbed('rules', [
+      { id: 'coverage', label: T('ru.tab.coverage'), build: () => shape },
+      { id: 'optimise', label: T('ru.tab.optimise'), build: () => {
+        const wrap = el('div', {});
+        const condensed = condenseRulesCard(m);
+        if (condensed) wrap.appendChild(condensed);
+        const extend = extendRulesCard(m);
+        if (extend) wrap.appendChild(extend);
+        if (!wrap.childNodes.length) {
+          wrap.appendChild(card(T('op.none'), null, el('p', { class: 'note', text: T('op.noneNote') })));
+        }
+        return wrap;
+      } },
+      { id: 'mining', label: T('ru.tab.mining'), build: () => miningCard(m) }
+    ], params));
     return f;
   }
 
@@ -2782,6 +2885,6 @@
   HR.viewkit = {
     card, tile, scoreBar, dl, partialNotice, personRow, peopleIndex, entitlementTable,
     openDrawer, closeDrawer, drawerAccount, drawerPermission, drawerVaultPerson,
-    STATE_SEV, stateLabel, offsetText, sourcesCard
+    STATE_SEV, stateLabel, offsetText, sourcesCard, tabbed
   };
 })(window.HR);
