@@ -427,12 +427,31 @@
       [bar, stats, kidsWrap, legend, table].filter(Boolean));
   }
 
+  /* Conditions as prose in a cell, one per line in the drawer: "∧" is precise and
+     unreadable, and stacking them is what makes a two-condition rule legible at all. */
+  const conditionText = row => row.conds && row.conds.length
+    ? row.conds.map(c => (T('py.attr.' + c.attr) || c.attr) + ' = ' +
+        (c.label || c.value || T('py.empty'))).join(T('py.and'))
+    : T('py.everyone');
+
+  function conditionList(row) {
+    if (!row.conds || !row.conds.length) {
+      return el('p', { class: 'note', text: T('py.dNoCondition') });
+    }
+    return el('table', { class: 'cond-list' }, row.conds.map(c => el('tr', {}, [
+      el('td', {}, el('span', { class: 'pill', text: (T('py.attr.' + c.attr) || c.attr) +
+        ' · ' + c.field })),
+      el('td', { class: 'mono', text: c.value || T('py.empty') }),
+      el('td', { class: 'note', text: c.label && c.label !== c.value ? c.label : '' })
+    ])));
+  }
+
   /** One mined rule: its condition, what it grants, and who does not have it yet. */
   function drawerPyramidRule(m, P, row) {
     const body = document.createDocumentFragment();
+    body.appendChild(card(T('py.dCondition'), T('py.dConditionNote'), conditionList(row)));
     body.appendChild(dl([
-      [T('py.dCondition'), row.level === 0 ? T('py.dNoCondition') : row.conditions],
-      [T('py.dLevel'), row.level === 99 ? T('py.combo')
+      [T('py.dLevel'), row.level === 99 ? T('py.kind.' + row.kind)
         : row.level === 0 ? T('py.baselineTag') : 'L' + row.level],
       [T('py.dMembers'), U.fmtInt(row.members)],
       [T('py.dGrants'), U.fmtInt(row.entitlements)]
@@ -791,9 +810,8 @@
           ? T('py.baselineRuleName')
           : 'Piramide - ' + node.path.map(x => (T('py.attr.' + x.attr) || x.attr) + ': ' +
             (x.label || x.value || T('py.empty'))).join(' / '),
-        conditions: node.path.map(x => (T('py.attr.' + x.attr) || x.attr) +
-          (x.byId ? '.ExternalId' : '.Name') + ' = ' + (x.value || T('py.empty')) +
-          (x.label && x.label !== x.value ? ' (' + x.label + ')' : '')).join('  ∧  ') || T('py.everyone'),
+        conds: node.path.map(x => ({ attr: x.attr, field: x.byId ? 'ExternalId' : 'Name',
+          value: x.value, label: x.label })),
         level: node.level,
         members: node.members.length,
         grants: grants,
@@ -806,9 +824,8 @@
     }).concat(Array.from(P.comboGroups.values()).map(group => ({
       kind: 'combo',
       name: 'Combinatie - ' + group.conds.map(c => c.label || c.value).join(' + '),
-      conditions: group.conds.map(c => (T('py.attr.' + c.attr) || c.attr) +
-        (c.byId ? '.ExternalId' : '.Name') + ' = ' + c.value +
-        (c.label && c.label !== c.value ? ' (' + c.label + ')' : '')).join('  ∧  '),
+      conds: group.conds.map(c => ({ attr: c.attr, field: c.byId ? 'ExternalId' : 'Name',
+        value: c.value, label: c.label })),
       level: 99,
       members: group.members.length,
       grants: group.rules,
@@ -821,11 +838,11 @@
     f.appendChild(card(T('py.rulesTitle'), T('py.rulesNote'), HR.table.make({
       columns: [
         { key: 'name', label: T('py.cRule'), value: r => r.name,
-          render: r => el('a', { href: '#', text: r.name,
+          render: r => el('a', { href: '#', text: r.name, title: conditionText(r),
             onclick: e => { e.preventDefault(); drawerPyramidRule(m, P, r); } }) },
         { key: 'level', label: T('py.cLevel'), value: r => r.level,
           render: r => r.level === 99
-            ? el('span', { class: 'pill muted', text: T('py.combo') })
+            ? el('span', { class: 'pill muted', text: T('py.kind.' + r.kind) })
             : r.level === 0
               ? el('span', { class: 'pill ok', text: T('py.baselineTag') })
               : el('span', { class: 'mono', text: 'L' + r.level }) },

@@ -770,10 +770,13 @@
     /* One rule per distinct condition, granting everything that condition implies. */
     (pyramid.comboGroups ? Array.from(pyramid.comboGroups.values()) : []).forEach(group => {
       rows.push({
-        Name: 'Combinatie - ' + group.conds.map(c => c.label || c.value).join(' + '),
+        /* A rule with one condition is not a combination; naming it one in the export
+           would carry the mistake into HelloID. */
+        Name: (group.conds.length > 1 ? 'Combinatie - ' : 'Voorstel - ') +
+          group.conds.map(c => c.label || c.value).join(' + '),
         EntitlementCount: group.rules.length,
         PersonsLatestEvaluation: group.members.length,
-        Categories: 'Combination',
+        Categories: group.conds.length > 1 ? 'Combination' : 'Single attribute',
         Status: 'proposal',
         Conditions: group.conds.map(c =>
           c.attr + (c.byId ? '.ExternalId' : '.Name') + ', one of: ' + c.value).join('|'),

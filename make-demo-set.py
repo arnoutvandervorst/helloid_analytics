@@ -183,7 +183,7 @@ class DemoSet:
             'ExternalId': f'{ext}-1',
             'StartDate': start.strftime('%Y-%m-%dT00:00:00Z'),
             'EndDate': end.strftime('%Y-%m-%dT00:00:00Z') if end else None,
-            'Type': {'Code': rnd.choice(CONTRACT_TYPES), 'Name': rnd.choice(CONTRACT_TYPES)},
+            'Type': (lambda t: {'Code': t, 'Name': t})(rnd.choice(CONTRACT_TYPES)),
             'Department': {'ExternalId': unit_code(unit), 'DisplayName': unit_label(unit),
                            'Code': unit_code(unit)},
             'Title': {'Code': title, 'Name': title},

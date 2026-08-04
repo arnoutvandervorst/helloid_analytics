@@ -539,3 +539,8 @@ table.board-tbl .owner-cell { border-bottom: 1px solid #e3e2dc; min-width: 90px;
 .pyr-bar i { display: block; height: 3px; background: var(--series-1); }
 .pyr-foot { align-self: stretch; text-align: center; margin-top: 6px; }
 @media (max-width: 720px) { .pyr-band, .pyr-across { width: 100% !important; } }
+
+/* A rule's conditions: one per line, attribute and field as a chip, value in mono. */
+.cond-list { border-collapse: collapse; width: 100%; }
+.cond-list td { padding: 3px 8px 3px 0; vertical-align: baseline; font-size: 12px; }
+.cond-list td:first-child { width: 1%; white-space: nowrap; }
