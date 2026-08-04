@@ -423,10 +423,6 @@
     );
     f.appendChild(kpis2);
 
-    /* The shape of the answer, the rows themselves, and what is left over. */
-    const summary = el('div', {});
-    const rows = el('div', {});
-    const residue = el('div', {});
     const g = el('div', { class: 'grid g2' }); g.style.marginTop = '14px';
 
     /* issue mix */
@@ -552,10 +548,10 @@
       }
     }
 
-    summary.appendChild(g);
+    f.appendChild(g);
 
     if (m.systemList.length > 1) {
-      summary.appendChild(el('div', { class: 'grid' }, card(T('ov.systems'), null, HR.table.make({
+      f.appendChild(el('div', { class: 'grid' }, card(T('ov.systems'), null, HR.table.make({
         columns: [
           { key: 'name', label: T('c.system') },
           { key: 'accountCount', label: T('ov.accounts'), num: true },
@@ -564,15 +560,6 @@
         ], rows: m.systemList, pageSize: 20, exportName: 'systems'
       }))));
     }
-
-    f.appendChild(HR.viewkit.tabbed('explain', [
-      { id: 'summary', label: T('ex.tab.summary'), build: () => summary },
-      { id: 'rows', label: T('ex.tab.rows'), count: m.explanation.summary.total,
-        build: () => rows },
-      { id: 'residue', label: T('ex.tab.residue'), count: m.explanation.summary.unexplained,
-        build: () => residue.childNodes.length ? residue
-          : card(T('ex.tab.residue'), null, el('p', { class: 'note', text: T('ex.residueNone') })) }
-    ], params));
     return f;
   }
 

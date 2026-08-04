@@ -147,6 +147,11 @@
     ignoreCommon: 0.9
   };
 
+  /* --- optimising the imported rules ---------------------------------------
+     maxTrade caps how many new SOLL grants a non-lossless merge may hand out before it
+     stops being proposed. */
+  const DEFAULT_OPTIMISE = { maxTrade: 25 };
+
   const DEFAULTS = {
     currency: 'EUR',
     categories: DEFAULT_CATEGORIES,
@@ -158,6 +163,7 @@
     products: DEFAULT_PRODUCTS,
     pyramid: DEFAULT_PYRAMID,
     peers: DEFAULT_PEERS,
+    optimise: DEFAULT_OPTIMISE,
     rarityThreshold: 3,             // held by <= N accounts counts as rare
     skipReview: false,              // skip the configuration review on import
     severityBands: { critical: 70, high: 45, medium: 20 }
