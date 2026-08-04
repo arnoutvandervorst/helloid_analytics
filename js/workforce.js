@@ -385,5 +385,71 @@
     };
   }
 
-  HR.workforce = { moves, flow, managers, moverResidue, onboardingLatency, creep, forecast };
+  /**
+   * What a future starter will most likely need, learned from the people already in
+   * the seat: everyone currently working in the contract's department, and — when the
+   * cohort is big enough to mean anything — the subset holding the same title. The
+   * share of each cohort holding an entitlement is the forecast; nothing is invented.
+   */
+  function expectedAccess(model, vault, contract) {
+    const index = HR.correlate.personAccountIndex(model, vault, model.correlation);
+    const now = new Date();
+    const deptKey = contract.department.externalId || contract.department.name || '';
+    const titleKey = contract.title.externalId || contract.title.name || '';
+    const sameDept = c => (c.department.externalId || c.department.name || '') === deptKey;
+    const sameTitle = c => (c.title.externalId || c.title.name || '') === titleKey;
+
+    const dept = [], title = [];
+    for (const person of vault.persons) {
+      const cur = person.contracts.filter(c =>
+        (!c.startDate || c.startDate <= now) && (!c.endDate || c.endDate >= now));
+      if (!cur.some(sameDept)) continue;
+      dept.push(person);
+      if (titleKey && cur.some(c => sameDept(c) && sameTitle(c))) title.push(person);
+    }
+
+    const entsOf = person => {
+      const entry = index.get(person.personId);
+      const set = new Set();
+      if (entry) entry.accounts.forEach(a => a.permKeys.forEach(k => set.add(k)));
+      return set;
+    };
+    const tally = cohort => {
+      const t = new Map();
+      let withAccess = 0;
+      cohort.forEach(p => {
+        const ents = entsOf(p);
+        if (!ents.size) return;                     // invisible to the imports, not empty-handed
+        withAccess++;
+        ents.forEach(k => t.set(k, (t.get(k) || 0) + 1));
+      });
+      return { t, n: withAccess };
+    };
+    const d = tally(dept);
+    const useTitle = title.length >= 3;
+    const ti = useTitle ? tally(title) : null;
+
+    const rows = [];
+    d.t.forEach((count, key) => {
+      const perm = model.permissions.get(key);
+      if (!perm) return;
+      rows.push({
+        perm,
+        deptShare: d.n ? count / d.n : 0,
+        titleShare: ti && ti.n ? (ti.t.get(key) || 0) / ti.n : null
+      });
+    });
+    rows.sort((a, b) => ((b.titleShare != null ? b.titleShare : b.deptShare)) -
+      ((a.titleShare != null ? a.titleShare : a.deptShare)) ||
+      (b.perm.monthlyPrice || 0) - (a.perm.monthlyPrice || 0));
+
+    const likely = rows.filter(r => (r.titleShare != null ? r.titleShare : r.deptShare) >= 0.5);
+    return {
+      rows, likely,
+      deptSize: d.n, titleSize: ti ? ti.n : 0, useTitle,
+      monthly: U.sum(likely, r => r.perm.monthlyPrice || 0)
+    };
+  }
+
+  HR.workforce = { moves, flow, managers, moverResidue, onboardingLatency, creep, forecast, expectedAccess };
 })(window.HR);

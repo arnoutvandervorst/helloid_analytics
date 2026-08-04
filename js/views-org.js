@@ -466,7 +466,8 @@
               hint: T('wf.cExpectedHint'),
               render: r => el('span', { text: U.fmtMoney(r.monthly) + (r.estimated ? ' *' : '') }) }
           ],
-          rows: fc.rows, pageSize: 8, exportName: 'licence-forecast'
+          rows: fc.rows, pageSize: 8, exportName: 'licence-forecast',
+          onRowClick: r => drawerForecast(m, vault, r)
         }),
         el('p', { class: 'note', text: T('wf.forecastFoot') })
       ]));
@@ -476,6 +477,68 @@
       wrap.appendChild(card(T('wf.title'), null, el('p', { class: 'note', text: T('wf.empty') })));
     }
     return wrap;
+  }
+
+  /**
+   * One future starter, zoomed in: the entitlement set the people already in that seat
+   * hold today. The department cohort sets the floor; the same-title subset, when it is
+   * big enough to mean anything, sharpens it. Shares are facts about current colleagues,
+   * so the forecast needs no model — only the honesty to say how big the cohort was.
+   */
+  function drawerForecast(m, vault, row) {
+    const fx = HR.workforce.expectedAccess(m, vault, row.contract);
+    const title = row.contract.title.name || row.contract.title.code || '';
+
+    const head = el('div', {}, [
+      el('h2', { text: row.person.displayName }),
+      el('div', { class: 'row' }, [
+        el('span', { class: 'pill', text: T('wf.efStarts', { n: U.fmtInt(row.days) }) }),
+        el('span', { class: 'pill', text: row.dept || '—' }),
+        title ? el('span', { class: 'pill', text: title }) : null
+      ])
+    ]);
+
+    const body = el('div', { class: 'stack' });
+    if (!m.hasRecon && !m.granted) body.appendChild(partialNotice(['recon']));
+
+    if (!fx.deptSize) {
+      body.appendChild(card(T('wf.efTitle'), null,
+        el('p', { class: 'note', text: T('wf.efNone', { dept: row.dept || '—' }) })));
+      openDrawer(head, body);
+      return;
+    }
+
+    body.appendChild(dl([
+      [T('wf.efCohort'), T('wf.efCohortDetail', { n: U.fmtInt(fx.deptSize), dept: row.dept || '—' })],
+      [T('wf.efTitleCohort'), fx.useTitle
+        ? T('wf.efTitleDetail', { n: U.fmtInt(fx.titleSize), title: title })
+        : T('wf.efTitleTooSmall')],
+      [T('wf.efLikelySet'), T('wf.efLikelyDetail', {
+        n: U.fmtInt(fx.likely.length), monthly: U.fmtMoney(fx.monthly) })]
+    ]));
+
+    body.appendChild(card(T('wf.efTitle'), T('wf.efNote'), HR.table.make({
+      columns: [
+        { key: 'name', label: T('ct.group'), value: r => r.perm.name },
+        { key: 'category', label: T('c.category'), value: r => r.perm.categoryLabel },
+        { key: 'dept', label: T('wf.efDeptShare'), num: true, value: r => r.deptShare,
+          render: r => el('span', { text: U.fmtPct(r.deptShare, 0) }) },
+        { key: 'title', label: T('wf.efTitleShare'), num: true,
+          value: r => r.titleShare == null ? -1 : r.titleShare,
+          render: r => r.titleShare == null
+            ? el('span', { class: 'note', text: '—' })
+            : el('span', { text: U.fmtPct(r.titleShare, 0) }) },
+        { key: 'price', label: T('c.unitMo'), num: true, value: r => r.perm.monthlyPrice || 0,
+          render: r => r.perm.monthlyPrice ? el('span', { text: U.fmtMoney(r.perm.monthlyPrice) }) : el('span', { class: 'note', text: '—' }) }
+      ],
+      rows: fx.rows, pageSize: 15,
+      initialSort: { key: fx.useTitle ? 'title' : 'dept', dir: -1 },
+      exportName: 'entitlement-forecast-' + (row.person.externalId || row.person.displayName),
+      onRowClick: r => drawerPermission(r.perm, m)
+    })));
+    body.appendChild(el('p', { class: 'note', text: T('wf.efFoot') }));
+
+    openDrawer(head, body);
   }
 
   /**
