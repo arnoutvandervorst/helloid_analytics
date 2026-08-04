@@ -101,6 +101,59 @@
     const unowned = model.accountList.filter(a => a.orphan);
     const persons = vault.persons;
 
+    /* Scoring every orphan against every person is quadratic, and at six thousand
+       people it was two thirds of the entire model build. Every scoring rule requires
+       some shared fragment — a name word, a surname inside the username, an employee
+       number — so candidates can be found by index and the expensive scorer only runs
+       on accounts and people that share at least a fragment. */
+    const byWord = new Map();
+    const byId = new Map();
+    const surnames = [];
+    for (const person of persons) {
+      const parts = words(cleanPerson(person.displayName));
+      for (const w of parts) {
+        if (w.length < 3) continue;
+        if (!byWord.has(w)) byWord.set(w, []);
+        byWord.get(w).push(person);
+      }
+      const surname = parts.length ? parts[parts.length - 1] : '';
+      if (surname.length > 3) surnames.push([surname, person]);
+      /* The whole name, concatenated: catches janbos inside janbosadmin, which no word
+         and no >3 surname would. */
+      const flatName = letters(cleanPerson(person.displayName));
+      if (flatName.length >= 6) surnames.push([flatName, person]);
+      if (person.externalId) byId.set(person.externalId, person);
+      /* The scorer's strongest rule needs no name fragment at all: a vault-correlated
+         account name equal to the orphan's. Index those usernames outright. */
+      for (const acc of person.accounts) {
+        if (acc.userName) byWord.set('\u0000u:' + strip(acc.userName), [person]);
+        if (acc.upn) byWord.set('\u0000u:' + strip(acc.upn).split('@')[0], [person]);
+      }
+    }
+
+    function candidatesFor(account) {
+      const cand = new Set();
+      const haystack = (account.userName + ' ' + cleanDisplay(account.displayName)).toLowerCase();
+      for (const w of haystack.split(/[^a-z]+/)) {
+        if (w.length < 3) continue;
+        const hit = byWord.get(w);
+        if (hit) hit.forEach(p => cand.add(p));
+      }
+      for (const digits of (account.userName.match(/\d{3,}/g) || [])) {
+        const p = byId.get(digits);
+        if (p) cand.add(p);
+      }
+      const direct = byWord.get('\u0000u:' + strip(account.userName));
+      if (direct) direct.forEach(p => cand.add(p));
+      /* Concatenated usernames (jdijkstra) share no whole word; one cheap substring
+         test per surname keeps them findable without scoring everybody. */
+      const flat = letters(account.userName) + letters(cleanDisplay(account.displayName));
+      for (const [surname, p] of surnames) {
+        if (flat.includes(surname)) cand.add(p);
+      }
+      return cand;
+    }
+
     /* A person is "former" when every contract they have has already ended. Someone with
        no contract at all is not counted: absence of data is not evidence of departure. */
     const isFormer = p => p.contracts.length > 0 && p.contracts.every(c => c.endDate && c.endDate < now);
@@ -109,7 +162,7 @@
 
     for (const account of unowned) {
       const scored = [];
-      for (const person of persons) {
+      for (const person of candidatesFor(account)) {
         const s = score(account, person, cfg);
         if (s.points > 0) scored.push({ person, points: s.points, evidence: s.evidence });
       }

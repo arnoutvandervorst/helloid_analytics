@@ -247,15 +247,26 @@
     };
   }
 
-  /* Same join the rule comparison uses: path first, then system + name. */
+  /* Same join the rule comparison uses: path first, then system + name. Indexed once
+     per model — this runs per person × rule × entitlement, and a linear scan of the
+     permission list there dominated large builds. */
+  function permIndexFor(model) {
+    if (model._permIndex) return model._permIndex;
+    const byPath = new Map(), byName = new Map();
+    for (const p of model.permissionList) {
+      if (p.path) byPath.set(pathKey(p.system, p.path), p);
+      byName.set(nameKey(p.system, p.name), p);
+    }
+    return (model._permIndex = { byPath, byName });
+  }
+
   function findPermissionFor(model, ent) {
-    for (const p of model.permissionList) {
-      if (ent.path && p.path && pathKey(p.system, p.path) === pathKey(ent.system, ent.path)) return p;
+    const ix = permIndexFor(model);
+    if (ent.path) {
+      const hit = ix.byPath.get(pathKey(ent.system, ent.path));
+      if (hit) return hit;
     }
-    for (const p of model.permissionList) {
-      if (nameKey(p.system, p.name) === nameKey(ent.system, ent.name)) return p;
-    }
-    return null;
+    return ix.byName.get(nameKey(ent.system, ent.name)) || null;
   }
 
   HR.compare = { compare, provisioning };

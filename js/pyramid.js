@@ -469,7 +469,9 @@
     const cfg = Object.assign({ threshold: 0.9, baselineThreshold: 0.9, minSize: 3,
       maxConditions: 2, maxRules: 400, minGain: 2 },
       (HR.config.get().pyramid || {}), opts || {});
-    const weight = permKey => weightOf(model, permKey);
+    /* Precomputed: weight() runs in every tally's inner loop. */
+    const wCache = new Map(model.permissionList.map(pm => [pm.key, weightOf(model, pm.key)]));
+    const weight = permKey => wCache.get(permKey) || 1;
     const everybody = population(model, model.vault, model.granted);
     const people = withAccess(everybody);
     const attributes = availableAttributes(people);
@@ -535,15 +537,26 @@
       return n;
     };
 
-    while (chosen.length < cfg.maxRules) {
-      let best = null, bestGain = cfg.minGain;
-      for (const candidate of candidates) {
-        if (candidate.taken) continue;
-        const gain = gainOf(candidate);
-        if (gain > bestGain) { bestGain = gain; best = candidate; }
+    /* Rescoring every candidate on every pick made selection quadratic — twelve seconds
+       at a hundred thousand rows. Gains only shrink as rules are accepted, so a stale
+       top entry is re-scored and re-inserted instead: the same lazy greedy the
+       combination miner uses, and the answer is identical. */
+    candidates.forEach(c => { c.gain = gainOf(c); });
+    candidates.sort((a, b) => b.gain - a.gain);
+
+    while (chosen.length < cfg.maxRules && candidates.length) {
+      const top = candidates.shift();
+      if (top.gain < cfg.minGain) break;
+      const current = gainOf(top);
+      if (current < cfg.minGain) continue;
+      if (candidates.length && current < candidates[0].gain) {
+        top.gain = current;
+        let lo = 0, hi = candidates.length;
+        while (lo < hi) { const mid = (lo + hi) >> 1; candidates[mid].gain > current ? lo = mid + 1 : hi = mid; }
+        candidates.splice(lo, 0, top);
+        continue;
       }
-      if (!best) break;
-      best.taken = true;
+      const best = top;
       /* Only the entitlements that still add something; the rest are already covered. */
       const grants = best.ents.filter(e =>
         best.group.members.some(m => m.ents.has(e.ent) && !explained.get(m).has(e.ent)));
@@ -556,7 +569,7 @@
         members: best.group.members,
         grants: grants.map(e => ({ ent: e.ent, holders: e.holders, coverage: e.coverage,
           missing: best.group.members.filter(m => !m.ents.has(e.ent)) })),
-        gain: bestGain
+        gain: current
       });
     }
 
@@ -625,7 +638,9 @@
       maxConditions: 2, minComboGain: 3, pollutionBelow: 0.1 },
       (HR.config.get().pyramid || {}), opts || {});
 
-    const weight = permKey => weightOf(model, permKey);
+    /* Precomputed: weight() runs in every tally's inner loop. */
+    const wCache = new Map(model.permissionList.map(pm => [pm.key, weightOf(model, pm.key)]));
+    const weight = permKey => wCache.get(permKey) || 1;
     const everybody = population(model, model.vault, model.granted);
     const people = withAccess(everybody);
     const attributes = availableAttributes(people);

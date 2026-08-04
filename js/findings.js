@@ -636,8 +636,10 @@
       const g = m.granted;
       if (!g || g.empty) return null;
       const missing = [];
+      const byPersonRaw = new Map();
+      for (const a of m.accountList) if (!byPersonRaw.has(a.personRaw)) byPersonRaw.set(a.personRaw, a);
       for (const r of g.rows) {
-        const account = m.accountList.find(a => a.personRaw === r.personRaw);
+        const account = byPersonRaw.get(r.personRaw);
         if (!account) continue;
         const perm = m.permissions.get(HR.model.permissionKey(r.system, r.entitlement));
         if (!perm || !account.permKeys.has(perm.key)) missing.push({ row: r, account: account });
