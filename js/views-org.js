@@ -162,11 +162,13 @@
     f.appendChild(HR.viewkit.tabbed('org', [
       { id: 'walk', label: T('org.tab.walk'), build: () => walk },
       { id: 'scorecards', label: T('org.tab.scorecards'), build: () => {
-        const d = el('div', { class: 'stack' });
-        d.appendChild(scorecardCard(m, tree));
+        /* A fragment, not a wrapper div: the tab-body spacing rules address the
+           scorecard's own children, and a wrapper would put them out of reach. */
+        const f = document.createDocumentFragment();
+        f.appendChild(scorecardCard(m, tree));
         const bf = busFactorCard(m);
-        if (bf) d.appendChild(bf);
-        return d;
+        if (bf) f.appendChild(bf);
+        return f;
       } },
       { id: 'workforce', label: T('org.tab.workforce'), build: () => workforceCard(m) },
       { id: 'attest', label: T('org.tab.attest'), build: () => attestCard(m) },
