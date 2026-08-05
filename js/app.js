@@ -454,12 +454,6 @@
   /* ------------------------------------------------------------- snapshots */
   async function refreshSnapshots() {
     state.snapshots = await HR.store.list();
-    const sel = document.getElementById('baseline-select');
-    sel.innerHTML = '';
-    sel.appendChild(el('option', { value: '', text: T('app.baselineNone') }));
-    state.snapshots.forEach(s => sel.appendChild(el('option', {
-      value: s.id, text: s.name + ' · ' + U.fmtDate(s.importedAt), selected: s.id === state.baselineId
-    })));
     if (state.view === 'snapshots') render();
   }
 
@@ -477,7 +471,6 @@
       await recomputeDiff();
       if (!quiet) U.toast(T('toast.baselineSet', { name: snap.name }));
     }
-    document.getElementById('baseline-select').value = state.baselineId || '';
     updateTopbar();
     render();
   }
@@ -577,7 +570,6 @@
     document.title = (HR.brand.state.productName || T('app.title'));
     document.getElementById('topbar-title').textContent = HR.brand.state.productName || T('app.title');
     document.getElementById('btn-import-label').textContent = T('app.import');
-    document.getElementById('baseline-label').textContent = T('app.baseline');
     document.getElementById('btn-theme').title = T('app.theme');
     const repo = document.getElementById('link-repo');
     repo.textContent = T('app.repo');
@@ -619,7 +611,6 @@
        now opens the Imports view, where each source has its own slot; dropping a file
        anywhere on the page still routes it on content. */
     document.getElementById('btn-import').addEventListener('click', () => go('sources'));
-    document.getElementById('baseline-select').addEventListener('change', e => setBaseline(e.target.value));
     document.getElementById('drawer-close').addEventListener('click', HR.views.closeDrawer);
     document.getElementById('drawer-scrim').addEventListener('click', HR.views.closeDrawer);
     document.addEventListener('keydown', e => { if (e.key === 'Escape') HR.views.closeDrawer(); });

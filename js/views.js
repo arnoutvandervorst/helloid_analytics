@@ -1449,6 +1449,17 @@
       el('p', { text: T('df.lead') })
     ])));
 
+    /* The control sits beside its effect: pick the import to compare against here. */
+    if (st.snapshots.length > 1 || st.baselineId) {
+      const sel = el('select', { onchange: e => HR.app.setBaseline(e.target.value) });
+      sel.appendChild(el('option', { value: '', text: T('app.baselineNone') }));
+      st.snapshots.forEach(s => sel.appendChild(el('option', {
+        value: s.id, text: s.name + ' \u00b7 ' + U.fmtDate(s.importedAt), selected: s.id === st.baselineId
+      })));
+      f.appendChild(el('div', { class: 'row', style: 'margin-bottom:14px' },
+        el('label', { class: 'inline' }, [document.createTextNode(T('app.baseline')), sel])));
+    }
+
     if (!st.diff) {
       f.appendChild(card(null, null, el('p', {
         text: T(st.snapshots && st.snapshots.length > 1 ? 'df.pickBaseline' : 'df.importSecond')
