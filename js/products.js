@@ -104,6 +104,15 @@
     });
 
     const withActions = rows.filter(p => p.actions.length).length;
+    const health = {
+      products: rows.length,
+      noName: rows.filter(p => !p.name).length,
+      /* A stated price that did not parse is money silently missing from every total. */
+      badPrices: (data.products || []).filter((p, i) =>
+        p.price != null && String(p.price).trim() !== '' && rows[i].price == null).length,
+      /* A time limit that is not a whole number of days is shown raw, not rescaled. */
+      oddDurations: rows.filter(p => p.hasTimeLimit && p.ownershipMinutes != null && p.ownershipDays == null).length
+    };
     return {
       kind: 'products',
       rows,
@@ -117,6 +126,7 @@
         withActions,
         priced: rows.filter(p => p.price != null).length,
         timeLimited: rows.filter(p => p.hasTimeLimit).length,
+        health,
         fingerprint: U.hash(text.length + '|' + rows.length + '|' + text.slice(0, 4096))
       }
     };
@@ -150,12 +160,20 @@
     const get = (row, key) => col[key] == null ? '' : (row[col[key]] || '').trim();
 
     const rows = [];
+    let skipped = 0, shortRows = 0, badDates = 0;
     for (let i = 1; i < grid.length; i++) {
       const r = grid[i];
+      if (r.length < header.length) shortRows++;
       const userName = get(r, 'username');
       const productName = get(r, 'productname');
-      if (!userName && !productName) continue;
+      if (!userName && !productName) { skipped++; continue; }
       const approvedBy = get(r, 'approvedby');
+      const dated = (key) => {
+        const raw = get(r, key);
+        const d = parseDate(raw);
+        if (raw && !d) badDates++;
+        return d;
+      };
       rows.push({
         i: rows.length,
         id: get(r, 'assignmentguid'),
@@ -164,9 +182,9 @@
         productName,
         productId: get(r, 'productguid'),
         sku: get(r, 'productsku'),
-        requestedAt: parseDate(get(r, 'requestedat')),
-        approvedAt: parseDate(get(r, 'approvedat')),
-        returnDate: parseDate(get(r, 'returndate')),
+        requestedAt: dated('requestedat'),
+        approvedAt: dated('approvedat'),
+        returnDate: dated('returndate'),
         source: get(r, 'source'),
         approvedBy,
         approvalComment: get(r, 'approvalcomment'),
@@ -194,6 +212,7 @@
         unrecorded: rows.filter(a => !a.approvedBy).length,
         from: rows.reduce((min, a) => (a.requestedAt && (!min || a.requestedAt < min)) ? a.requestedAt : min, null),
         to: rows.reduce((max, a) => (a.requestedAt && (!max || a.requestedAt > max)) ? a.requestedAt : max, null),
+        health: { dataRows: grid.length - 1, kept: rows.length, skippedEmpty: skipped, shortRows, badDates },
         fingerprint: U.hash(text.length + '|' + rows.length + '|' + text.slice(0, 4096))
       }
     };

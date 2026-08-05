@@ -324,11 +324,13 @@
       case 'products':
         return st.products && { file: st.products.meta.fileName, loaded: st.importedAt.products,
           detail: T('src.productsDetail', { n: st.products.meta.rowCount,
-            tasks: st.products.meta.withActions }) };
+            tasks: st.products.meta.withActions }),
+          health: st.products.meta.health };
       case 'assignments':
         return st.assignments && { file: st.assignments.meta.fileName, loaded: st.importedAt.assignments,
           detail: T('src.assignmentsDetail', { n: U.fmtInt(st.assignments.meta.rowCount),
-            open: U.fmtInt(st.assignments.meta.openCount) }) };
+            open: U.fmtInt(st.assignments.meta.openCount) }),
+          health: st.assignments.meta.health };
       default: return null;
     }
   }
@@ -361,6 +363,9 @@
     if (h && h.badDates) healthBits.push(T('src.healthBadDates', { n: U.fmtInt(h.badDates) }));
     if (h && h.noIdentity) healthBits.push(T('src.healthNoIdentity', { n: U.fmtInt(h.noIdentity) }));
     if (h && h.noContract) healthBits.push(T('src.healthNoContract', { n: U.fmtInt(h.noContract) }));
+    if (h && h.badPrices) healthBits.push(T('src.healthBadPrices', { n: U.fmtInt(h.badPrices) }));
+    if (h && h.noName) healthBits.push(T('src.healthNoName', { n: U.fmtInt(h.noName) }));
+    if (h && h.oddDurations) healthBits.push(T('src.healthOddDurations', { n: U.fmtInt(h.oddDurations) }));
 
     const body = st
       ? el('div', {}, [
