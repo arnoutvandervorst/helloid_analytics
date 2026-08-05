@@ -174,6 +174,20 @@
    * describes two different organisations. Only some exports carry a date of their own —
    * where none exists, that is said rather than guessed at.
    */
+  /** One line for any parser's health object; null when there is nothing to flag. */
+  function healthSummary(h) {
+    if (!h) return null;
+    const bits = [];
+    if (h.skippedEmpty || h.shortRows) bits.push(T('src.healthSkipped', { n: U.fmtInt((h.skippedEmpty || 0) + (h.shortRows || 0)) }));
+    if (h.badDates) bits.push(T('src.healthBadDates', { n: U.fmtInt(h.badDates) }));
+    if (h.noIdentity) bits.push(T('src.healthNoIdentity', { n: U.fmtInt(h.noIdentity) }));
+    if (h.noContract) bits.push(T('src.healthNoContract', { n: U.fmtInt(h.noContract) }));
+    if (h.badPrices) bits.push(T('src.healthBadPrices', { n: U.fmtInt(h.badPrices) }));
+    if (h.noName) bits.push(T('src.healthNoName', { n: U.fmtInt(h.noName) }));
+    if (h.oddDurations) bits.push(T('src.healthOddDurations', { n: U.fmtInt(h.oddDurations) }));
+    return bits.length ? bits.join(' \u00b7 ') : null;
+  }
+
   function sourcesCard(m) {
     const st = HR.app.state;
     const now = Date.now();
@@ -186,43 +200,44 @@
       dataDate: null,
       detail: T('src.reconDetail', { rows: U.fmtInt(m.summary.rows), accounts: m.summary.accounts }),
       file: snapshot ? snapshot.fileName : (st.parsed ? st.parsed.meta.fileName : '—'),
+      health: st.parsed ? st.parsed.meta.health : null,
       loadedOnly: true
     });
     if (st.ruleSet) rows.push({
       kind: T('src.rules'), loaded: st.importedAt.rules, dataDate: null,
       detail: T('src.rulesDetail', { n: st.ruleSet.rules.length,
         live: st.ruleSet.rules.filter(r => r.status === 'published' || r.status === 'enabled').length }),
-      file: st.ruleSet.meta.fileName, loadedOnly: true
+      file: st.ruleSet.meta.fileName, health: st.ruleSet.meta.health, loadedOnly: true
     });
     if (st.vault) rows.push({
       kind: T('src.vault'), loaded: st.importedAt.vault, dataDate: null,
       detail: T('src.vaultDetail', { n: st.vault.persons.length, c: st.vault.meta.contractCount }),
-      file: st.vault.meta.fileName, loadedOnly: true
+      file: st.vault.meta.fileName, health: st.vault.meta.health, loadedOnly: true
     });
     if (st.granted) rows.push({
       kind: T('src.granted'), loaded: st.importedAt.granted,
       dataDate: st.granted.meta.lastChange ? +st.granted.meta.lastChange : null,
       detail: st.granted.empty ? T('act.grantedEmpty') : T('src.grantedDetail', { n: U.fmtInt(st.granted.meta.rowCount) }),
-      file: st.granted.meta.fileName
+      file: st.granted.meta.fileName, health: st.granted.meta.health
     });
     if (st.products) rows.push({
       kind: T('src.products'), loaded: st.importedAt.products, dataDate: null,
       detail: T('src.productsDetail', { n: st.products.meta.rowCount, tasks: st.products.meta.withActions }),
-      file: st.products.meta.fileName, loadedOnly: true
+      file: st.products.meta.fileName, health: st.products.meta.health, loadedOnly: true
     });
     if (st.assignments) rows.push({
       kind: T('src.assignments'), loaded: st.importedAt.assignments,
       dataDate: st.assignments.meta.to ? +st.assignments.meta.to : null,
       detail: T('src.assignmentsDetail', { n: U.fmtInt(st.assignments.meta.rowCount),
         open: U.fmtInt(st.assignments.meta.openCount) }),
-      file: st.assignments.meta.fileName
+      file: st.assignments.meta.fileName, health: st.assignments.meta.health
     });
     if (st.history) rows.push({
       kind: T('src.history'), loaded: st.importedAt.history,
       dataDate: st.history.meta.to ? +st.history.meta.to : null,
       detail: T('src.historyDetail', { n: U.fmtInt(st.history.meta.rowCount),
         days: st.history.meta.activeDays, span: st.history.meta.spanDays == null ? '—' : st.history.meta.spanDays }),
-      file: st.history.meta.fileName
+      file: st.history.meta.fileName, health: st.history.meta.health
     });
 
     /* The spread between the newest and oldest evidence is what makes a comparison lie. */
@@ -251,7 +266,14 @@
         { key: 'loaded', label: T('src.cLoaded'), value: r => r.loaded || 0,
           render: r => r.loaded
             ? el('span', { text: T('src.daysAgo', { n: U.fmtInt(days(r.loaded)) }) })
-            : el('span', { class: 'note', text: '—' }) }
+            : el('span', { class: 'note', text: '—' }) },
+        { key: 'health', label: T('src.cHealth'), value: r => healthSummary(r.health) ? 1 : 0,
+          render: r => {
+            const line = healthSummary(r.health);
+            return line
+              ? el('span', { class: 'slot-health', text: '\u26a0 ' + line })
+              : el('span', { class: 'note', text: T('src.healthOk') });
+          } }
       ],
       rows, pageSize: 10, exportName: 'sources'
     });
@@ -355,17 +377,7 @@
       st ? el('span', { class: 'pill ok', text: T('src.slotLoaded') }) : null
     ]);
 
-    const h = st && st.health;
-    const healthBits = [];
-    if (h && (h.skippedEmpty || h.shortRows)) {
-      healthBits.push(T('src.healthSkipped', { n: U.fmtInt((h.skippedEmpty || 0) + (h.shortRows || 0)) }));
-    }
-    if (h && h.badDates) healthBits.push(T('src.healthBadDates', { n: U.fmtInt(h.badDates) }));
-    if (h && h.noIdentity) healthBits.push(T('src.healthNoIdentity', { n: U.fmtInt(h.noIdentity) }));
-    if (h && h.noContract) healthBits.push(T('src.healthNoContract', { n: U.fmtInt(h.noContract) }));
-    if (h && h.badPrices) healthBits.push(T('src.healthBadPrices', { n: U.fmtInt(h.badPrices) }));
-    if (h && h.noName) healthBits.push(T('src.healthNoName', { n: U.fmtInt(h.noName) }));
-    if (h && h.oddDurations) healthBits.push(T('src.healthOddDurations', { n: U.fmtInt(h.oddDurations) }));
+    const healthLine = st ? healthSummary(st.health) : null;
 
     const body = st
       ? el('div', {}, [
@@ -374,9 +386,7 @@
           el('div', { class: 'note', text: st.loaded
             ? (days === 0 ? T('src.today') : T('src.daysAgo', { n: U.fmtInt(days) })) + ' · ' + U.fmtDate(st.loaded)
             : T('src.noDate') }),
-          healthBits.length
-            ? el('div', { class: 'note slot-health', text: '\u26a0 ' + healthBits.join(' \u00b7 ') })
-            : null
+          healthLine ? el('div', { class: 'note slot-health', text: '\u26a0 ' + healthLine }) : null
         ].filter(Boolean))
       : el('div', {}, [
           el('div', { class: 'note', text: T('src.slot.' + slot.kind + '.unlocks') }),
