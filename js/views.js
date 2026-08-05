@@ -364,9 +364,9 @@
     const actions = el('div', { class: 'slot-actions' }, [
       pickButton(st ? T('src.replace') : T('src.choose'), slot.accept, st ? '' : 'primary',
         f => HR.app.importFileAs(f, slot.kind)),
-      st && slot.kind !== 'recon'
+      st
         ? el('button', { class: 'btn ghost', text: T('src.remove'),
-            onclick: () => HR.app.clearSource(slot.kind) })
+            onclick: () => slot.kind === 'recon' ? HR.app.clearRecon() : HR.app.clearSource(slot.kind) })
         : null,
       st && slot.kind === 'recon'
         ? el('button', { class: 'btn ghost', text: T('src.manageSnaps'),

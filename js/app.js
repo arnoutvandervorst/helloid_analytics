@@ -117,6 +117,8 @@
     if (parsed.warnings.length) U.toast(parsed.warnings[0], 5000);
 
     state.parsed = parsed;
+    state.noAutoRecon = false;
+    HR.store.saveContext({ noAutoRecon: false });
     state.model = HR.model.build(parsed.records, { ruleSet: state.ruleSet, vault: state.vault,
       granted: state.granted, history: state.history,
       products: state.products, assignments: state.assignments });
@@ -208,6 +210,20 @@
     HR.store.saveContext({ [kind]: null, importedAt: state.importedAt, fileNames: state.fileNames });
     rebuild();
     U.toast(T('toast.sourceCleared', { kind: T('src.' + kind) }), 4000);
+  }
+
+  /**
+   * Unload the reconciliation without touching the snapshot archive. The archive is
+   * history; this only says "build from the companions for now". The flag survives a
+   * reload, or the auto-load of the newest snapshot would bring the import straight back.
+   */
+  function clearRecon() {
+    state.parsed = null;
+    state.currentSnapshotId = null;
+    state.noAutoRecon = true;
+    HR.store.saveContext({ noAutoRecon: true });
+    rebuild();
+    U.toast(T('toast.sourceCleared', { kind: T('src.recon') }), 4000);
   }
 
   /* HelloID → Rules → Entitlements exports under the same name as the two files this
@@ -474,6 +490,8 @@
     const snap = await HR.store.get(id);
     if (!snap) { U.toast(T('toast.snapNotFound')); return; }
     state.currentSnapshotId = id;
+    state.noAutoRecon = false;
+    HR.store.saveContext({ noAutoRecon: false });
     state.parsed = { records: snap.records, meta: { fileName: snap.fileName, fingerprint: snap.fingerprint } };
     state.model = HR.model.build(snap.records, { ruleSet: state.ruleSet, vault: state.vault,
       granted: state.granted, history: state.history,
@@ -649,6 +667,7 @@
       state.importedAt = ctx.importedAt || {};
       state.fileNames = ctx.fileNames || {};
       state.demo = ctx.demo || null;
+      state.noAutoRecon = !!ctx.noAutoRecon;
       const named = (k, fallback) => state.fileNames[k] || fallback;
       ['rules', 'vault', 'granted', 'history', 'products', 'assignments'].forEach(k => {
         if (ctx[k] && !state.importedAt[k]) state.importedAt[k] = ctx.savedAt || null;
@@ -664,7 +683,7 @@
     restoreContext.then(() => refreshSnapshots()).then(async () => {
       const v = location.hash.replace('#', '');
       if (v && HR.views[v]) state.view = v;
-      if (state.snapshots.length) {
+      if (state.snapshots.length && !state.noAutoRecon) {
         await loadSnapshot(state.snapshots[0].id);
         if (state.snapshots.length > 1) await setBaseline(state.snapshots[1].id, true);
       } else {
@@ -676,7 +695,7 @@
   const REPO_URL = 'https://github.com/arnoutvandervorst/helloid_analytics';
 
   HR.app = { REPO_URL, state, go, rebuild, batch, loadSnapshot, setBaseline, refreshSnapshots, importText, render, applyChrome,
-    importFileAs, clearSource, detectKind, loadSample, findSample, sampleName: () => sampleFile || null,
+    importFileAs, clearSource, clearRecon, detectKind, loadSample, findSample, sampleName: () => sampleFile || null,
     demoAvailable: () => demoManifest };
   document.addEventListener('DOMContentLoaded', init);
 })(window.HR);
