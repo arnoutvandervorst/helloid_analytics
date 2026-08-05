@@ -104,9 +104,10 @@
     const dayFirst = detectDayFirst(dateSamples);
 
     const rows = [];
-    let skipped = 0, badDates = 0;
+    let skipped = 0, badDates = 0, shortRows = 0;
     for (let i = 1; i < grid.length; i++) {
       const r = grid[i];
+      if (r.length < header.length) shortRows++;
       const personRaw = get(r, 'person');
       const entitlementRaw = get(r, 'entitlementname');
       if (!personRaw && !entitlementRaw) { skipped++; continue; }
@@ -150,7 +151,7 @@
       rows.push(record);
     }
 
-    const health = { dataRows: grid.length - 1, kept: rows.length, skippedEmpty: skipped, shortRows: 0, badDates, dayFirst };
+    const health = { dataRows: grid.length - 1, kept: rows.length, skippedEmpty: skipped, shortRows, badDates, dayFirst };
     const out = kind === 'history' ? buildHistory(rows, fileName, text) : buildGranted(rows, fileName, text);
     out.meta.health = health;
     if (badDates) (out.warnings = out.warnings || []).push(badDates + ' row(s) carry a date that could not be read.');
