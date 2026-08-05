@@ -1,16 +1,26 @@
 # HelloID Analytics
 
-A self-hostable, dependency-free dashboard for HelloID exports. Drop a `ReconciliationReport.csv`
-on the page and it builds the account ↔ entitlement ↔ person graph, scores risk, prices the
-licence drift, and diffs the run against any earlier import.
+A self-hostable, dependency-free dashboard for HelloID exports. Drop any HelloID export
+on the page and it shows the most analysis that export can carry — every import is
+optional, and each one deepens the model rather than gating it.
 
-Five more exports attach to it, each in its own import slot, and each one answers questions
-the reconciliation alone cannot: the **vault** (people and contracts) makes rule conditions
-evaluable and separates leavers from unowned accounts; the **business rules** split
-entitlements into modelled, draft-only and unmodelled; **granted entitlements** and
-**historic actions** distinguish "granted outside HelloID" from "granted by HelloID and not
-recorded", and turn a missing entitlement into a failed grant on a date; the **entitlement
-catalogue** names what HelloID still lists that the target system no longer has.
+The **reconciliation** (`ReconciliationReport.csv`) is the base of the access analysis: the
+account ↔ entitlement ↔ person graph, risk scoring, licence drift pricing, and the diff
+against any earlier import. The **vault** (people and contracts) powers the people and
+organisation views on its own — org walker, department scorecards, workforce analytics,
+attestation packs — and, joined with the reconciliation, makes rule conditions evaluable
+and separates leavers from unowned accounts. The **business rules** split entitlements into
+modelled, draft-only and unmodelled; **granted entitlements** and **historic actions**
+distinguish "granted outside HelloID" from "granted by HelloID and not recorded", and turn
+a missing entitlement into a failed grant on a date; the **product catalogue** and
+**product assignments** connect Service Automation requests and approvals to the access
+they explain.
+
+A view whose exports are missing is not hidden: it wears a lock in the sidebar and renders
+a page naming exactly which export unlocks it, what that export contains and where in
+HelloID it lives. Load only a vault and the people views work; add the reconciliation later
+and everything merges — the model is rebuilt from whatever is loaded, so import order never
+changes the outcome.
 
 Serve it from a laptop or any static host — it is plain files, with no build step,
 no CDN and no back end. Wherever it runs, the exports are read and analysed in the browser
@@ -44,8 +54,10 @@ browsers give `file://` pages an opaque origin, so snapshots cannot be persisted
 sample loader is hidden. Over http both work.
 
 **Import** in the top bar opens a slot per export — what it is, what it unlocks, where in
-HelloID it comes from, and whether it is loaded. A slot only accepts its own kind of file.
-Dragging a file anywhere onto the page still routes it on content.
+HelloID it comes from, and whether it is loaded. A slot only accepts its own kind of file,
+and every slot can be replaced or removed independently; removing the reconciliation keeps
+the snapshot archive, so the Snapshots view can bring any earlier import back. Dragging a
+file anywhere onto the page still routes it on content.
 
 No reconciliation export is committed to this repository — they carry account and person
 names, so `*.csv` is gitignored. Drop your own export in this folder and the "load the export
@@ -268,7 +280,7 @@ maps headers by alias, so exports from other HelloID versions or locales still l
 | Column | Used for |
 | --- | --- |
 | `System` | Multi-system exports are kept separate; keys are `system + account`. |
-| `Person` | `Name (employeeId)` is split; drives the identity-coverage metric. |
+| `Person` | Taken verbatim as the display name; drives the identity-coverage metric. Employee ids come from the vault, which states them as a field. |
 | `AccountDisplayName`, `AccountUserName` | Account identity and class detection. |
 | `AccountEnabled` | Dormant-but-entitled and licence-waste detection. |
 | `PermissionDisplayName` | `NAME (dn/path)` is split into group name and OU path. |
@@ -329,8 +341,10 @@ The whole analysis exports as a Markdown report from the Risk view.
 
 ## Diff
 
-Every import is stored as a snapshot in IndexedDB. Selecting a baseline rebuilds that
-snapshot's full graph and compares entities, not rows: accounts added/removed/changed,
+Every reconciliation import is stored as a snapshot in IndexedDB. The baseline is picked
+on the Diff view (each new import auto-baselines against the previous one); companions are
+not versioned, so a historic diff uses the currently loaded vault and rules on both sides.
+Selecting a baseline rebuilds that snapshot's full graph and compares entities, not rows: accounts added/removed/changed,
 entitlements granted and revoked per account, membership movement per group, findings that
 grew, shrank, appeared or resolved, and the cost delta. Importing a file that is
 byte-identical to an existing snapshot reuses it instead of duplicating.
