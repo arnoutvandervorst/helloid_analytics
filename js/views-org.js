@@ -161,9 +161,16 @@
 
     f.appendChild(HR.viewkit.tabbed('org', [
       { id: 'walk', label: T('org.tab.walk'), build: () => walk },
-      { id: 'scorecards', label: T('org.tab.scorecards'), build: () => scorecardCard(m, tree) },
+      { id: 'scorecards', label: T('org.tab.scorecards'), build: () => {
+        const d = el('div', { class: 'stack' });
+        d.appendChild(scorecardCard(m, tree));
+        const bf = busFactorCard(m);
+        if (bf) d.appendChild(bf);
+        return d;
+      } },
       { id: 'workforce', label: T('org.tab.workforce'), build: () => workforceCard(m) },
       { id: 'attest', label: T('org.tab.attest'), build: () => attestCard(m) },
+      { id: 'leavers', label: T('org.tab.leavers'), build: () => leaversCard(m) },
       { id: 'quality', label: T('org.tab.quality'), count: q.summary.anomalies + q.summary.deadTitles,
         build: () => quality }
     ], params));
@@ -372,6 +379,15 @@
           ],
           rows: res.rows, pageSize: 10, exportName: 'mover-residue'
         }));
+        /* The checklist is the deliverable: one row per former-department entitlement,
+           routed to the current manager, decision column empty on purpose. */
+        body.push(el('p', { style: 'margin-top:10px' }, el('button', {
+          class: 'btn sm', text: T('wf.residuePack'),
+          onclick: () => {
+            HR.usage.exported('mover-residue-pack');
+            U.download('mover-revoke-checklist.csv', HR.workforce.residueCsv(m, res), 'text/csv;charset=utf-8');
+          }
+        })));
       } else {
         body.push(el('p', { class: 'note', text: T('wf.noResidue') }));
       }
@@ -539,6 +555,106 @@
     body.appendChild(el('p', { class: 'note', text: T('wf.efFoot') }));
 
     openDrawer(head, body);
+  }
+
+  /**
+   * Proof of deprovisioning. Every leaver, including the clean ones — an assurance
+   * report that only lists problems proves nothing about the rest — with the file an
+   * auditor actually asks for behind one button.
+   */
+  function leaversCard(m) {
+    const wrap = el('div', { class: 'stack' });
+    if (!m.hasRecon && !m.granted) wrap.appendChild(partialNotice(['recon']));
+
+    const res = HR.workforce.leavers(m, m.vault);
+    if (!res.rows.length) {
+      wrap.appendChild(card(T('lv.title'), null, el('p', { class: 'note', text: T('lv.none') })));
+      return wrap;
+    }
+
+    const k = el('div', { class: 'grid g4' });
+    k.append(
+      tile(T('lv.kLeavers'), U.fmtInt(res.summary.leavers), T('lv.kLeaversFoot'), { small: true }),
+      tile(T('lv.kEnabled'), U.fmtInt(res.summary.withEnabled), T('lv.kEnabledFoot'),
+        { small: true, severity: res.summary.withEnabled ? 'critical' : 'good' }),
+      tile(T('lv.kAccess'), U.fmtInt(res.summary.withAccess), T('lv.kAccessFoot'),
+        { small: true, severity: res.summary.withAccess ? 'high' : 'good' }),
+      tile(T('lv.kSpend'), U.fmtMoney(res.summary.monthly), T('lv.kSpendFoot'),
+        { small: true, severity: res.summary.monthly ? 'medium' : 'good' })
+    );
+    wrap.appendChild(k);
+
+    wrap.appendChild(card(T('lv.title'), T('lv.note'), [
+      el('p', { text: T('lv.lead', { n: U.fmtInt(res.summary.leavers),
+        clean: U.fmtInt(res.summary.clean) }) }),
+      HR.table.make({
+        columns: [
+          { key: 'person', label: T('py.cPerson'), value: r => r.person.displayName },
+          { key: 'dept', label: T('pp.department'), value: r => r.department },
+          { key: 'end', label: T('lv.cEnd'), value: r => r.life.date ? +r.life.date : 0,
+            render: r => el('span', { text: r.life.date ? r.life.date.toISOString().slice(0, 10) : '—' }) },
+          { key: 'days', label: T('lv.cDays'), value: r => r.life.days || 0, align: 'right' },
+          { key: 'accounts', label: T('pp.accounts'), value: r => r.accounts.length, align: 'right' },
+          { key: 'enabled', label: T('c.enabled'), value: r => r.enabledAccounts, align: 'right',
+            render: r => el('span', { class: r.enabledAccounts ? 'sev critical' : 'note',
+              text: String(r.enabledAccounts) }) },
+          { key: 'ents', label: T('c.perms'), value: r => r.entCount, align: 'right',
+            render: r => el('span', { class: r.entCount ? 'sev high' : 'note', text: String(r.entCount) }) },
+          { key: 'cost', label: T('c.costMo'), value: r => r.monthlyCost, align: 'right',
+            render: r => U.fmtMoney(r.monthlyCost) }
+        ],
+        rows: res.rows, pageSize: 15, exportName: 'leavers',
+        search: (r, q) => (r.person.displayName + ' ' + r.department).toLowerCase().includes(q),
+        onRowClick: r => drawerVaultPerson(personRow(m, r.person), m)
+      }),
+      el('p', { style: 'margin-top:10px' }, el('button', {
+        class: 'btn sm', text: T('lv.pack'),
+        onclick: () => {
+          HR.usage.exported('leaver-assurance');
+          U.download('leaver-assurance.csv', HR.workforce.leaversCsv(m, res), 'text/csv;charset=utf-8');
+        }
+      })),
+      el('p', { class: 'note', text: T('lv.foot') })
+    ]));
+    return wrap;
+  }
+
+  /**
+   * The bus factor: access that walks out with one person. Department-sole holders of
+   * entitlements almost nobody else holds anywhere.
+   */
+  function busFactorCard(m) {
+    const bf = HR.scorecard.busFactor(m);
+    if (!bf) return null;
+    const body = [el('p', { text: T('bf.lead', { n: U.fmtInt(bf.summary.rows),
+      people: U.fmtInt(bf.summary.people), depts: U.fmtInt(bf.summary.departments) }) })];
+    if (bf.rows.length) {
+      body.push(HR.table.make({
+        columns: [
+          { key: 'dept', label: T('pp.department'), value: r => r.dept },
+          { key: 'ent', label: T('ct.group'), value: r => r.perm.name,
+            render: r => el('a', { href: '#', text: r.perm.name,
+              onclick: e => { e.preventDefault(); drawerPermission(r.perm, m); } }) },
+          { key: 'person', label: T('bf.cOnly'), value: r => r.person.displayName,
+            render: r => el('a', { href: '#', text: r.person.displayName,
+              onclick: e => { e.preventDefault(); drawerVaultPerson(personRow(m, r.person), m); } }) },
+          { key: 'org', label: T('bf.cOrg'), value: r => r.orgHolders, align: 'right',
+            hint: T('bf.cOrgHint') },
+          { key: 'sens', label: T('c.sensitivity'), value: r => r.perm.sensitivity, align: 'right',
+            render: r => el('span', { class: r.perm.sensitivity >= 1.6 ? 'sev high' : '',
+              text: U.fmtNum(r.perm.sensitivity, 1) }) },
+          { key: 'cost', label: T('c.unitMo'), value: r => r.perm.monthlyPrice || 0, align: 'right',
+            render: r => r.perm.monthlyPrice ? el('span', { text: U.fmtMoney(r.perm.monthlyPrice) })
+              : el('span', { class: 'note', text: '—' }) }
+        ],
+        rows: bf.rows, pageSize: 12, exportName: 'bus-factor',
+        search: (r, q) => (r.dept + ' ' + r.perm.name + ' ' + r.person.displayName).toLowerCase().includes(q)
+      }));
+    } else {
+      body.push(el('p', { class: 'note', text: T('bf.none') }));
+    }
+    body.push(el('p', { class: 'note', text: T('bf.foot') }));
+    return card(T('bf.title'), T('bf.note'), body);
   }
 
   /**

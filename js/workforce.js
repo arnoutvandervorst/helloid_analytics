@@ -451,5 +451,124 @@
     };
   }
 
-  HR.workforce = { moves, flow, managers, moverResidue, onboardingLatency, creep, forecast, expectedAccess };
+  /* ---------------------------------------------------------------- leavers */
+  /**
+   * Proof of deprovisioning, one row per leaver: what is still enabled, what is still
+   * held, what it costs, and how long the contract has been over. The clean leavers are
+   * listed too — an assurance report that only shows problems proves nothing about the
+   * rest.
+   */
+  function leavers(model, vault) {
+    const index = HR.correlate.personAccountIndex(model, vault, model.correlation);
+    const now = new Date();
+    const rows = [];
+    for (const person of vault.persons) {
+      const life = HR.vault.lifecycle(person, now);
+      if (life.state !== 'past') continue;
+      const entry = index.get(person.personId);
+      const accounts = entry ? entry.accounts : [];
+      const contract = person.contracts.slice().sort((a, b) => (b.endDate || 0) - (a.endDate || 0))[0] || null;
+      const enabled = accounts.filter(a => a.enabled !== false);
+      const entCount = U.sum(accounts, a => a.permCount);
+      const monthly = U.sum(accounts, a => a.monthlyCost || 0);
+      rows.push({
+        person, life, contract, accounts,
+        department: contract ? (contract.department.name || contract.department.externalId || '') : '',
+        title: contract ? (contract.title.name || '') : '',
+        manager: contract ? (contract.manager.displayName || '') : '',
+        enabledAccounts: enabled.length,
+        entCount, monthlyCost: monthly,
+        clean: !enabled.length && !entCount
+      });
+    }
+    rows.sort((a, b) => (b.enabledAccounts - a.enabledAccounts) || (b.entCount - a.entCount) ||
+      (a.life.days - b.life.days));
+    return {
+      rows,
+      summary: {
+        leavers: rows.length,
+        withEnabled: rows.filter(r => r.enabledAccounts).length,
+        withAccess: rows.filter(r => r.entCount).length,
+        clean: rows.filter(r => r.clean).length,
+        monthly: U.sum(rows, r => r.monthlyCost)
+      }
+    };
+  }
+
+  /** The file an auditor gets: every leaver, every account, every entitlement still held. */
+  function leaversCsv(model, res) {
+    const out = [];
+    for (const r of res.rows) {
+      const base = {
+        Person: r.person.displayName,
+        EmployeeId: r.person.externalId || '',
+        Department: r.department,
+        Title: r.title,
+        Manager: r.manager,
+        ContractEnd: r.life.date ? r.life.date.toISOString().slice(0, 10) : '',
+        DaysSinceEnd: r.life.days == null ? '' : r.life.days
+      };
+      if (!r.accounts.length) {
+        out.push(Object.assign({}, base, { Account: '', AccountEnabled: '', System: '',
+          Entitlement: '', Sensitive: '', MonthlyCost: '', Status: 'clean' }));
+        continue;
+      }
+      for (const a of r.accounts) {
+        if (!a.perms.length) {
+          out.push(Object.assign({}, base, { Account: a.userName,
+            AccountEnabled: a.enabled === false ? 'false' : 'true', System: a.system,
+            Entitlement: '', Sensitive: '', MonthlyCost: '',
+            Status: a.enabled === false ? 'disabled, no entitlements' : 'ENABLED' }));
+          continue;
+        }
+        for (const perm of a.perms) {
+          out.push(Object.assign({}, base, { Account: a.userName,
+            AccountEnabled: a.enabled === false ? 'false' : 'true', System: perm.system,
+            Entitlement: perm.name,
+            Sensitive: perm.sensitivity >= 1.6 ? 'yes' : '',
+            MonthlyCost: perm.monthlyPrice ? perm.monthlyPrice.toFixed(2) : '',
+            Status: a.enabled === false ? 'held on disabled account' : 'HELD, ENABLED' }));
+        }
+      }
+    }
+    return U.toCSV(out, ['Person', 'EmployeeId', 'Department', 'Title', 'Manager', 'ContractEnd',
+      'DaysSinceEnd', 'Account', 'AccountEnabled', 'System', 'Entitlement', 'Sensitive',
+      'MonthlyCost', 'Status']);
+  }
+
+  /**
+   * The mover residue as a revoke checklist: one row per former-department entitlement a
+   * mover still holds, routed to their current manager, with the decision column empty
+   * because the decision is the work.
+   */
+  function residueCsv(model, res) {
+    const out = [];
+    for (const r of res.rows) {
+      const contract = r.move.person.primaryContract || r.move.person.contracts[0] || null;
+      const manager = contract ? (contract.manager.displayName || '') : '';
+      for (const ent of r.residue) {
+        const perm = model.permissions.get(ent);
+        out.push({
+          Manager: manager,
+          Person: r.move.person.displayName,
+          EmployeeId: r.move.person.externalId || '',
+          MovedOn: r.move.date ? r.move.date.toISOString().slice(0, 10) : '',
+          DaysAgo: r.move.daysAgo,
+          From: r.move.from.dept,
+          To: r.move.to.dept,
+          System: perm ? perm.system : '',
+          Entitlement: perm ? perm.name : ent,
+          Sensitive: perm && perm.sensitivity >= 1.6 ? 'yes' : '',
+          MonthlyCost: perm && perm.monthlyPrice ? perm.monthlyPrice.toFixed(2) : '',
+          Decision: '',
+          Comment: ''
+        });
+      }
+    }
+    return U.toCSV(out, ['Manager', 'Person', 'EmployeeId', 'MovedOn', 'DaysAgo', 'From', 'To',
+      'System', 'Entitlement', 'Sensitive', 'MonthlyCost', 'Decision', 'Comment']);
+  }
+
+  HR.workforce = { moves, flow, managers, moverResidue, onboardingLatency, creep, forecast,
+    expectedAccess, leavers, leaversCsv, residueCsv };
 })(window.HR);
