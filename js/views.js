@@ -297,25 +297,29 @@
         return {
           file: snap ? snap.fileName : (st.parsed ? st.parsed.meta.fileName : '—'),
           loaded: snap ? snap.importedAt : null,
-          detail: T('src.reconDetail', { rows: U.fmtInt(st.model.summary.rows), accounts: st.model.summary.accounts })
+          detail: T('src.reconDetail', { rows: U.fmtInt(st.model.summary.rows), accounts: st.model.summary.accounts }),
+          health: st.parsed ? st.parsed.meta.health : null
         };
       }
       case 'rules':
         return st.ruleSet && { file: st.ruleSet.meta.fileName, loaded: st.importedAt.rules,
           detail: T('src.rulesDetail', { n: st.ruleSet.rules.length,
-            live: st.ruleSet.rules.filter(r => r.status === 'published' || r.status === 'enabled').length }) };
+            live: st.ruleSet.rules.filter(r => r.status === 'published' || r.status === 'enabled').length }),
+          health: st.ruleSet.meta.health };
       case 'vault':
         return st.vault && { file: st.vault.meta.fileName, loaded: st.importedAt.vault,
           detail: T('src.vaultDetail', { n: st.vault.persons.length, c: st.vault.meta.contractCount }) };
       case 'granted':
         return st.granted && { file: st.granted.meta.fileName, loaded: st.importedAt.granted,
           detail: st.granted.empty ? T('act.grantedEmpty')
-            : T('src.grantedDetail', { n: U.fmtInt(st.granted.meta.rowCount) }) };
+            : T('src.grantedDetail', { n: U.fmtInt(st.granted.meta.rowCount) }),
+          health: st.granted.meta.health };
       case 'history':
         return st.history && { file: st.history.meta.fileName, loaded: st.importedAt.history,
           detail: T('src.historyDetail', { n: U.fmtInt(st.history.meta.rowCount),
             days: st.history.meta.activeDays,
-            span: st.history.meta.spanDays == null ? '—' : st.history.meta.spanDays }) };
+            span: st.history.meta.spanDays == null ? '—' : st.history.meta.spanDays }),
+          health: st.history.meta.health };
       case 'products':
         return st.products && { file: st.products.meta.fileName, loaded: st.importedAt.products,
           detail: T('src.productsDetail', { n: st.products.meta.rowCount,
@@ -348,14 +352,24 @@
       st ? el('span', { class: 'pill ok', text: T('src.slotLoaded') }) : null
     ]);
 
+    const h = st && st.health;
+    const healthBits = [];
+    if (h && (h.skippedEmpty || h.shortRows)) {
+      healthBits.push(T('src.healthSkipped', { n: U.fmtInt((h.skippedEmpty || 0) + (h.shortRows || 0)) }));
+    }
+    if (h && h.badDates) healthBits.push(T('src.healthBadDates', { n: U.fmtInt(h.badDates) }));
+
     const body = st
       ? el('div', {}, [
           el('div', { class: 'mono ellipsis', text: st.file }),
           el('div', { class: 'note', text: st.detail }),
           el('div', { class: 'note', text: st.loaded
             ? (days === 0 ? T('src.today') : T('src.daysAgo', { n: U.fmtInt(days) })) + ' · ' + U.fmtDate(st.loaded)
-            : T('src.noDate') })
-        ])
+            : T('src.noDate') }),
+          healthBits.length
+            ? el('div', { class: 'note slot-health', text: '\u26a0 ' + healthBits.join(' \u00b7 ') })
+            : null
+        ].filter(Boolean))
       : el('div', {}, [
           el('div', { class: 'note', text: T('src.slot.' + slot.kind + '.unlocks') }),
           el('div', { class: 'note', text: T('src.slot.' + slot.kind + '.where') })

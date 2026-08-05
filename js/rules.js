@@ -67,11 +67,12 @@
     if (/^account$/i.test(remainder)) {
       return { system, name: 'Account', path: '', isAccount: true, raw: text };
     }
-    const m = remainder.match(/^(.*?)\s*\(([^()]*)\)\s*$/);
+    /* Path-aware: "Team (Amsterdam)" keeps its brackets, "APP-X (domain/OU/APP-X)" splits. */
+    const sp = HR.parse.splitPath(remainder);
     return {
       system,
-      name: (m ? m[1] : remainder).trim(),
-      path: m ? m[2].trim() : '',
+      name: sp.name,
+      path: sp.path,
       isAccount: false,
       raw: text
     };
@@ -99,10 +100,11 @@
 
     const rules = [];
     const warnings = [];
+    let skipped = 0;
     for (let i = 1; i < grid.length; i++) {
       const row = grid[i];
       const name = get(row, 'name');
-      if (!name) continue;
+      if (!name) { skipped++; continue; }
       const entitlements = splitCell(get(row, 'entitlements')).map(parseEntitlement).filter(Boolean);
       const conditions = splitCell(get(row, 'conditions')).map(parseCondition).filter(Boolean);
       const declared = parseInt(get(row, 'entitlementcount'), 10);
@@ -128,6 +130,7 @@
       });
     }
     if (!rules.length) throw new Error('Rules export contained a header but no rules.');
+    if (skipped) warnings.push(skipped + ' row(s) skipped: no rule name on the line.');
 
     return {
       rules,
@@ -136,6 +139,7 @@
         fileName: fileName || 'rules.csv',
         delimiter: delim,
         ruleCount: rules.length,
+        health: { dataRows: grid.length - 1, kept: rules.length, skippedEmpty: skipped, shortRows: 0 },
         fingerprint: HR.util.hash(text.length + '|' + rules.length + '|' + text.slice(0, 4096))
       }
     };

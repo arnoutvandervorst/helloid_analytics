@@ -132,6 +132,18 @@
     return { name: m[1].trim(), extra: m[2].trim() };
   }
 
+  /* A trailing parenthetical is a location only when it looks like one — a DN, an OU
+     path, a UNC path or a dotted domain. "Team (Amsterdam)" is a name with brackets in
+     it, and splitting it would corrupt both halves and break the rule join. */
+  const PATHISH = /[\/\\=]|^[a-z0-9-]+(\.[a-z0-9-]+)+$/i;
+  function splitPath(raw) {
+    const s = String(raw || '').trim();
+    if (!s) return { name: '', path: '' };
+    const m = s.match(/^(.*?)\s*\(([^()]*)\)\s*$/);
+    if (m && PATHISH.test(m[2].trim())) return { name: m[1].trim(), path: m[2].trim() };
+    return { name: s, path: '' };
+  }
+
   /** Header-only check, so a file can be routed without parsing 50k rows first. */
   function looksLikeRecon(header) {
     const map = mapHeaders(header.map(h => String(h || '').trim()));
@@ -161,14 +173,18 @@
 
     const g = (row, f) => map[f] == null ? '' : (row[map[f]] || '').trim();
     const records = [];
+    const health = { dataRows: 0, kept: 0, skippedEmpty: 0, shortRows: 0 };
     for (let i = 1; i < grid.length; i++) {
       const row = grid[i];
+      health.dataRows++;
+      if (row.length < header.length) health.shortRows++;
       const userName = g(row, 'accountUserName');
       const issue = g(row, 'issue');
-      if (!userName && !issue) continue;
+      if (!userName && !issue) { health.skippedEmpty++; continue; }
+      health.kept++;
       const personRaw = g(row, 'person');
       const permRaw = g(row, 'permission');
-      const perm = splitParenthetical(permRaw);
+      const perm = splitPath(permRaw);
       records.push({
         i: records.length,
         system: g(row, 'system') || 'Unknown system',
@@ -183,7 +199,7 @@
         enabled: parseBool(g(row, 'accountEnabled')),
         permissionRaw: permRaw,
         permission: perm.name,
-        permissionPath: perm.extra,
+        permissionPath: perm.path,
         permissionConfig: g(row, 'permissionConfig'),
         subPermission: g(row, 'subPermission'),
         issue: issue || 'Unspecified',
@@ -191,6 +207,21 @@
       });
     }
     if (!records.length) throw new Error('CSV contained a header but no data rows.');
+
+    if (health.skippedEmpty) {
+      warnings.push(health.skippedEmpty + ' row(s) skipped: no account and no issue on the line.');
+    }
+    if (health.shortRows) {
+      warnings.push(health.shortRows + ' row(s) carry fewer columns than the header — usually an unquoted delimiter inside a value.');
+    }
+    /* The findings match the reconciliation vocabulary; an export whose Issue column
+       says something else entirely would produce silent zeros everywhere. */
+    const KNOWN_ISSUES = ['Account unmanaged', 'Permission unmanaged', 'Permission missing'];
+    if (!records.some(r => KNOWN_ISSUES.includes(r.issue))) {
+      warnings.push('No Issue value matches the known reconciliation vocabulary (' +
+        KNOWN_ISSUES.join(', ') + ') — findings that depend on it will be empty. Found e.g.: ' +
+        HR.util.uniq(records.slice(0, 200).map(r => r.issue)).slice(0, 4).join(', '));
+    }
 
     return {
       records,
@@ -200,10 +231,11 @@
         delimiter: delim,
         headers: header,
         rowCount: records.length,
+        health,
         fingerprint: HR.util.hash(text.length + '|' + records.length + '|' + text.slice(0, 4096))
       }
     };
   }
 
-  HR.parse = { parse, parseDelimited, sniffDelim, splitParenthetical, parseBool, decode, looksLikeRecon };
+  HR.parse = { parse, parseDelimited, sniffDelim, splitParenthetical, splitPath, parseBool, decode, looksLikeRecon };
 })(window.HR);

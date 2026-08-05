@@ -44,14 +44,40 @@
     return null;
   }
 
-  /** "07/14/2026 09:09:29" — US order, which Date.parse would read the same way, but be explicit. */
-  function parseDate(value) {
+  const SLASH_DATE = /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:[ T]+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/;
+
+  /**
+   * "07/14/2026 09:09:29" — HelloID writes US order, but a tenant's own tooling can
+   * re-export the file day-first, and JS Date would silently roll month 13 into the
+   * next year. `dayFirst` is decided per file by whoever saw all the values.
+   */
+  function parseDate(value, dayFirst) {
     const s = String(value || '').trim();
     if (!s) return null;
-    const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})[ T]+(\d{1,2}):(\d{2}):(\d{2})/);
-    if (m) return new Date(+m[3], +m[1] - 1, +m[2], +m[4], +m[5], +m[6]);
+    const m = s.match(SLASH_DATE);
+    if (m) {
+      const mm = dayFirst ? +m[2] : +m[1];
+      const dd = dayFirst ? +m[1] : +m[2];
+      if (mm < 1 || mm > 12 || dd < 1 || dd > 31) return null;
+      return new Date(+m[3], mm - 1, dd, +(m[4] || 0), +(m[5] || 0), +(m[6] || 0));
+    }
     const d = new Date(s);
     return isNaN(d.getTime()) ? null : d;
+  }
+
+  /**
+   * Which side of the slash is the day? Any value above 12 settles it; a file where
+   * nothing settles it is read as HelloID writes it, month first.
+   */
+  function detectDayFirst(values) {
+    let firstOver = false, secondOver = false;
+    for (const v of values) {
+      const m = String(v || '').match(SLASH_DATE);
+      if (!m) continue;
+      if (+m[1] > 12) firstOver = true;
+      if (+m[2] > 12) secondOver = true;
+    }
+    return firstOver && !secondOver;
   }
 
   function parse(text, fileName) {
@@ -69,14 +95,22 @@
     header.forEach((h, i) => { col[normHeader(h)] = i; });
     const get = (row, key) => col[key] == null ? '' : (row[col[key]] || '').trim();
 
+    /* Date order is a property of the file, so look at every date before parsing any. */
+    const dateCols = kind === 'history' ? ['createdon', 'finishedon'] : ['lastchangedon'];
+    const dateSamples = [];
+    for (let i = 1; i < grid.length; i++) {
+      for (const c of dateCols) dateSamples.push(get(grid[i], c));
+    }
+    const dayFirst = detectDayFirst(dateSamples);
+
     const rows = [];
+    let skipped = 0, badDates = 0;
     for (let i = 1; i < grid.length; i++) {
       const r = grid[i];
       const personRaw = get(r, 'person');
       const entitlementRaw = get(r, 'entitlementname');
-      if (!personRaw && !entitlementRaw) continue;
-      const ent = HR.parse.splitParenthetical(entitlementRaw);
-      const person = HR.parse.splitParenthetical(personRaw);
+      if (!personRaw && !entitlementRaw) { skipped++; continue; }
+      const ent = HR.parse.splitPath(entitlementRaw);
 
       /* Some tenants name an entitlement "<permission type> - <name>" — "OperatorGroup -
          Applicatiebeheerders", "Security Group - Office 365 E3" — with the type repeated
@@ -86,14 +120,15 @@
       const record = {
         i: rows.length,
         personRaw,
-        personName: person.name,
-        personId: person.extra,
+        /* Verbatim, like the reconciliation: the column is a display name, not a format. */
+        personName: personRaw,
+        personId: '',
         system: get(r, 'system') || 'Unknown system',
         entitlementRaw,
         entitlement: ent.name,
         entitlementType: parts.type,
         entitlementLeaf: parts.leaf,
-        path: ent.extra,
+        path: ent.path,
         configuration: get(r, 'permissionconfigurationdisplayname'),
         /* "Account" and "Account Access" are the account itself, not a group on it. */
         isAccount: /^account( access)?$/i.test(ent.name)
@@ -102,18 +137,24 @@
       if (kind === 'history') {
         record.operation = get(r, 'operation') || 'Unknown';
         record.result = get(r, 'result') || 'Unknown';
-        record.createdOn = parseDate(get(r, 'createdon'));
-        record.finishedOn = parseDate(get(r, 'finishedon'));
+        record.createdOn = parseDate(get(r, 'createdon'), dayFirst);
+        record.finishedOn = parseDate(get(r, 'finishedon'), dayFirst);
+        if (get(r, 'createdon') && !record.createdOn) badDates++;
         record.origins = (get(r, 'origins') || '').split('|').map(s => s.trim()).filter(Boolean);
         record.durationMs = (record.createdOn && record.finishedOn)
           ? record.finishedOn - record.createdOn : null;
       } else {
-        record.lastChangedOn = parseDate(get(r, 'lastchangedon'));
+        record.lastChangedOn = parseDate(get(r, 'lastchangedon'), dayFirst);
+        if (get(r, 'lastchangedon') && !record.lastChangedOn) badDates++;
       }
       rows.push(record);
     }
 
-    return kind === 'history' ? buildHistory(rows, fileName, text) : buildGranted(rows, fileName, text);
+    const health = { dataRows: grid.length - 1, kept: rows.length, skippedEmpty: skipped, shortRows: 0, badDates, dayFirst };
+    const out = kind === 'history' ? buildHistory(rows, fileName, text) : buildGranted(rows, fileName, text);
+    out.meta.health = health;
+    if (badDates) (out.warnings = out.warnings || []).push(badDates + ' row(s) carry a date that could not be read.');
+    return out;
   }
 
   /* ------------------------------------------------------------------ granted */

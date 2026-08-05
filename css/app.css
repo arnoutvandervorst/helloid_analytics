@@ -167,6 +167,7 @@ label.inline { display: inline-flex; align-items: center; gap: 6px; font-size: 1
 .sidenav.collapsed .nav-lock { display: none; }
 .gate-source { padding: 10px 12px; border: 1px solid var(--border-strong); border-radius: 8px; }
 .gate-source p { margin: 4px 0 0; }
+.slot-health { color: var(--warning); }
 .nav-group-label {
   font-size: 10px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted);
   padding: 12px 10px 4px; white-space: nowrap;
