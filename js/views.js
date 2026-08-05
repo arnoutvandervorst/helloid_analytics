@@ -66,7 +66,8 @@
     people: ['vault|recon'], org: ['vault'],
     mining: ['vault', 'recon|granted'], rules: ['rules'],
     products: ['products|assignments'], activity: ['granted|history'],
-    explain: ['recon'], diff: ['recon'], board: ['recon']
+    explain: ['recon'], diff: ['recon'], board: ['recon'],
+    conventions: ['recon']
   };
 
   function hasSource(k) {

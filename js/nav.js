@@ -41,13 +41,14 @@
     star: 'M12 4l2.4 5 5.6.8-4 3.9 1 5.5-5-2.6-5 2.6 1-5.5-4-4 5.6-.7L12 4z',
     collapse: 'M15 5l-7 7 7 7M20 5v14',
     expand: 'M9 5l7 7-7 7M4 5v14',
-    lock: 'M6 11h12v9H6zM9 11V8a3 3 0 016 0v3'
+    lock: 'M6 11h12v9H6zM9 11V8a3 3 0 016 0v3',
+    conventions: 'M4 6h16M4 12h10M4 18h13M19 16l2 2-2 2'
   };
 
   /* The groups are the questions somebody arrives with, not the modules that answer them. */
   const GROUPS = [
     { key: 'state', views: ['overview', 'risk', 'cost'] },
-    { key: 'who', views: ['accounts', 'permissions', 'people', 'org'] },
+    { key: 'who', views: ['accounts', 'permissions', 'people', 'org', 'conventions'] },
     { key: 'model', views: ['mining', 'rules', 'products', 'activity', 'explain'] },
     { key: 'data', views: ['diff', 'snapshots', 'sources'] },
     { key: 'out', views: ['board', 'settings'] }
