@@ -37,12 +37,17 @@
     return !!data && typeof data === 'object' && Array.isArray(data.Persons);
   }
 
-  function normaliseContract(c, index) {
+  function normaliseContract(c, index, stats) {
+    const d = v => {
+      const parsed = date(v);
+      if (stats && v && !parsed) stats.badDates++;
+      return parsed;
+    };
     return {
       index,
       externalId: str(c.ExternalId),
-      startDate: date(c.StartDate),
-      endDate: date(c.EndDate),
+      startDate: d(c.StartDate),
+      endDate: d(c.EndDate),
       type: ref(c.Type),
       department: ref(c.Department),
       title: ref(c.Title),
@@ -79,9 +84,10 @@
 
     const warnings = [];
     const now = new Date();
+    const health = { persons: data.Persons.length, badDates: 0, noIdentity: 0, noContract: 0 };
 
     const persons = data.Persons.map((p, i) => {
-      const contracts = (p.Contracts || []).map(normaliseContract);
+      const contracts = (p.Contracts || []).map((c, ci) => normaliseContract(c, ci, health));
       const primary = p.PrimaryContract && Object.keys(p.PrimaryContract).length
         ? normaliseContract(p.PrimaryContract, -1) : (contracts[0] || null);
 
@@ -137,8 +143,11 @@
       }
     }));
 
-    const withoutContract = persons.filter(p => !p.contracts.length).length;
-    if (withoutContract) warnings.push(withoutContract + ' person(s) have no contract; conditions on contract attributes cannot select them.');
+    health.noContract = persons.filter(p => !p.contracts.length).length;
+    if (health.noContract) warnings.push(health.noContract + ' person(s) have no contract; conditions on contract attributes cannot select them.');
+    health.noIdentity = persons.filter(p => !p.displayName && !p.externalId && !p.personId).length;
+    if (health.noIdentity) warnings.push(health.noIdentity + ' person(s) carry no display name, external id or person id.');
+    if (health.badDates) warnings.push(health.badDates + ' contract date(s) could not be read.');
 
     return {
       persons, departments, warnings,
@@ -151,6 +160,7 @@
         contractCount: U.sum(persons, p => p.contracts.length),
         customFields: U.uniq(persons.flatMap(p => Object.keys(p.custom || {}))),
         contractCustomFields: U.uniq(persons.flatMap(p => p.contracts.flatMap(c => Object.keys(c.custom || {})))),
+        health,
         fingerprint: HR.util.hash(text.length + '|' + persons.length + '|' + text.slice(0, 4096))
       }
     };

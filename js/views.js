@@ -308,7 +308,8 @@
           health: st.ruleSet.meta.health };
       case 'vault':
         return st.vault && { file: st.vault.meta.fileName, loaded: st.importedAt.vault,
-          detail: T('src.vaultDetail', { n: st.vault.persons.length, c: st.vault.meta.contractCount }) };
+          detail: T('src.vaultDetail', { n: st.vault.persons.length, c: st.vault.meta.contractCount }),
+          health: st.vault.meta.health };
       case 'granted':
         return st.granted && { file: st.granted.meta.fileName, loaded: st.importedAt.granted,
           detail: st.granted.empty ? T('act.grantedEmpty')
@@ -358,6 +359,8 @@
       healthBits.push(T('src.healthSkipped', { n: U.fmtInt((h.skippedEmpty || 0) + (h.shortRows || 0)) }));
     }
     if (h && h.badDates) healthBits.push(T('src.healthBadDates', { n: U.fmtInt(h.badDates) }));
+    if (h && h.noIdentity) healthBits.push(T('src.healthNoIdentity', { n: U.fmtInt(h.noIdentity) }));
+    if (h && h.noContract) healthBits.push(T('src.healthNoContract', { n: U.fmtInt(h.noContract) }));
 
     const body = st
       ? el('div', {}, [
