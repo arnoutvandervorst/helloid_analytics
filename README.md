@@ -12,7 +12,7 @@ entitlements into modelled, draft-only and unmodelled; **granted entitlements** 
 recorded", and turn a missing entitlement into a failed grant on a date; the **entitlement
 catalogue** names what HelloID still lists that the target system no longer has.
 
-Serve it from a laptop, a NUC or any static host — it is plain files, with no build step,
+Serve it from a laptop or any static host — it is plain files, with no build step,
 no CDN and no back end. Wherever it runs, the exports are read and analysed in the browser
 that opened the page: they are never uploaded to the host serving it.
 
@@ -121,7 +121,7 @@ panel sets the product name shown in the title bar.
 ## Hosting it
 
 `Dockerfile` + `docker-compose.yml` serve the folder from nginx on loopback, fronted by a
-Cloudflare tunnel — see `DEPLOY-NUC.md`. Only `index.html`, `css/`, `js/` and `assets/`
+Cloudflare tunnel — see `DEPLOY.md`. Only `index.html`, `css/`, `js/` and `assets/`
 enter the image; `.dockerignore` keeps exports out and nginx returns 403 for `.csv`/`.json`
 outside `/assets/` in case one is ever copied onto the host.
 
