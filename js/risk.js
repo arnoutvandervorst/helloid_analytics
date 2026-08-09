@@ -34,6 +34,7 @@
       ],
       bands: Object.fromEntries(bands),
       byClass: rollup(accs, a => a.clsLabel),
+      byEmployeeCategory: rollup(accs, a => a.ecatLabel || '—'),
       bySystem: rollup(accs, a => a.system),
       topAccounts: accs.slice().sort((x, y) => y.riskRaw - x.riskRaw).slice(0, 25),
       topPermissions: model.permissionList.slice().sort((x, y) => y.riskScore - x.riskScore).slice(0, 25)
@@ -56,7 +57,7 @@
 
   function scoreAccount(a, cfg, R) {
     const parts = [];
-    const add = (label, value, detail) => { if (value > 0.01) parts.push({ label, value, detail }); };
+    const add = (label, value, detail, noMult) => { if (value > 0.01) parts.push({ label, value, detail, noMult }); };
 
     /* --- identity-level exposure (scaled by account class) --- */
     let identity = 0;
@@ -70,7 +71,7 @@
         [a.flagged.accountUnmanaged ? T('rc.identityUnmanaged') : null,
          a.orphan && a.enabled !== false ? T('rc.identityEnabled') : null,
          a.orphan && hasPriv ? T('rc.identityPriv') : null,
-         a.clsWeight !== 1 ? a.clsLabel + ' ×' + a.clsWeight : null].filter(Boolean).join(', '));
+         a.clsWeight !== 1 ? a.clsLabel + ' ×' + a.clsWeight : null].filter(Boolean).join(', '), true);
     }
 
     /* --- dormant-but-entitled --- */
@@ -120,6 +121,12 @@
       add(T('rc.stacked'), R.stackedLicenceBonus,
         a.licences.map(l => l.name).join(' + '));
     }
+
+    /* Who the account works for scales what it holds: the employee-category
+       multiplier applies to the entitlement components, not to the identity
+       component — ownership risk is the same whoever the owner would be. */
+    const mult = a.ecatMult || 1;
+    if (mult !== 1) for (const p of parts) if (!p.noMult) p.value *= mult;
 
     const raw = U.sum(parts, p => p.value);
     a.riskParts = parts.sort((x, y) => y.value - x.value);

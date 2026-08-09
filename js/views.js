@@ -692,6 +692,24 @@
       ], rows: m.risk.byClass, pageSize: 12, exportName: 'risk-by-class',
       initialSort: { key: 'meanRisk', dir: -1 }
     })));
+
+    /* Who the accounts work for: the multiplier column explains why two accounts
+       with the same access rank apart. */
+    g.appendChild(card(T('rk.byEcat'), T('rk.byEcatNote'), HR.table.make({
+      columns: [
+        { key: 'key', label: T('c.empCategory') },
+        { key: 'multiplier', label: T('st.multiplier'), num: true,
+          render: r => { const c = (HR.config.get().employeeCategories || []).find(x => HR.config.labelOf(x) === r.key); return c ? '×' + c.multiplier : '—'; } },
+        { key: 'accounts', label: T('ov.accounts'), num: true },
+        { key: 'meanRisk', label: T('rk.meanRisk'), num: true, render: r => U.fmtNum(r.meanRisk, 1) },
+        { key: 'maxRisk', label: T('rk.max'), num: true },
+        { key: 'critical', label: T('c.critical'), num: true },
+        { key: 'high', label: T('c.high'), num: true },
+        { key: 'monthlyCost', label: T('c.costMo'), num: true, render: r => U.fmtMoney(r.monthlyCost) }
+      ], rows: m.risk.byEmployeeCategory, pageSize: 12, exportName: 'risk-by-employee-category',
+      initialSort: { key: 'meanRisk', dir: -1 },
+      onRowClick: r => HR.app.go('accounts', { ecat: r.key })
+    })));
     f.appendChild(g);
 
     /* findings */
@@ -988,6 +1006,7 @@
     if (params.filter === 'orphan') { rows = rows.filter(a => a.orphan); notes.push(T('ac.fUnownedOnly')); }
     if (params.issue) { rows = rows.filter(a => a.issues[params.issue]); notes.push(T('ac.fIssue', { v: params.issue })); }
     if (params.cls) { rows = rows.filter(a => a.clsLabel === params.cls); notes.push(T('ac.fClass', { v: params.cls })); }
+    if (params.ecat) { rows = rows.filter(a => a.ecatLabel === params.ecat); notes.push(T('ac.fEcat', { v: params.ecat })); }
     if (params.band) { rows = rows.filter(a => a.riskBand === params.band); notes.push(T('ac.fBand', { v: T('c.' + params.band) })); }
     if (params.riskMin != null) { rows = rows.filter(a => a.riskScore >= params.riskMin && a.riskScore <= params.riskMax); notes.push(T('ac.fRisk', { a: params.riskMin, b: params.riskMax })); }
     if (params.permKey) { rows = rows.filter(a => a.permKeys.has(params.permKey)); notes.push(T('ac.fHolders')); }
@@ -1005,6 +1024,8 @@
         { key: 'displayName', label: T('c.displayName') },
         { key: 'personName', label: T('c.person'), render: r => r.personRaw ? el('span', { text: r.personName }) : el('span', { class: 'sev critical', text: T('c.unowned') }) },
         { key: 'clsLabel', label: T('c.class') },
+        { key: 'ecatLabel', label: T('c.empCategory'), hint: T('ac.ecatHint'),
+          render: r => el('span', { title: T('dr.ecatSource.' + (r.ecatSource || 'default')), text: r.ecatLabel }) },
         { key: 'enabled', label: T('c.state'), value: r => T(r.enabled === false ? 'c.disabled' : 'c.enabled'), render: r => el('span', { class: 'pill', text: T(r.enabled === false ? 'c.disabled' : 'c.enabled') }) },
         { key: 'permCount', label: T('c.perms'), num: true },
         { key: 'unmanagedPermCount', label: T('c.unmanaged'), num: true },
@@ -1016,12 +1037,13 @@
       rows, pageSize: 40, exportName: 'accounts',
       initialSort: { key: 'riskScore', dir: -1 },
       searchPlaceholder: T('ac.searchPh'),
-      search: (r, q) => (r.userName + ' ' + r.displayName + ' ' + r.personRaw + ' ' + r.clsLabel).toLowerCase().includes(q) ||
+      search: (r, q) => (r.userName + ' ' + r.displayName + ' ' + r.personRaw + ' ' + r.clsLabel + ' ' + r.ecatLabel).toLowerCase().includes(q) ||
         r.perms.some(p => p.name.toLowerCase().includes(q)),
       filters: [
         { key: 'state', label: T('c.state'), options: [{ value: 'enabled', label: T('c.enabled') }, { value: 'disabled', label: T('c.disabled') }], match: (r, v) => (v === 'disabled') === (r.enabled === false) },
         { key: 'owner', label: T('c.owner'), options: [{ value: 'owned', label: T('c.linked') }, { value: 'orphan', label: T('c.unowned') }], match: (r, v) => (v === 'orphan') === !!r.orphan },
         { key: 'cls', label: T('c.class'), options: U.uniq(m.accountList.map(a => a.clsLabel)).map(v => ({ value: v, label: v })), match: (r, v) => r.clsLabel === v },
+        { key: 'ecat', label: T('c.empCategory'), options: U.uniq(m.accountList.map(a => a.ecatLabel)).filter(Boolean).map(v => ({ value: v, label: v })), match: (r, v) => r.ecatLabel === v },
         { key: 'band', label: T('c.risk'), options: ['critical', 'high', 'medium', 'low'].map(v => ({ value: v, label: T('c.' + v) })), match: (r, v) => r.riskBand === v }
       ],
       onRowClick: a => drawerAccount(a)
@@ -1713,27 +1735,38 @@
         body.innerHTML = '';
         const t = el('table', { class: 'tbl' });
         t.appendChild(el('thead', {}, el('tr', {}, fields.map(fl => el('th', { class: 'no-sort' + (fl.num ? ' num' : ''), text: fl.label }))
-          .concat([el('th', { class: 'no-sort num', text: opts && opts.target ? T('rv.matches') : '' }), el('th', { class: 'no-sort' })]))));
+          .concat([el('th', { class: 'no-sort num', text: opts && (opts.target || opts.matchFn) ? T('rv.matches') : '' }), el('th', { class: 'no-sort' })]))));
         const tb = el('tbody');
         list.forEach((item, idx) => {
           const tr = el('tr');
           fields.forEach(fl => {
             const td = el('td', { class: fl.num ? 'num' : '' });
-            const shown = (fl.translated && item.key) ? HR.config.labelOf(item) : item[fl.key];
-            const inp = el('input', {
-              type: fl.num ? 'number' : 'text', value: shown == null ? '' : shown,
-              step: fl.step || 'any',
-              oninput: e => {
-                item[fl.key] = fl.num ? parseFloat(e.target.value) || 0 : e.target.value;
-                if (fl.translated) delete item.key;   // a hand-typed label stops being translated
-              }
-            });
-            inp.style.width = fl.width || (fl.num ? '90px' : '100%');
-            td.appendChild(inp);
+            if (fl.options) {
+              /* A linked reference, not free text: pick from what is defined. */
+              const sel = el('select', { onchange: e => { item[fl.key] = e.target.value; draw(); } });
+              fl.options().forEach(o => sel.appendChild(el('option', {
+                value: o.value, text: o.label, selected: (item[fl.key] || '') === o.value })));
+              td.appendChild(sel);
+            } else {
+              const shown = (fl.translated && item.key) ? HR.config.labelOf(item) : item[fl.key];
+              const inp = el('input', {
+                type: fl.num ? 'number' : 'text', value: shown == null ? '' : shown,
+                step: fl.step || 'any',
+                oninput: e => {
+                  item[fl.key] = fl.num ? parseFloat(e.target.value) || 0 : e.target.value;
+                  if (fl.translated) delete item.key;   // a hand-typed label stops being translated
+                }
+              });
+              inp.style.width = fl.width || (fl.num ? '90px' : '100%');
+              td.appendChild(inp);
+            }
             tr.appendChild(td);
           });
-          if (opts && opts.target && HR.app.state.model) {
-            const res = HR.mine.test(item.pattern, opts.target, HR.app.state.model);
+          const res = HR.app.state.model && opts
+            ? (opts.matchFn ? opts.matchFn(item)
+              : (opts.target ? HR.mine.test(item.pattern, opts.target, HR.app.state.model) : null))
+            : null;
+          if (res) {
             tr.appendChild(el('td', { class: 'num' }, el('span', {
               class: 'pill' + (res.valid ? (res.everything ? ' removed' : '') : ' removed'),
               title: res.valid ? '' : res.error,
@@ -1759,13 +1792,9 @@
       return g;
     };
 
-    const pricingTab = () => grid([
-      editableList(T('st.priceBook'), T('st.priceBookNote'),
-        cfg.priceBook,
-        [{ key: 'label', label: T('st.label') }, { key: 'pattern', label: T('st.pattern') },
-         { key: 'price', label: T('st.price'), num: true, step: '0.01' }],
-        () => ({ label: 'New SKU', pattern: '^LIC-', price: 0, unit: 'month' }), { target: 'permission' }),
-
+    /* The classification is defined once, globally; pricing links to it below and
+       risk attributes live on the rows themselves. */
+    const classificationTab = () => grid([
       editableList(T('st.categories'), T('st.categoriesNote'),
         cfg.categories,
         [{ key: 'label', label: T('c.category'), translated: true }, { key: 'pattern', label: T('st.patternShort') }, { key: 'sensitivity', label: T('st.sensitivity'), num: true, step: '0.1' }],
@@ -1773,8 +1802,43 @@
 
       editableList(T('st.classes'), T('st.classesNote'),
         cfg.accountClasses,
-        [{ key: 'label', label: T('c.class'), translated: true }, { key: 'pattern', label: T('st.patternShort') }, { key: 'weight', label: T('st.weight'), num: true, step: '0.1' }],
-        () => ({ id: 'custom' + Date.now(), label: 'New class', pattern: '^X', weight: 1 }), { target: 'account' })
+        [{ key: 'label', label: T('c.class'), translated: true },
+         { key: 'pattern', label: T('st.accountPattern'), width: '160px' },
+         { key: 'groupPattern', label: T('st.groupPattern'), width: '160px' },
+         { key: 'vaultPattern', label: T('st.vaultPattern'), width: '140px' },
+         { key: 'weight', label: T('st.weight'), num: true, step: '0.1' }],
+        () => ({ id: 'custom' + Date.now(), label: 'New class', pattern: '^X', groupPattern: '', vaultPattern: '', weight: 1 }), { target: 'account' }),
+
+      editableList(T('st.ecats'), T('st.ecatsNote'),
+        cfg.employeeCategories,
+        [{ key: 'label', label: T('c.empCategory'), translated: true },
+         { key: 'multiplier', label: T('st.multiplier'), num: true, step: '0.05' },
+         { key: 'vaultPattern', label: T('st.vaultPattern'), width: '160px' },
+         { key: 'accountPattern', label: T('st.accountPattern'), width: '160px' },
+         { key: 'groupPattern', label: T('st.groupPattern'), width: '160px' }],
+        () => ({ id: 'custom' + Date.now(), label: 'New category', multiplier: 1, vaultPattern: '', accountPattern: '', groupPattern: '' }))
+    ]);
+
+    const pricingTab = () => grid([
+      editableList(T('st.priceBook'), T('st.priceBookNote'),
+        cfg.priceBook,
+        [{ key: 'label', label: T('st.label') },
+         { key: 'classification', label: T('st.classification'), options: () =>
+            [{ value: '', label: T('st.anyClassification') }].concat(
+              cfg.categories.map(c => ({ value: c.id, label: HR.config.labelOf(c) }))) },
+         { key: 'pattern', label: T('st.refine'), width: '160px' },
+         { key: 'price', label: T('st.price'), num: true, step: '0.01' }],
+        () => ({ label: 'New SKU', classification: 'licence', pattern: '', price: 0, unit: 'month' }),
+        { matchFn: item => {
+            const m = HR.app.state.model;
+            if (!m) return null;
+            let rx = null;
+            try { if (item.pattern) rx = new RegExp(item.pattern, 'i'); }
+            catch (e) { return { valid: false, error: e.message, count: 0, everything: false }; }
+            const hits = m.permissionList.filter(p =>
+              (!item.classification || p.category === item.classification) && (!rx || rx.test(p.name)));
+            return { valid: true, count: hits.length, everything: false };
+          } })
     ]);
 
     const numField = (obj, key, label, step) => {
@@ -1913,6 +1977,7 @@
     ])]);
 
     f.appendChild(tabbed('settings', [
+      { id: 'classification', label: T('st.tab.classification'), build: classificationTab },
       { id: 'pricing', label: T('st.tab.pricing'), build: pricingTab },
       { id: 'weights', label: T('st.tab.weights'), build: weightsTab },
       { id: 'matching', label: T('st.tab.matching'), build: matchingTab },
@@ -2798,7 +2863,10 @@
         }));
         cfg.priceBook.unshift(...Array.from(picked.prices).map(i => {
           const r = sug.prices[i];
-          return { label: r.label, pattern: r.pattern, price: r.price, unit: 'month' };
+          /* The proposal's label is the exact permission name, so its classification
+             is whatever the taxonomy says about that name. */
+          return { label: r.label, classification: HR.config.categoryFor(r.label).id,
+            pattern: r.pattern, price: r.price, unit: 'month' };
         }));
         HR.config.save(cfg);
         HR.app.state.review = null;
@@ -2867,7 +2935,9 @@
       el('h2', { text: a.userName }),
       el('div', { class: 'row' }, [
         el('span', { class: 'sev ' + a.riskBand, text: T('app.riskShort') + ' ' + a.riskScore }),
-        el('span', { class: 'pill', text: a.clsLabel }),
+        el('span', { class: 'pill', title: T('dr.ecatSource.' + (a.clsSource || 'default')), text: a.clsLabel }),
+        a.ecatLabel ? el('span', { class: 'pill', title: T('dr.ecatSource.' + (a.ecatSource || 'default')),
+          text: a.ecatLabel + (a.ecatMult !== 1 ? ' ×' + a.ecatMult : '') }) : null,
         el('span', { class: 'pill', text: T(a.enabled === false ? 'c.disabled' : 'c.enabled') }),
         a.orphan ? el('span', { class: 'pill removed', text: T('c.unowned') }) : el('span', { class: 'pill', text: a.personName })
       ])
@@ -2878,6 +2948,7 @@
       [T('c.system'), a.system],
       [T('c.displayName'), a.displayName],
       [T('c.person'), a.personRaw || T('dr.notLinked')],
+      [T('c.empCategory'), a.ecatLabel ? a.ecatLabel + ' · ' + T('dr.ecatSource.' + (a.ecatSource || 'default')) : '—'],
       [T('dr.permsHeld'), String(a.permCount)],
       [T('dr.unmanagedAssign'), String(a.unmanagedPermCount)],
       [T('dr.missingEnt'), String(a.missingCount)],
@@ -2886,7 +2957,8 @@
       [T('dr.uniqueEnt'), a.uniquePerms && a.uniquePerms.length ? a.uniquePerms.map(p => p.name).join(', ') : '—']
     ]));
 
-    body.appendChild(card(T('dr.whyScore'), T('dr.componentsSum', { n: a.riskScore }) + (a.riskRaw > a.riskScore ? ' · ' + T('dr.cappedFrom', { n: Math.round(a.riskRaw) }) : ''),
+    body.appendChild(card(T('dr.whyScore'), T('dr.componentsSum', { n: a.riskScore }) + (a.riskRaw > a.riskScore ? ' · ' + T('dr.cappedFrom', { n: Math.round(a.riskRaw) }) : '')
+      + (a.ecatMult && a.ecatMult !== 1 ? ' · ' + T('dr.ecatApplied', { m: a.ecatMult, cat: a.ecatLabel }) : ''),
       a.riskParts.length ? C.barList(a.riskParts.map(p => ({
         label: p.label, value: Math.round(p.value), color: C.STATUS[a.riskBand], note: p.detail,
         tip: '<div class="t-title">' + U.esc(p.label) + '</div><div class="t-row"><span>points</span><b>' +

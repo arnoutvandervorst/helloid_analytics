@@ -7,7 +7,7 @@
   const U = HR.util;
 
   const SPLIT = /[-_.\s]+/;
-  const MIN_NAMES = 3;          // a prefix needs this many distinct names to be worth a rule
+  const MIN_NAMES = 5;          // a prefix needs this many distinct names to be worth a rule
   const MIN_ACCOUNTS = 2;       // an account-name pattern needs this many accounts
 
   /* Hints used to pre-fill a sensitivity for a newly proposed category. Matching is on
@@ -169,5 +169,8 @@
     };
   }
 
-  HR.mine = { suggest, test, escapeRx };
+  /** Sensitivity pre-fill for a proposed token, shared with the conventions viewer. */
+  const hintFor = token => SENSITIVITY_HINTS.find(h => h.rx.test(token)) || null;
+
+  HR.mine = { suggest, test, escapeRx, hintFor };
 })(window.HR);

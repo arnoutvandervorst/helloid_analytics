@@ -23,31 +23,73 @@
   ];
 
   /* --- account classes ------------------------------------------------------
-     Matched against username, then display name. `weight` scales account risk. */
+     What the account technically is; `weight` scales identity risk. Classified by
+     the same layered engine as employee categories — `pattern` matches username
+     then display name, `groupPattern` the entitlements it holds, `vaultPattern`
+     the linked contract text. Name evidence leads here (naming conventions are the
+     stronger signal for admin/service accounts); membership catches the admin
+     account that does not announce itself. The last row is the fallback and is
+     not matched on patterns. */
   const DEFAULT_ACCOUNT_CLASSES = [
-    { id: 'admin', key: 'cls.admin',   label: 'Admin account',   pattern: '^(adm[-_.]|admin[-_.]|a-|_adm)', weight: 2.4 },
-    { id: 'service', key: 'cls.service', label: 'Service account', pattern: '^(svc|srv|sa[-_.]|app[-_.]|sys[-_.])', weight: 1.6 },
-    { id: 'test', key: 'cls.test',    label: 'Test / demo',     pattern: '^(test|tst|demo|dummy|poc)', weight: 1.8 },
-    { id: 'shared', key: 'cls.shared',  label: 'Shared / generic',pattern: '^(shared|gen[-_.]|info|balie|receptie|algemeen)', weight: 1.5 },
-    { id: 'external', key: 'cls.external',label: 'External / vendor',pattern: '(leverancier|partner|extern|detachering|contractor|vendor)', weight: 1.7 },
-    { id: 'user', key: 'cls.user',    label: 'User account',    pattern: '.', weight: 1.0 }
+    { id: 'admin', key: 'cls.admin',   label: 'Admin account',   pattern: '^(adm[-_.]|admin[-_.]|a-|_adm)', weight: 2.4, groupPattern: '^(PRIV|TIER0)', vaultPattern: '' },
+    { id: 'service', key: 'cls.service', label: 'Service account', pattern: '^(svc|srv|sa[-_.]|app[-_.]|sys[-_.])', weight: 1.6, groupPattern: '', vaultPattern: '' },
+    { id: 'test', key: 'cls.test',    label: 'Test / demo',     pattern: '^(test|tst|demo|dummy|poc)', weight: 1.8, groupPattern: '', vaultPattern: '' },
+    { id: 'shared', key: 'cls.shared',  label: 'Shared / generic',pattern: '^(shared|gen[-_.]|info|balie|receptie|algemeen)', weight: 1.5, groupPattern: '', vaultPattern: '' },
+    { id: 'external', key: 'cls.external',label: 'External / vendor',pattern: '(leverancier|partner|extern|detachering|contractor|vendor)', weight: 1.7, groupPattern: '(leverancier|extern|contractor|vendor)', vaultPattern: '' },
+    { id: 'user', key: 'cls.user',    label: 'User account',    pattern: '.', weight: 1.0, groupPattern: '', vaultPattern: '' }
+  ];
+
+  /* --- employee categories --------------------------------------------------
+     Who the account works for, as a risk multiplier on its entitlement components:
+     the same access weighs heavier on an account the organisation controls less.
+     Detection is layered: a vault-linked person's contract Type/Employer text is
+     the best evidence, the account's own naming the second, group membership the
+     third; an account matching none of them takes the last row. Patterns are per
+     layer because the vocabularies differ — a contract says "uitzendkracht", the
+     account says "ext-", the group says "G-Extern". */
+  const DEFAULT_EMPLOYEE_CATEGORIES = [
+    { id: 'payroll', key: 'ecat.payroll', label: 'Payroll', multiplier: 1.0,
+      vaultPattern: '(payroll|loondienst|dienstverband|vast|onbepaalde|bepaalde|cao)',
+      accountPattern: '', groupPattern: '' },
+    { id: 'student', key: 'ecat.student', label: 'Intern / student', multiplier: 1.15,
+      vaultPattern: '(stagiair|stage|student|trainee|leerling)',
+      accountPattern: '(^stg[-_.]|stagiair|student|trainee)',
+      groupPattern: '(stagiair|student|trainee)' },
+    { id: 'volunteer', key: 'ecat.volunteer', label: 'Volunteer', multiplier: 1.2,
+      vaultPattern: '(vrijwillig|volunteer)',
+      accountPattern: '(vrijwillig|volunteer)',
+      groupPattern: '(vrijwillig|volunteer)' },
+    { id: 'temp', key: 'ecat.temp', label: 'Temp / external', multiplier: 1.25,
+      vaultPattern: '(inhuur|uitzend|extern|detacher|interim|zzp|freelan|temp|contractor|flex)',
+      accountPattern: '(^ext[-_.]|extern|inhuur|uitzend|contractor)',
+      groupPattern: '(extern|inhuur|uitzend|contractor)' },
+    { id: 'supplier', key: 'ecat.supplier', label: 'Supplier / vendor', multiplier: 1.5,
+      vaultPattern: '(leverancier|supplier|vendor|partner)',
+      accountPattern: '(^sup[-_.]|^vnd[-_.]|leverancier|supplier|vendor|partner)',
+      groupPattern: '(leverancier|supplier|vendor|partner)' },
+    { id: 'ecatUnknown', key: 'ecat.unknown', label: 'Unknown', multiplier: 1.0,
+      vaultPattern: '', accountPattern: '', groupPattern: '' }
   ];
 
   /* --- licence price book ---------------------------------------------------
-     Monthly list price per assigned permission, matched by regex on the
-     permission name. Defaults are public EUR list prices (annual commitment,
-     monthly billing) and are meant to be corrected to the customer's contract. */
+     Monthly list price per assigned permission. A rule links to a permission
+     classification — the pattern knowledge lives in the taxonomy, not here — and
+     may carry a refine regex to price specific names inside it. An empty refine
+     prices the whole classification; an empty classification applies to any.
+     First match wins, so specific rules go above their classification's default.
+     Defaults are public EUR list prices (annual commitment, monthly billing) and
+     are meant to be corrected to the customer's contract. */
   const DEFAULT_PRICE_BOOK = [
-    { pattern: '^LIC-M365-E5$',           price: 54.75, unit: 'month', label: 'Microsoft 365 E5' },
-    { pattern: '^LIC-M365-E3$',           price: 33.75, unit: 'month', label: 'Microsoft 365 E3' },
-    { pattern: '^LIC-M365-E1$',           price: 10.25, unit: 'month', label: 'Microsoft 365 E1' },
-    { pattern: '^LIC-M365-F3$',           price:  7.50, unit: 'month', label: 'Microsoft 365 F3' },
-    { pattern: '^LIC-',                   price: 10.00, unit: 'month', label: 'Other licence group' },
-    { pattern: '^APP-Copilot',            price: 28.10, unit: 'month', label: 'Microsoft 365 Copilot' },
-    { pattern: '^APP-Adobe-AcrobatPro',   price: 23.99, unit: 'month', label: 'Adobe Acrobat Pro' },
-    { pattern: '^APP-PowerBI-Pro',        price:  9.40, unit: 'month', label: 'Power BI Pro' },
-    { pattern: '^APP-Visio',              price: 15.10, unit: 'month', label: 'Visio Plan 2' },
-    { pattern: '^APP-Project',            price: 27.10, unit: 'month', label: 'Project Plan 3' }
+    { classification: 'licence',     pattern: 'M365-E5$',          price: 54.75, unit: 'month', label: 'Microsoft 365 E5' },
+    { classification: 'licence',     pattern: 'M365-E3$',          price: 33.75, unit: 'month', label: 'Microsoft 365 E3' },
+    { classification: 'licence',     pattern: 'M365-E1$',          price: 10.25, unit: 'month', label: 'Microsoft 365 E1' },
+    { classification: 'licence',     pattern: 'M365-F3$',          price:  7.50, unit: 'month', label: 'Microsoft 365 F3' },
+    { classification: 'licence',     pattern: '',                  price: 10.00, unit: 'month', label: 'Other licence group' },
+    { classification: 'application', pattern: 'Copilot',           price: 28.10, unit: 'month', label: 'Microsoft 365 Copilot' },
+    { classification: 'application', pattern: 'Adobe-AcrobatPro',  price: 23.99, unit: 'month', label: 'Adobe Acrobat Pro' },
+    { classification: 'application', pattern: 'PowerBI-Pro',       price:  9.40, unit: 'month', label: 'Power BI Pro' },
+    { classification: 'application', pattern: 'Visio',             price: 15.10, unit: 'month', label: 'Visio Plan 2' },
+    { classification: 'application', pattern: 'Project',           price: 27.10, unit: 'month', label: 'Project Plan 3' }
   ];
 
   /* --- effort / labour cost of remediation --------------------------------- */
@@ -156,6 +198,7 @@
     currency: 'EUR',
     categories: DEFAULT_CATEGORIES,
     accountClasses: DEFAULT_ACCOUNT_CLASSES,
+    employeeCategories: DEFAULT_EMPLOYEE_CATEGORIES,
     priceBook: DEFAULT_PRICE_BOOK,
     effort: DEFAULT_EFFORT,
     risk: DEFAULT_RISK,
@@ -196,14 +239,21 @@
     return current;
   }
 
-  /* Settings saved before translation existed carry no key. Re-attach it where the
-     entry is still one of the shipped defaults, so it follows the interface language. */
+  /* Reconcile stored rows with the shipped defaults they came from. Settings saved
+     before translation existed carry no key — re-attach it so the row follows the
+     interface language. Fields introduced after the row was saved (the layered
+     patterns, the multiplier) are adopted from the default with the same id; only
+     `undefined` is filled, so a value the user cleared to empty stays cleared. */
   function adoptKeys(cfg) {
-    const pair = [[cfg.categories, DEFAULTS.categories], [cfg.accountClasses, DEFAULT_ACCOUNT_CLASSES]];
+    const pair = [[cfg.categories, DEFAULTS.categories], [cfg.accountClasses, DEFAULT_ACCOUNT_CLASSES],
+      [cfg.employeeCategories, DEFAULT_EMPLOYEE_CATEGORIES]];
     pair.forEach(([list, defs]) => list.forEach(item => {
-      if (item.key) return;
       const def = defs.find(d => d.id === item.id);
-      if (def && def.label === item.label) item.key = def.key;
+      if (!def) return;
+      ['groupPattern', 'vaultPattern', 'accountPattern', 'multiplier'].forEach(k => {
+        if (def[k] !== undefined && item[k] === undefined) item[k] = def[k];
+      });
+      if (!item.key && def.label === item.label) item.key = def.key;
     }));
   }
 
@@ -213,13 +263,55 @@
       try { r._rx = new RegExp(r.pattern, 'i'); }
       catch (e) { r._rx = /$^/; r._bad = true; }
     });
-    rx(cfg.categories); rx(cfg.accountClasses); rx(cfg.priceBook);
+    rx(cfg.categories);
+    migratePriceBook(cfg);
+    rx(cfg.priceBook);
+    /* Both classification axes carry one pattern per detection layer; an empty
+       pattern means "this layer never claims an account for this row". Account
+       classes keep their historic `pattern` field as the account-name layer, so
+       mined and hand-written rows keep working unchanged. */
+    const layers = (list, accountField) => (list || []).forEach(c => {
+      const one = (src) => {
+        if (!src) return null;
+        try { return new RegExp(src, 'i'); } catch (e) { c._bad = true; return null; }
+      };
+      c._rxVault = one(c.vaultPattern);
+      c._rxAccount = one(c[accountField]);
+      c._rxGroup = one(c.groupPattern);
+    });
+    layers(cfg.employeeCategories, 'accountPattern');
+    layers(cfg.accountClasses, 'pattern');
+  }
+
+  /* Price rows saved before rules linked to classifications carry only a regex.
+     Classify the pattern by its own text: when the pattern matches the sample it
+     denotes ("^LIC-M365-E5$" → "LIC-M365-E5"), that sample can be classified like
+     any permission name and the row lands in that classification with its old
+     pattern as the refine. A pattern too regex-shaped to yield a sample prices
+     any classification — exactly what it did before. Idempotent: only rows with
+     no classification field at all are touched. */
+  function migratePriceBook(cfg) {
+    (cfg.priceBook || []).forEach(p => {
+      if (p.classification !== undefined) return;
+      const sample = (p.pattern || '').replace(/^\^/, '').replace(/\$$/, '').replace(/\\(.)/g, '$1');
+      let cls = '';
+      try {
+        if (sample && new RegExp(p.pattern, 'i').test(sample)) {
+          const cat = cfg.categories.find(c => c._rx && c._rx.test(sample));
+          if (cat && cat.id !== 'other') cls = cat.id;
+        }
+      } catch (e) { /* unreadable pattern keeps any-classification */ }
+      p.classification = cls;
+    });
   }
 
   const clone = o => JSON.parse(JSON.stringify(o));
   function stripCompiled(cfg) {
     const c = clone(cfg);
     [c.categories, c.accountClasses, c.priceBook].forEach(l => l.forEach(r => { delete r._rx; delete r._bad; }));
+    [c.employeeCategories || [], c.accountClasses].forEach(l => l.forEach(r => {
+      delete r._rxVault; delete r._rxAccount; delete r._rxGroup; delete r._bad;
+    }));
     return c;
   }
   function deepMerge(base, over) {
@@ -238,14 +330,20 @@
     const cfg = load();
     return cfg.categories.find(c => c._rx.test(name)) || cfg.categories[cfg.categories.length - 1];
   };
+  /* Name-layer only; the full layered classification (membership, vault) happens
+     in the model build, which also sees the account's entitlements. */
   const accountClassFor = (userName, displayName) => {
     const cfg = load();
-    return cfg.accountClasses.find(c => c._rx.test(userName) || c._rx.test(displayName || '')) ||
+    return cfg.accountClasses.find(c => c._rxAccount && (c._rxAccount.test(userName) || c._rxAccount.test(displayName || ''))) ||
       cfg.accountClasses[cfg.accountClasses.length - 1];
   };
-  const priceFor = name => {
+  /* A rule applies when its classification matches (empty = any) and its refine
+     regex matches (empty = the whole classification). First match wins. */
+  const priceFor = (name, categoryId) => {
     const cfg = load();
-    const hit = cfg.priceBook.find(p => p._rx.test(name));
+    const hit = cfg.priceBook.find(p =>
+      (!p.classification || p.classification === categoryId) &&
+      (!p.pattern || p._rx.test(name)));
     if (!hit) return { monthly: 0, entry: null };
     const monthly = hit.unit === 'year' ? hit.price / 12 : hit.price;
     return { monthly, entry: hit };

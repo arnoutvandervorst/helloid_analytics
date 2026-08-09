@@ -100,17 +100,74 @@
   }
 
   /* ---------------------------------------------------------- entitlements */
+
+  /* The families and suffixes are not just history — they are the vocabulary the
+     permission taxonomy should be written in. Each one can become a category rule;
+     the row shows how the current settings already carve it, so a family that is
+     100% uncategorised is a visible classification gap. */
+  const familyPattern = prefix => '^' + HR.mine.escapeRx(prefix) + '(?=[-_. ]|$)';
+  const suffixPattern = sfx => '[-_.]' + HR.mine.escapeRx(sfx) + '$';
+
+  const rulePatternExists = pattern =>
+    HR.config.get().categories.some(c => c.pattern === pattern);
+
+  function addCategoryRule(label, pattern, sensitivity) {
+    const cfg = HR.config.clone(HR.config.get());
+    /* Mined rules are more specific than the catch-all, so they go in front of it —
+       the same placement the import review uses. */
+    const at = cfg.categories.findIndex(c => c.id === 'other');
+    cfg.categories.splice(at < 0 ? cfg.categories.length : at, 0, {
+      id: 'mined-' + label.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+      label, pattern, sensitivity, color: 2
+    });
+    HR.config.save(cfg);
+    HR.app.rebuild();
+    U.toast(T('cv.ruleAdded', { label }), 5000);
+  }
+
+  function ruleCell(label, pattern, sensitivity) {
+    if (rulePatternExists(pattern)) return el('span', { class: 'pill ok', text: T('cv.ruleExists') });
+    return el('button', {
+      class: 'btn sm', text: T('cv.addRule'),
+      onclick: e => { e.stopPropagation(); addCategoryRule(label, pattern, sensitivity); }
+    });
+  }
+
+  /** Where a set of permissions lands in the current taxonomy: [label, share, isCatchAll]. */
+  function dominantCategory(perms) {
+    const per = new Map();
+    perms.forEach(p => {
+      if (!per.has(p.categoryLabel)) per.set(p.categoryLabel, { n: 0, other: p.category === 'other' });
+      per.get(p.categoryLabel).n++;
+    });
+    const top = Array.from(per.entries()).sort((a, b) => b[1].n - a[1].n)[0];
+    return top ? { label: top[0], share: top[1].n / perms.length, other: top[1].other } : null;
+  }
+
+  const meanSens = perms => perms.length ? U.sum(perms, p => p.sensitivity) / perms.length : 0;
+
+  /* Share of names that follow a family scheme, written in that scheme's dominant
+     casing — one factual number for "how healthy is this naming", no weighting. */
+  const disciplineOf = sys => sys.total
+    ? Math.max(0, (sys.familyShare * sys.total - sys.offCase) / sys.total) : 1;
+  const disciplineSeverity = d => d >= 0.9 ? 'good' : d >= 0.7 ? 'medium' : 'high';
+
   function entitlementsTab(m, en) {
     const wrap = document.createDocumentFragment();
 
+    const totalNames = U.sum(en.systems, s => s.total);
+    const inScheme = U.sum(en.systems, s => Math.round(disciplineOf(s) * s.total));
+    const discipline = totalNames ? inScheme / totalNames : 1;
+
     const k = el('div', { class: 'grid g4' });
     k.append(
+      tile(T('cv.kDiscipline'), U.fmtPct(discipline, 0), T('cv.kDisciplineFoot'),
+        { small: true, severity: disciplineSeverity(discipline) }),
       tile(T('cv.kFamilies'), U.fmtInt(en.summary.families), T('cv.kFamiliesFoot'), { small: true }),
       tile(T('cv.kStrays'), U.fmtInt(en.summary.strays), T('cv.kStraysFoot'),
         { small: true, severity: en.summary.strays ? 'medium' : 'good' }),
       tile(T('cv.kOffCase'), U.fmtInt(en.summary.offCase), T('cv.kOffCaseFoot'),
-        { small: true, severity: en.summary.offCase ? 'medium' : 'good' }),
-      tile(T('cv.kEnts'), U.fmtInt(m.permissionList.length), T('cv.kEntsFoot'), { small: true })
+        { small: true, severity: en.summary.offCase ? 'medium' : 'good' })
     );
     wrap.appendChild(k);
 
@@ -120,6 +177,12 @@
         share: U.fmtPct(sys.familyShare, 0),
         sep: sys.sep ? '"' + sys.sep + '"' : '—',
         families: sys.families.length }) }));
+      const disc = disciplineOf(sys);
+      blocks.push(el('p', { class: 'note' }, [
+        el('span', { class: 'sev ' + disciplineSeverity(disc), text: U.fmtPct(disc, 0) }),
+        document.createTextNode(' ' + T('cv.discLine', {
+          n: U.fmtInt(Math.round(disc * sys.total)), total: U.fmtInt(sys.total) }))
+      ]));
 
       if (sys.families.length) {
         blocks.push(HR.table.make({
@@ -128,21 +191,44 @@
             { key: 'count', label: T('pm.title'), num: true },
             { key: 'share', label: T('cv.cShare'), num: true, value: r => r.count / sys.total,
               render: r => U.fmtPct(r.count / sys.total, 1) },
+            { key: 'category', label: T('cv.cCategory'), value: r => { const d = dominantCategory(r.perms); return d ? d.label : '—'; },
+              render: r => {
+                const d = dominantCategory(r.perms);
+                if (!d) return el('span', { text: '—' });
+                return el('span', { class: d.other ? 'sev medium' : 'pill',
+                  text: d.label + (d.share < 1 ? ' · ' + U.fmtPct(d.share, 0) : '') });
+              } },
+            { key: 'sens', label: T('cv.cSens'), num: true, value: r => meanSens(r.perms),
+              render: r => U.fmtNum(meanSens(r.perms), 1) },
             { key: 'suffixes', label: T('cv.cSuffixes'), sortable: false,
               render: r => el('span', { class: 'trunc', text: Array.from(r.suffixes.entries())
                 .sort((a, b) => b[1] - a[1]).slice(0, 6).map(x => x[0] + ' ×' + x[1]).join('  ') || '—' }) },
             { key: 'offCase', label: T('cv.cOffCase'), num: true,
               render: r => r.offCase
                 ? el('span', { class: 'sev medium', text: String(r.offCase) })
-                : el('span', { class: 'note', text: '0' }) }
+                : el('span', { class: 'note', text: '0' }) },
+            { key: 'rule', label: '', sortable: false, render: r => {
+                const hint = HR.mine.hintFor(r.prefix);
+                return ruleCell(r.prefix, familyPattern(r.prefix), hint ? hint.sensitivity : 1.0);
+              } }
           ],
-          rows: sys.families, pageSize: 8, exportName: 'ent-families-' + sys.system
+          rows: sys.families, pageSize: 8, exportName: 'ent-families-' + sys.system,
+          onRowClick: r => drawerFamily(m, sys, r)
         }));
       }
 
       if (sys.vocab.length) {
-        blocks.push(el('p', { class: 'note', text: T('cv.vocab', {
-          list: sys.vocab.slice(0, 10).map(v => v.suffix + ' ×' + U.fmtInt(v.count)).join(' · ') }) }));
+        blocks.push(el('h3', { text: T('cv.suffixTitle') }));
+        blocks.push(HR.table.make({
+          columns: [
+            { key: 'suffix', label: T('cv.cSuffix'), render: r => el('span', { class: 'mono', text: '…' + (sys.sep || '-') + r.suffix }) },
+            { key: 'count', label: T('pm.title'), num: true },
+            { key: 'families', label: T('cv.cFamiliesCol'), num: true },
+            { key: 'rule', label: '', sortable: false,
+              render: r => ruleCell(r.suffix, suffixPattern(r.suffix), 1.0) }
+          ],
+          rows: sys.vocab.slice(0, 12), pageSize: 12, exportName: 'ent-suffixes-' + sys.system
+        }));
       }
 
       if (sys.strays.length) {
@@ -165,6 +251,38 @@
       wrap.appendChild(card(sys.system, T('cv.entNote', { n: U.fmtInt(sys.total) }), blocks));
     }
     return wrap;
+  }
+
+  /** One family opened up: every member, how it classifies today, and the rule action. */
+  function drawerFamily(m, sys, f) {
+    const d = dominantCategory(f.perms);
+    const hint = HR.mine.hintFor(f.prefix);
+    const pattern = familyPattern(f.prefix);
+    const head = el('div', {}, [
+      el('h2', { text: f.prefix + (sys.sep || '') + '…' }),
+      el('div', { class: 'row' }, [
+        el('span', { class: 'pill', text: U.fmtInt(f.count) + ' ' + T('pm.title').toLowerCase() }),
+        d ? el('span', { class: d.other ? 'pill removed' : 'pill', text: d.label + ' · ' + U.fmtPct(d.share, 0) }) : null,
+        el('span', { class: 'pill', text: T('cv.cSens') + ' ' + U.fmtNum(meanSens(f.perms), 1) }),
+        ruleCell(f.prefix, pattern, hint ? hint.sensitivity : 1.0)
+      ])
+    ]);
+    const body = el('div', { class: 'stack' });
+    body.appendChild(el('p', { class: 'note', text: T('cv.familyPattern', { pattern }) }));
+    body.appendChild(card(null, null, HR.table.make({
+      columns: [
+        { key: 'name', label: T('ct.group'), render: r => el('span', { class: 'mono', text: r.name }) },
+        { key: 'categoryLabel', label: T('c.category') },
+        { key: 'sensitivity', label: T('c.sensitivity'), num: true, render: r => U.fmtNum(r.sensitivity, 1) },
+        { key: 'holderCount', label: T('c.holders'), num: true },
+        { key: 'riskScore', label: T('c.risk'), num: true }
+      ],
+      rows: f.perms, pageSize: 15, exportName: 'family-' + f.prefix,
+      initialSort: { key: 'holderCount', dir: -1 },
+      search: (r, q) => r.name.toLowerCase().includes(q),
+      onRowClick: p => drawerPermission(p, m)
+    })));
+    HR.viewkit.openDrawer(head, body);
   }
 
   HR.views.conventions = conventionsView;

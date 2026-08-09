@@ -129,7 +129,7 @@
 
       /* Families: the first segment, counted case-insensitively — "ORG-", "Org-" and
          "org-" are one scheme written three ways, and the minority casings are
-         themselves a deviation worth naming. A prefix carried by three or more names
+         themselves a deviation worth naming. A prefix carried by five or more names
          is a scheme; everything else is a stray. */
       const families = new Map();
       const strays = [];
@@ -159,7 +159,7 @@
          shows its dominant casing, and how many names are written differently. */
       const familyList = [];
       families.forEach(f => {
-        if (f.count < 3) { strays.push(...f.perms); return; }
+        if (f.count < 5) { strays.push(...f.perms); return; }
         const casings = Array.from(f.casings.entries()).sort((a, b) => b[1] - a[1]);
         f.prefix = casings[0][0];
         f.offCase = U.sum(casings.slice(1), c => c[1]);
@@ -179,7 +179,7 @@
         v.families++;
       }));
       const vocab = Array.from(suffixVocab.values())
-        .filter(v => v.count >= 3)
+        .filter(v => v.count >= 5)
         .sort((a, b) => b.count - a.count);
 
       /* Near-family strays first: a stray that contains a family prefix, or spaces, or

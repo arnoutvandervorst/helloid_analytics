@@ -54,7 +54,7 @@
         let p = permissions.get(pk);
         if (!p) {
           const cat = HR.config.categoryFor(r.permission);
-          const price = HR.config.priceFor(r.permission);
+          const price = HR.config.priceFor(r.permission, cat.id);
           p = {
             key: pk, system: r.system, name: r.permission, path: r.permissionPath,
             category: cat.id, categoryLabel: HR.config.labelOf(cat), sensitivity: cat.sensitivity, colorSlot: cat.color,
@@ -89,9 +89,11 @@
     }
 
     /* ---- derived per-account attributes ---- */
+    /* Employee-category detection wants the vault before risk scoring runs, and the
+       vault is already in opts here; only the exact-evidence lookup is built — the
+       fuzzy correlation still happens later and does not feed the multiplier. */
+    const vaultLookup = (opts && opts.vault) ? buildVaultLookup(opts.vault) : null;
     for (const a of accounts.values()) {
-      const cls = HR.config.accountClassFor(a.userName, a.displayName);
-      a.cls = cls.id; a.clsLabel = HR.config.labelOf(cls); a.clsWeight = cls.weight;
       a.orphan = !a.personRaw;
       a.permCount = a.permKeys.size;
       a.missingCount = a.missingPermKeys.size;
@@ -102,6 +104,26 @@
       a.privileged = a.perms.filter(p => p.category === 'privileged' || p.category === 'server');
       a.monthlyCost = U.sum(a.perms, p => p.monthlyPrice || 0);
       a.maxSensitivity = a.perms.reduce((m, p) => Math.max(m, p.sensitivity), 0);
+
+      /* Both classification axes run through one layered engine; they differ only
+         in which evidence leads. A class is what the account is — its own name
+         first, what it holds second. A category is who it works for — the linked
+         contract first. */
+      const ctx = {
+        Vault: vaultCategoryStrings(a, vaultLookup),
+        Account: [a.userName, a.displayName || ''],
+        Group: a.perms.map(p => p.name)
+      };
+      const cls = classifyByLayers(cfg.accountClasses, ['Account', 'Group', 'Vault'], ctx);
+      a.cls = cls.row ? cls.row.id : '';
+      a.clsLabel = cls.row ? HR.config.labelOf(cls.row) : '';
+      a.clsWeight = cls.row && cls.row.weight > 0 ? cls.row.weight : 1;
+      a.clsSource = cls.source;
+      const ec = classifyByLayers(cfg.employeeCategories || [], ['Vault', 'Account', 'Group'], ctx);
+      a.ecat = ec.row ? ec.row.id : '';
+      a.ecatLabel = ec.row ? HR.config.labelOf(ec.row) : '';
+      a.ecatMult = ec.row && ec.row.multiplier > 0 ? ec.row.multiplier : 1;
+      a.ecatSource = ec.source;
     }
 
     /* ---- permission holder stats ---- */
@@ -230,6 +252,60 @@
    * whose only overlap is a ubiquitous group therefore read as having no peer — which
    * is the honest answer: nothing in the data distinguishes them.
    */
+  /* ---- employee category ---------------------------------------------------
+     Exact vault evidence only: the vault's own Accounts[] usernames, and person
+     display names for matching the reconciliation's Person column. Fuzzy name
+     correlation is deliberately not used here — a risk multiplier should not
+     ride on a guessed identity. */
+  function buildVaultLookup(vault) {
+    const norm = s => (s || '').trim().toLowerCase();
+    const byUser = new Map(), byName = new Map();
+    for (const p of vault.persons) {
+      for (const acc of p.accounts) if (acc.userName) byUser.set(norm(acc.userName), p);
+      if (p.displayName) byName.set(norm(p.displayName), p);
+      if (p.userName) byUser.set(norm(p.userName), p);
+    }
+    return { byUser, byName, norm };
+  }
+
+  /* What the person's paperwork calls them, as matchable text: contract Type and
+     Employer of the running contracts — or of every contract when none runs, so a
+     leaver keeps the category their access belonged to. */
+  function vaultCategoryStrings(a, lookup) {
+    if (!lookup) return null;
+    const person = lookup.byUser.get(lookup.norm(a.userName)) ||
+      lookup.byName.get(lookup.norm(a.personRaw)) ||
+      lookup.byName.get(lookup.norm(a.displayName));
+    if (!person) return null;
+    const contracts = person.activeContracts.length ? person.activeContracts : person.contracts;
+    const out = [];
+    for (const c of contracts) {
+      if (c.type && c.type.name) out.push(c.type.name);
+      if (c.type && c.type.code) out.push(c.type.code);
+      if (c.employer && c.employer.name) out.push(c.employer.name);
+    }
+    return out;
+  }
+
+  /* One layered engine for every classification axis. Layers run in the order the
+     axis trusts its evidence; within a layer the configured row order decides,
+     like every other pattern list in Settings. The last row of a list is the
+     fallback and is never pattern-matched — it catches what no layer claimed. */
+  const LAYER_SOURCE = { Vault: 'vault', Account: 'name', Group: 'membership' };
+
+  function classifyByLayers(list, order, ctx) {
+    const rows = list.slice(0, -1);
+    for (const layer of order) {
+      const strings = ctx[layer];
+      if (!strings || !strings.length) continue;
+      for (const row of rows) {
+        const rx = row['_rx' + layer];
+        if (rx && strings.some(s => rx.test(s))) return { row, source: LAYER_SOURCE[layer] };
+      }
+    }
+    return { row: list[list.length - 1], source: 'default' };
+  }
+
   function computePeerSimilarity(accounts, permissions) {
     const RARE_PER_ACCOUNT = 5;      // index each account under its 5 least common groups
     const MAX_HOLDERS = 400;         // groups above this are treated as ubiquitous
