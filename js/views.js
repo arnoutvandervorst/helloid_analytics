@@ -386,6 +386,33 @@
     return wrap;
   }
 
+  /* The collector scripts ship next to the app on a served copy, but not inside the
+     single-file bundle and not over file:// — so the download buttons only appear
+     once a probe has actually found them. Same guard as the brand-asset probe: a
+     dev server's 404 page answers 200 with HTML. */
+  let collectorProbe = null;
+  function probeCollectors() {
+    if (collectorProbe) return collectorProbe;
+    collectorProbe = Promise.all(['collect-ad.ps1', 'collect-entra.ps1', 'docs/ENTRA-CONSENT.md'].map(path =>
+      fetch(path, { method: 'HEAD' })
+        .then(res => res.ok && !(res.headers.get('content-type') || '').includes('html') ? path : null)
+        .catch(() => null)
+    )).then(found => found.filter(Boolean));
+    return collectorProbe;
+  }
+
+  function collectorDownloads() {
+    const row = el('div', { class: 'slot-actions' });
+    probeCollectors().then(found => {
+      if (!found.length) return;
+      found.forEach(path => row.appendChild(el('a', {
+        class: 'btn sm', href: path, download: path.split('/').pop(),
+        text: path.split('/').pop()
+      })));
+    });
+    return row;
+  }
+
   function sourceSlot(slot) {
     const st = slotState(slot.kind);
     const days = st && st.loaded ? Math.round((Date.now() - st.loaded) / 86400000) : null;
@@ -410,8 +437,9 @@
         ].filter(Boolean))
       : el('div', {}, [
           el('div', { class: 'note', text: T('src.slot.' + slot.kind + '.unlocks') }),
-          el('div', { class: 'note', text: T('src.slot.' + slot.kind + '.where') })
-        ]);
+          el('div', { class: 'note', text: T('src.slot.' + slot.kind + '.where') }),
+          slot.kind === 'directory' ? collectorDownloads() : null
+        ].filter(Boolean));
 
     const actions = el('div', { class: 'slot-actions' }, [
       pickButton(st ? T('src.replace') : T('src.choose'), slot.accept, st ? '' : 'primary',

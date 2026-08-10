@@ -10,6 +10,10 @@ COPY js/ /usr/share/nginx/html/js/
 COPY assets/ /usr/share/nginx/html/assets/
 # Generated fiction (make-demo-set.py). The only exports that may be served.
 COPY demo/ /usr/share/nginx/html/demo/
+# The collector scripts and their consent explainer, so the Imports view can offer
+# them for download. They read data; they never carry any.
+COPY collect-ad.ps1 collect-entra.ps1 /usr/share/nginx/html/
+COPY docs/ENTRA-CONSENT.md /usr/share/nginx/html/docs/
 
 # Deliberately absent: *.csv, vault*.json and dist/. Exports carry account, person and
 # contract data and have no business on a public host.

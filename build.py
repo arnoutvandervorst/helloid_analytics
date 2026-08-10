@@ -22,6 +22,7 @@ NAME = 'helloid-analytics'
 
 FOLDER_FILES = [
     'index.html', 'README.md', 'serve.sh', 'devserve.py', 'build.py',
+    'collect-ad.ps1', 'collect-entra.ps1', 'docs/ENTRA-CONSENT.md',
     'css/app.css',
 ] + [f'js/{p.name}' for p in sorted((ROOT / 'js').glob('*.js'))]
 
