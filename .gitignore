@@ -18,6 +18,9 @@ dist/
 product-assignments.csv
 products.json
 
+# Collector output — real directories carry personal data. demo/ stays the exception.
+directory*.json
+
 # Deployment notes for a specific host: hostnames, users and internal addresses.
 deploy-local/
 DEPLOY-NUC.md

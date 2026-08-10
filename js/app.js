@@ -16,6 +16,7 @@
     review: null,          // pending configuration proposals for the current import
     ruleSet: null,         // parsed HelloID business-rule export, when one is loaded
     vault: null,           // parsed HelloID Vault export: persons, contracts, attributes
+    directory: null,       // AD/Entra collector export: pre-HelloID baseline
     granted: null,         // what HelloID believes is granted right now
     history: null,         // what HelloID did, when, why, and whether it worked
     demo: null,            // set while showing the published fictional tenant
@@ -119,9 +120,7 @@
     state.parsed = parsed;
     state.noAutoRecon = false;
     HR.store.saveContext({ noAutoRecon: false });
-    state.model = HR.model.build(parsed.records, { ruleSet: state.ruleSet, vault: state.vault,
-      granted: state.granted, history: state.history,
-      products: state.products, assignments: state.assignments });
+    state.model = HR.model.build(parsed.records, buildOpts());
 
     const snap = HR.store.makeSnapshot(parsed, state.model);
     const dup = state.snapshots.find(s => s.fingerprint === parsed.meta.fingerprint);
@@ -166,6 +165,7 @@
       if (HR.config.looksLikeSettings(peek)) return 'settings';
       if (HR.config.looksLikeProductMap(peek)) return 'productmap';
       if (peek.kind === 'helloid-recon-snapshots' || Array.isArray(peek.snapshots)) return 'snapshots';
+      if (HR.directory.looksLikeDirectory(peek)) return 'directory';
       if (HR.products.looksLikeProducts(peek)) return 'products';
       return 'vault';
     }
@@ -201,7 +201,7 @@
 
   /** Drop a companion source without clearing the rest — each one stands on its own. */
   function clearSource(kind) {
-    if (!['rules', 'vault', 'granted', 'history', 'products', 'assignments'].includes(kind)) return;
+    if (!['rules', 'vault', 'granted', 'history', 'products', 'assignments', 'directory'].includes(kind)) return;
     state[kind] = null;
     if (kind === 'rules') state.ruleSet = null;
     delete state.raw[kind];
@@ -346,6 +346,7 @@
       } catch (err) { U.toast(err.message, 7000); }
       return;
     }
+    if (peek && HR.directory.looksLikeDirectory(peek)) return importDirectory(text, fileName);
     if (peek && HR.products.looksLikeProducts(peek)) return importProducts(text, fileName);
     if (peek && (peek.kind === 'helloid-recon-snapshots' || Array.isArray(peek.snapshots))) {
       try {
@@ -356,6 +357,30 @@
       return;
     }
     return importVault(text, fileName);
+  }
+
+  /**
+   * The pre-HelloID baseline: users, groups and nested memberships from the AD/Entra
+   * collector scripts. It substitutes for the reconciliation and the vault only while
+   * the real export of that kind is absent — rebuild() owns that precedence.
+   */
+  async function importDirectory(text, fileName) {
+    let dir;
+    try { dir = HR.directory.parse(text, fileName); }
+    catch (err) { U.toast(err.message, 7000); return; }
+    if (dir.warnings.length) U.toast(dir.warnings[0], 5000);
+
+    state.directory = dir;
+    state.raw.directory = text;
+    state.importedAt.directory = Date.now();
+    state.fileNames.directory = fileName;
+    HR.store.saveContext({ directory: text, importedAt: state.importedAt, fileNames: state.fileNames });
+
+    U.toast(T('toast.directoryLoaded', {
+      u: U.fmtInt(dir.meta.userCount), g: U.fmtInt(dir.meta.groupCount) }), 7000);
+    HR.usage.imported('directory', dir.meta.rowCount);
+    rebuild();
+    go('overview');
   }
 
   /** The vault attaches to whatever else is loaded; it is what makes conditions evaluable. */
@@ -465,9 +490,7 @@
       if (!snap) { U.toast(T('toast.snapNotFound')); return; }
       state.baselineId = id;
       state.baselineSnapshot = snap;
-      state.baselineModel = HR.model.build(snap.records, { ruleSet: state.ruleSet, vault: state.vault,
-        granted: state.granted, history: state.history,
-      products: state.products, assignments: state.assignments });
+      state.baselineModel = HR.model.build(snap.records, buildOpts());
       await recomputeDiff();
       if (!quiet) U.toast(T('toast.baselineSet', { name: snap.name }));
     }
@@ -486,9 +509,7 @@
     state.noAutoRecon = false;
     HR.store.saveContext({ noAutoRecon: false });
     state.parsed = { records: snap.records, meta: { fileName: snap.fileName, fingerprint: snap.fingerprint } };
-    state.model = HR.model.build(snap.records, { ruleSet: state.ruleSet, vault: state.vault,
-      granted: state.granted, history: state.history,
-      products: state.products, assignments: state.assignments });
+    state.model = HR.model.build(snap.records, buildOpts());
     if (state.baselineId === id) await setBaseline(null);
     await recomputeDiff();
     updateTopbar();
@@ -517,16 +538,31 @@
     }
   }
 
-  function rebuild() {
-    if (batching) { rebuildPending = true; return; }
-    const opts = { ruleSet: state.ruleSet, vault: state.vault,
+  /* A directory import substitutes for the exports it can imitate — its synthesized
+     records when no reconciliation is loaded, its pseudo-vault when no real vault is —
+     and steps aside the moment the real thing arrives. */
+  function effVault() {
+    return state.vault || (state.directory ? state.directory.vault : null);
+  }
+  function effRecords() {
+    if (state.parsed) return state.parsed.records;
+    if (state.directory) return state.directory.records;
+    return [];
+  }
+  function buildOpts() {
+    return { ruleSet: state.ruleSet, vault: effVault(),
       granted: state.granted, history: state.history,
       products: state.products, assignments: state.assignments };
+  }
+
+  function rebuild() {
+    if (batching) { rebuildPending = true; return; }
+    const opts = buildOpts();
     /* Any export is enough to build on: a vault alone already answers people and
        organisation questions. The reconciliation deepens the model, it does not gate it. */
-    const anySource = state.parsed || state.vault || state.ruleSet || state.granted ||
-      state.history || state.products || state.assignments;
-    state.model = anySource ? HR.model.build(state.parsed ? state.parsed.records : [], opts) : null;
+    const anySource = state.parsed || state.vault || state.directory || state.ruleSet ||
+      state.granted || state.history || state.products || state.assignments;
+    state.model = anySource ? HR.model.build(effRecords(), opts) : null;
     if (state.baselineSnapshot) state.baselineModel = HR.model.build(state.baselineSnapshot.records, opts);
     recomputeDiff();
     updateTopbar();
@@ -548,6 +584,7 @@
     }
     if (state.ruleSet) sources.push(T('src.rules') + ': ' + state.ruleSet.rules.length);
     if (state.vault) sources.push(T('src.vault') + ': ' + state.vault.persons.length);
+    if (state.directory) sources.push(T('src.directory') + ': ' + U.fmtInt(state.directory.meta.userCount));
     if (state.granted) sources.push(T('src.granted') + ': ' + state.granted.meta.rowCount);
     if (state.history) sources.push(T('src.history') + ': ' + U.fmtInt(state.history.meta.rowCount));
     if (state.products) sources.push(T('src.products') + ': ' + U.fmtInt(state.products.meta.rowCount));
@@ -652,7 +689,7 @@
     const restoreContext = HR.store.loadContext().then(ctx => {
       if (!ctx) return;
       state.raw = { rules: ctx.rules, vault: ctx.vault, granted: ctx.granted, history: ctx.history,
-        products: ctx.products, assignments: ctx.assignments };
+        products: ctx.products, assignments: ctx.assignments, directory: ctx.directory };
       /* Context saved before import times were tracked still has one useful timestamp:
          when it was written. Better than showing nothing for every restored file. */
       state.importedAt = ctx.importedAt || {};
@@ -660,9 +697,10 @@
       state.demo = ctx.demo || null;
       state.noAutoRecon = !!ctx.noAutoRecon;
       const named = (k, fallback) => state.fileNames[k] || fallback;
-      ['rules', 'vault', 'granted', 'history', 'products', 'assignments'].forEach(k => {
+      ['rules', 'vault', 'granted', 'history', 'products', 'assignments', 'directory'].forEach(k => {
         if (ctx[k] && !state.importedAt[k]) state.importedAt[k] = ctx.savedAt || null;
       });
+      try { if (ctx.directory) state.directory = HR.directory.parse(ctx.directory, named('directory', 'directory.json')); } catch (e) { /* stale */ }
       try { if (ctx.rules) state.ruleSet = HR.rules.parse(ctx.rules, named('rules', 'rules.csv')); } catch (e) { /* stale */ }
       try { if (ctx.vault) state.vault = HR.vault.parse(ctx.vault, named('vault', 'vault.json')); } catch (e) { /* stale */ }
       try { if (ctx.granted) state.granted = HR.activity.parse(ctx.granted, named('granted', 'entitlements.csv')); } catch (e) { /* stale */ }

@@ -74,6 +74,8 @@
     const st = HR.app.state;
     if (k === 'recon') return !!(st.model && st.model.hasRecon);
     if (k === 'rules') return !!st.ruleSet;
+    /* A directory import substitutes a synthesized vault while no real one is loaded. */
+    if (k === 'vault') return !!(st.vault || (st.directory && st.directory.vault));
     return !!st[k];
   }
 
@@ -215,6 +217,15 @@
       detail: T('src.vaultDetail', { n: st.vault.persons.length, c: st.vault.meta.contractCount }),
       file: st.vault.meta.fileName, health: st.vault.meta.health, loadedOnly: true
     });
+    if (st.directory) rows.push({
+      kind: T('src.directory'), loaded: st.importedAt.directory,
+      dataDate: st.directory.meta.collectedAt,
+      detail: T('src.directoryDetail', { u: U.fmtInt(st.directory.meta.userCount),
+        g: U.fmtInt(st.directory.meta.groupCount), n: U.fmtInt(st.directory.meta.nestedEdges) })
+        + (st.parsed ? '' : ' · ' + T('src.directorySubsRecon'))
+        + (st.vault ? '' : ' · ' + T('src.directorySubsVault')),
+      file: st.directory.meta.fileName, health: null
+    });
     if (st.granted) rows.push({
       kind: T('src.granted'), loaded: st.importedAt.granted,
       dataDate: st.granted.meta.lastChange ? +st.granted.meta.lastChange : null,
@@ -304,6 +315,7 @@
   const SOURCE_SLOTS = [
     { kind: 'recon',     accept: '.csv' },
     { kind: 'vault',     accept: '.json' },
+    { kind: 'directory', accept: '.json' },
     { kind: 'rules',     accept: '.csv' },
     { kind: 'granted',   accept: '.csv' },
     { kind: 'history',   accept: '.csv' },
@@ -333,6 +345,13 @@
         return st.vault && { file: st.vault.meta.fileName, loaded: st.importedAt.vault,
           detail: T('src.vaultDetail', { n: st.vault.persons.length, c: st.vault.meta.contractCount }),
           health: st.vault.meta.health };
+      case 'directory':
+        return st.directory && { file: st.directory.meta.fileName, loaded: st.importedAt.directory,
+          detail: T('src.directoryDetail', { u: U.fmtInt(st.directory.meta.userCount),
+            g: U.fmtInt(st.directory.meta.groupCount), n: U.fmtInt(st.directory.meta.nestedEdges) })
+            + (st.parsed ? '' : ' · ' + T('src.directorySubsRecon'))
+            + (st.vault ? '' : ' · ' + T('src.directorySubsVault')),
+          health: st.directory.meta.health };
       case 'granted':
         return st.granted && { file: st.granted.meta.fileName, loaded: st.importedAt.granted,
           detail: st.granted.empty ? T('act.grantedEmpty')

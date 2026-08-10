@@ -20,8 +20,10 @@
       { id: 'accounts', label: T('cv.tab.accounts'),
         count: res.usernames.summary.mixed || null, build: () => accountsTab(m, res.usernames) },
       { id: 'entitlements', label: T('cv.tab.entitlements'),
-        count: res.entitlements.summary.strays || null, build: () => entitlementsTab(m, res.entitlements) }
-    ], params));
+        count: res.entitlements.summary.strays || null, build: () => entitlementsTab(m, res.entitlements) },
+      res.attributes ? { id: 'attributes', label: T('cv.tab.attributes'),
+        count: res.attributes.summary.candidates || null, build: () => attributesTab(m, res.attributes) } : null
+    ].filter(Boolean), params));
     return f;
   }
 
@@ -281,6 +283,86 @@
       initialSort: { key: 'holderCount', dir: -1 },
       search: (r, q) => r.name.toLowerCase().includes(q),
       onRowClick: p => drawerPermission(p, m)
+    })));
+    HR.viewkit.openDrawer(head, body);
+  }
+
+  /* ----------------------------------------------------------- attributes */
+  /* What the paperwork can carry: per attribute the fill and spread, and the
+     value→group pairs strong enough to become a business-rule condition or a
+     connector mapping. The floors and the lift filter live in conventions.js. */
+  function attributesTab(m, at) {
+    const wrap = document.createDocumentFragment();
+
+    const k = el('div', { class: 'grid g4' });
+    k.append(
+      tile(T('cv.kAttrs'), U.fmtInt(at.summary.attributes), T('cv.kAttrsFoot'), { small: true }),
+      tile(T('cv.kUsable'), U.fmtInt(at.summary.usable), T('cv.kUsableFoot'),
+        { small: true, severity: at.summary.usable ? 'good' : 'medium' }),
+      tile(T('cv.kCandidates'), U.fmtInt(at.summary.candidates), T('cv.kCandidatesFoot'),
+        { small: true, severity: at.summary.candidates ? 'good' : 'none' }),
+      tile(T('pp.persons'), U.fmtInt(at.summary.persons), T('cv.kIndexedFoot', { n: U.fmtInt(at.summary.indexed) }), { small: true })
+    );
+    wrap.appendChild(k);
+
+    wrap.appendChild(card(T('cv.attrTitle'), T('cv.attrNote'), HR.table.make({
+      columns: [
+        { key: 'key', label: T('cv.cAttr'), render: r => el('span', { class: r.custom ? 'mono' : '', text: r.key }) },
+        { key: 'fillPct', label: T('cv.cFill'), num: true, value: r => r.fillPct,
+          render: r => el('span', { class: r.fillPct >= 0.5 ? '' : 'sev medium', text: U.fmtPct(r.fillPct, 0) }) },
+        { key: 'distinct', label: T('cv.cDistinct'), num: true },
+        { key: 'top', label: T('cv.cTopValues'), sortable: false,
+          render: r => el('span', { class: 'trunc', title: r.top.slice(0, 12).map(x => x.value + ' ×' + x.n).join(', '),
+            text: r.top.slice(0, 5).map(x => x.value + ' ×' + x.n).join('  ') }) }
+      ],
+      rows: at.fields, pageSize: 25, exportName: 'attributes',
+      initialSort: { key: 'fillPct', dir: -1 },
+      onRowClick: r => drawerAttribute(r)
+    })));
+
+    if (at.candidates.length) {
+      wrap.appendChild(card(T('cv.candTitle'), T('cv.candNote'), HR.table.make({
+        columns: [
+          { key: 'attribute', label: T('cv.cAttr') },
+          { key: 'value', label: T('cv.cValue'), render: r => el('span', { class: 'mono', text: r.value }) },
+          { key: 'group', label: T('ct.group'), render: r => el('span', { class: 'mono', text: r.group }) },
+          { key: 'n', label: T('cv.cHoldsIt'), num: true, value: r => r.n,
+            render: r => U.fmtInt(r.n) + ' / ' + U.fmtInt(r.m) },
+          { key: 'share', label: T('cv.cShare'), num: true, value: r => r.share,
+            render: r => U.fmtPct(r.share, 0) },
+          { key: 'lift', label: T('cv.cLift'), num: true, render: r => '×' + U.fmtNum(r.lift, 1),
+            hint: T('cv.liftHint') }
+        ],
+        rows: at.candidates, pageSize: 20, exportName: 'rule-candidates',
+        search: (r, q) => (r.attribute + ' ' + r.value + ' ' + r.group).toLowerCase().includes(q)
+      })));
+    } else if (!at.summary.indexed) {
+      wrap.appendChild(el('div', { class: 'notice' }, [
+        el('strong', { text: T('cv.noIndex') }),
+        el('span', { text: ' ' + T('cv.noIndexWhy') })
+      ]));
+    }
+    return wrap;
+  }
+
+  /** One attribute opened up: its full value distribution. */
+  function drawerAttribute(f) {
+    const head = el('div', {}, [
+      el('h2', { text: f.key }),
+      el('div', { class: 'row' }, [
+        el('span', { class: 'pill', text: U.fmtPct(f.fillPct, 0) + ' ' + T('cv.cFill').toLowerCase() }),
+        el('span', { class: 'pill', text: U.fmtInt(f.distinct) + ' ' + T('cv.cDistinct').toLowerCase() })
+      ])
+    ]);
+    const body = el('div', { class: 'stack' });
+    body.appendChild(card(null, null, HR.table.make({
+      columns: [
+        { key: 'value', label: T('cv.cValue'), render: r => el('span', { class: 'mono', text: r.value }) },
+        { key: 'n', label: T('pp.persons'), num: true }
+      ],
+      rows: f.top, pageSize: 25, exportName: 'attribute-' + f.key,
+      initialSort: { key: 'n', dir: -1 },
+      search: (r, q) => r.value.toLowerCase().includes(q)
     })));
     HR.viewkit.openDrawer(head, body);
   }

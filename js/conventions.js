@@ -217,8 +217,121 @@
     };
   }
 
+  /* ------------------------------------------------------------- attributes */
+  /* What the paperwork says about people, and whether it can carry provisioning
+     rules. Two questions per attribute: is it filled and disciplined enough to
+     condition on, and which groups does a value predict — the evidence a HelloID
+     business rule or connector mapping is designed from. Works on a real vault
+     and on the one synthesized from a directory export alike. */
+  const MIN_VALUE_PERSONS = 5;   // a value carried by fewer people cannot carry a rule
+  const MIN_SHARE = 0.8;         // the share of a value's people that must hold the group
+
+  function attributes(model) {
+    const vault = model.vault;
+    if (!vault) return null;
+    const persons = vault.persons;
+
+    /* Attribute extractors: the standard contract fields, then every custom key
+       seen on a contract (extensionAttributes, OU) or on a person. */
+    const fields = [];
+    const std = [
+      ['type', p => p.primaryContract && p.primaryContract.type.name],
+      ['department', p => p.primaryContract && p.primaryContract.department.name],
+      ['title', p => p.primaryContract && p.primaryContract.title.name],
+      ['location', p => p.primaryContract && p.primaryContract.location.name],
+      ['employer', p => p.primaryContract && p.primaryContract.employer.name],
+      ['costCenter', p => p.primaryContract && p.primaryContract.costCenter.name]
+    ];
+    for (const [key, get] of std) fields.push({ key, custom: false, get });
+    const customKeys = new Set();
+    for (const p of persons) {
+      Object.keys(p.custom || {}).forEach(k => customKeys.add('p:' + k));
+      for (const c of p.contracts) Object.keys(c.custom || {}).forEach(k => customKeys.add('c:' + k));
+    }
+    for (const ck of Array.from(customKeys).sort()) {
+      const [scope, key] = [ck.slice(0, 1), ck.slice(2)];
+      fields.push({
+        key, custom: true,
+        get: scope === 'p'
+          ? p => (p.custom || {})[key]
+          : p => { for (const c of p.contracts) { if ((c.custom || {})[key]) return c.custom[key]; } return ''; }
+      });
+    }
+
+    /* Person -> held groups, through the correlation the model already computed. */
+    let personGroups = null, indexed = 0;
+    const groupHolders = new Map();
+    if (model.hasRecon && model.correlation) {
+      const index = HR.correlate.personAccountIndex(model, vault, model.correlation);
+      personGroups = new Map();
+      for (const entry of index.values()) {
+        const set = new Set();
+        entry.accounts.forEach(a => a.perms.forEach(p => set.add(p.name)));
+        personGroups.set(entry.person, set);
+        set.forEach(g => groupHolders.set(g, (groupHolders.get(g) || 0) + 1));
+      }
+      indexed = personGroups.size;
+    }
+
+    const out = [];
+    const candidates = [];
+    for (const f of fields) {
+      const values = new Map();
+      let filled = 0;
+      for (const p of persons) {
+        const v = String(f.get(p) || '').trim();
+        if (!v) continue;
+        filled++;
+        if (!values.has(v)) values.set(v, []);
+        values.get(v).push(p);
+      }
+      if (!filled) continue;                         // an empty attribute has nothing to say
+      const top = Array.from(values.entries())
+        .map(([value, list]) => ({ value, n: list.length }))
+        .sort((a, b) => b.n - a.n);
+      out.push({
+        key: f.key, custom: f.custom,
+        fill: filled, fillPct: persons.length ? filled / persons.length : 0,
+        distinct: values.size, top, values
+      });
+
+      if (!personGroups) continue;
+      for (const [value, list] of values) {
+        const held = list.filter(p => personGroups.has(p));
+        if (held.length < MIN_VALUE_PERSONS) continue;
+        const counts = new Map();
+        held.forEach(p => personGroups.get(p).forEach(g => counts.set(g, (counts.get(g) || 0) + 1)));
+        for (const [group, n] of counts) {
+          if (n < MIN_VALUE_PERSONS) continue;
+          const share = n / held.length;
+          if (share < MIN_SHARE) continue;
+          const baseline = indexed ? (groupHolders.get(group) || 0) / indexed : 0;
+          /* A group everyone holds predicts nothing; the lift filter drops the
+             baseline groups without needing a hand-tuned ignore list. */
+          const lift = baseline > 0 ? share / baseline : 0;
+          if (lift < 1.5) continue;
+          candidates.push({ attribute: f.key, custom: f.custom, value, group, n, m: held.length, share, lift });
+        }
+      }
+    }
+    candidates.sort((a, b) => b.share * b.n - a.share * a.n || b.lift - a.lift);
+
+    return {
+      fields: out,
+      candidates,
+      summary: {
+        attributes: out.length,
+        usable: out.filter(f => f.fillPct >= 0.5 && f.distinct > 1).length,
+        candidates: candidates.length,
+        persons: persons.length,
+        indexed
+      }
+    };
+  }
+
   function build(model) {
-    return { usernames: usernames(model), entitlements: entitlements(model) };
+    return { usernames: usernames(model), entitlements: entitlements(model),
+      attributes: attributes(model) };
   }
 
   HR.conventions = { build, signature };

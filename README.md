@@ -292,6 +292,28 @@ maps headers by alias, so exports from other HelloID versions or locales still l
 model rolls rows up into 3 entity types — accounts, permissions, persons — and every number
 in the UI is computed on entities, not on line counts.
 
+## Before HelloID: the directory import
+
+The chicken-and-egg problem of pre-implementation analysis: the useful exports need
+HelloID, and implementing HelloID well needs the analysis. Two read-only collector
+scripts break the loop — `collect-ad.ps1` (on-prem AD, plain `Get-ADUser`/`Get-ADGroup`)
+and `collect-entra.ps1` (Entra ID via Graph, delegated read-only scopes documented in
+[docs/ENTRA-CONSENT.md](docs/ENTRA-CONSENT.md)). The customer runs one script, gets one
+JSON file, and drags it in; nothing is installed and nothing leaves their hands.
+
+The import synthesizes both sides of the model from that one file: memberships (nested
+groups flattened to effective holdings, the via-chain kept) become reconciliation rows —
+all `Permission unmanaged`, which before an IAM system is the literal truth — and the
+users' attributes (employeeType, department, title, manager, extensionAttribute1-15,
+phones, address) become a pseudo-vault, so classification, naming analysis, employee
+categories, licence pricing and the org views all run. Both substitutes step aside the
+moment a real export of their kind is loaded.
+
+The Conventions → Attributes tab is the point of the exercise: per attribute the fill and
+value distribution, and the value → group pairs strong enough (≥5 people, ≥80% holding,
+clearly above baseline) to become HelloID business-rule conditions or connector mappings.
+`make-directory.py` generates a fictional envelope to try it without a tenant.
+
 ## The models
 
 All three are assumptions, all three are editable in **Settings**, and every change
