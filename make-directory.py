@@ -85,12 +85,19 @@ def main():
     users = []
     seen = set()
     n = 0
+    PARTICLES = ['', '', '', 'van', 'de', 'van den', 'van der']
     while len(users) < args.users:
         n += 1
         first, last = rng.choice(FIRST), rng.choice(LAST)
-        uname = f'{first}.{last}{n}'
-        if uname in seen:
-            continue
+        particles = rng.choice(PARTICLES)
+        s_join = (particles + last).replace(' ', '')          # vandenboele
+        p_init = ''.join(w[0] for w in particles.split()) if particles else ''
+        base = f'{first}.{s_join}'
+        uname = base
+        k = 2
+        while uname in seen:                                   # natural iteration suffix
+            uname = f'{base}{k}'
+            k += 1
         seen.add(uname)
         dept = rng.choice(list(DEPARTMENTS))
         d = DEPARTMENTS[dept]
@@ -98,10 +105,19 @@ def main():
         etype = pick_type(rng)
         enabled = rng.random() > 0.08
         city = rng.choice(CITIES)
-        dn = f'CN={first} {last},{d["ou"]},{BASE_DN}'
+        surname = f'{particles} {last.capitalize()}'.strip()
+        display = f'{first.capitalize()} {surname}'
+        dn = f'CN={display} {n},{d["ou"]},{BASE_DN}'
         users.append({
             'id': dn, 'userName': uname, 'upn': f'{uname}@avo.local',
-            'displayName': f'{first.capitalize()} {last.capitalize()}',
+            'displayName': display,
+            'givenName': first.capitalize(),
+            'surname': surname,
+            'initials': f'{first[0].upper()}.',
+            'mailNickname': f'{first[0]}.{p_init}{last}',
+            'proxyAddresses': [f'SMTP:{uname}@avo.local', f'smtp:{first[0]}.{s_join}@avondrood.nl'],
+            'usageLocation': 'NL',
+            'synced': False,
             'enabled': enabled, 'created': f'20{rng.randint(15, 25):02d}-0{rng.randint(1, 9)}-15T08:00:00Z',
             'lastLogon': '2026-08-01T07:12:00Z' if enabled and rng.random() > 0.15 else None,
             'expires': None,
@@ -149,6 +165,13 @@ def main():
     envelope = {
         'kind': 'helloid-analytics-directory', 'version': 1, 'source': 'ad',
         'collectedAt': '2026-08-09T09:00:00Z', 'domain': 'avo.local', 'searchBase': '',
+        'tenant': {
+            'tenantId': '00000000-1111-2222-3333-444444444444',
+            'displayName': 'Avondrood Zorggroep',
+            'initialDomain': 'avondrood.onmicrosoft.com',
+            'defaultDomain': 'avo.local',
+            'verifiedDomains': ['avondrood.onmicrosoft.com', 'avo.local', 'avondrood.nl']
+        },
         'users': users, 'groups': list(groups.values())
     }
     with open(args.out, 'w', encoding='utf-8') as f:

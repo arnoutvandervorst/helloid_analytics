@@ -36,10 +36,11 @@ Import-Module ActiveDirectory
 
 $extAttrs = 1..15 | ForEach-Object { "extensionAttribute$_" }
 $userProps = @(
-  'sAMAccountName','userPrincipalName','displayName','enabled','whenCreated',
+  'sAMAccountName','userPrincipalName','displayName','givenName','sn','initials',
+  'enabled','whenCreated',
   'lastLogonTimestamp','accountExpires','department','title','company',
   'physicalDeliveryOfficeName','employeeID','employeeNumber','employeeType',
-  'description','distinguishedName','manager','mail','memberOf',
+  'description','distinguishedName','manager','mail','mailNickname','proxyAddresses','memberOf',
   # Telephones tab, incl. the Notes field ("info")
   'telephoneNumber','homePhone','mobile','facsimileTelephoneNumber','pager','ipPhone','info',
   # Address tab
@@ -83,6 +84,13 @@ $users = foreach ($u in $adUsers) {
     userName    = [string]$u.sAMAccountName
     upn         = [string]$u.userPrincipalName
     displayName = [string]$u.displayName
+    givenName   = [string]$u.givenName
+    surname     = [string]$u.sn
+    initials    = [string]$u.initials
+    mailNickname = [string]$u.mailNickname
+    proxyAddresses = @(@($u.proxyAddresses) | Where-Object { $_ })
+    usageLocation = ''
+    synced      = $false
     enabled     = [bool]$u.Enabled
     created     = if ($u.whenCreated) { $u.whenCreated.ToUniversalTime().ToString('o') } else { $null }
     lastLogon   = ConvertFrom-FileTime $u.lastLogonTimestamp

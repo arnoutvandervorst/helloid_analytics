@@ -329,10 +329,170 @@
     };
   }
 
+  /* -------------------------------------------------------- name generation */
+  /* The HelloID connector intake asks how usernames, mail addresses and display
+     names must be generated. The existing accounts already answer it: derive the
+     candidate formats from each user's own givenName and surname — Dutch
+     tussenvoegsels handled in the three ways conventions actually use them —
+     and count which format explains each field. Iteration suffixes (janine2)
+     are recognised and reported, not counted as exceptions. */
+  const PARTICLES = new Set(['van', 'de', 'der', 'den', 'ten', 'ter', 'te', 'het',
+    'in', "'t", 'op', 'aan', 'bij', 'tot', 'uit', 'la', 'le', 'el', 'von']);
+
+  const alnum = s => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+  function nameParts(u) {
+    const gRaw = String(u.givenName || '').trim();
+    const sRaw = String(u.surname || '').trim();
+    if (!gRaw || !sRaw) return null;
+    const g = alnum(gRaw.split(/\s+/)[0]);
+    const words = sRaw.toLowerCase().split(/\s+/);
+    let i = 0;
+    while (i < words.length - 1 && PARTICLES.has(words[i])) i++;
+    const particles = words.slice(0, i), bare = words.slice(i);
+    if (!g || !bare.length) return null;
+    return {
+      gRaw, sRaw,
+      first: g,
+      f: g[0],
+      last: alnum(words.join('')),                                   // vandenboele
+      bare: alnum(bare.join('')),                                    // boele
+      vd: particles.map(w => w[0]).join('') + alnum(bare.join(''))   // vdboele
+    };
+  }
+
+  /* Recipes ordered so that, when particles are absent and `last` equals `bare`,
+     the user counts toward the fuller reading once, not twice. */
+  const NG_SEPS = ['.', '', '-', '_'];
+  const NG_RECIPES = [
+    ['first', 'last'], ['first', 'bare'], ['first', 'vd'],
+    ['f', 'last'], ['f', 'bare'], ['f', 'vd'],
+    ['last', 'f'], ['bare', 'f'],
+    ['first'], ['last'], ['bare']
+  ];
+
+  function candidatesFor(p) {
+    const seen = new Map();      // candidate string -> format id (first recipe wins)
+    for (const recipe of NG_RECIPES) {
+      for (const sep of NG_SEPS) {
+        if (recipe.length === 1 && sep !== '.') continue;   // single tokens need no separator variants
+        const cand = recipe.map(t => p[t]).join(sep);
+        if (cand.length < 2) continue;
+        const id = recipe.join(sep === '' ? '+' : sep);   // "first.last", "f+bare"
+        if (!seen.has(cand)) seen.set(cand, id);
+      }
+    }
+    return seen;
+  }
+
+  function mineField(users, getter) {
+    const counts = new Map();
+    let total = 0, matched = 0, iterated = 0, maxIter = 0;
+    for (const u of users) {
+      const p = u._ngParts;
+      const raw = String(getter(u) || '').trim().toLowerCase();
+      if (!p || !raw) continue;
+      total++;
+      const m = raw.match(/^(.*?)(\d+)$/);
+      const base = m ? m[1] : raw;
+      const fmt = u._ngCands.get(base) || u._ngCands.get(raw);
+      if (!fmt) continue;
+      matched++;
+      if (m && u._ngCands.get(base)) { iterated++; maxIter = Math.max(maxIter, parseInt(m[2], 10)); }
+      counts.set(fmt, (counts.get(fmt) || 0) + 1);
+    }
+    if (total < 5) return null;
+    const ranked = Array.from(counts.entries()).sort((a, b) => b[1] - a[1])
+      .map(([id, n]) => ({ id, n, pct: n / total }));
+    return { total, matched, exceptions: total - matched, iterated, maxIter,
+      best: ranked[0] || null, ranked: ranked.slice(0, 3) };
+  }
+
+  function namegen(users) {
+    const withParts = [];
+    for (const u of users) {
+      const p = nameParts(u);
+      if (!p) continue;
+      u._ngParts = p;
+      u._ngCands = candidatesFor(p);
+      withParts.push(u);
+    }
+    if (withParts.length < 5) return null;
+
+    const localOf = v => String(v || '').split('@')[0];
+    const domainOf = v => (String(v || '').split('@')[1] || '').toLowerCase();
+
+    const fields = [
+      { key: 'upn', res: mineField(withParts, u => localOf(u.upn)) },
+      { key: 'mail', res: mineField(withParts, u => localOf(u.mail)) },
+      { key: 'mailNickname', res: mineField(withParts, u => u.mailNickname) },
+      { key: 'sam', res: mineField(withParts.filter(u => u.userName && u.userName !== u.upn),
+          u => u.userName) }
+    ].filter(f => f.res);
+
+    /* Display name is format-mined on the raw words rather than the compressed ones. */
+    const dnCounts = new Map();
+    let dnTotal = 0, dnMatched = 0;
+    for (const u of withParts) {
+      const dn = String(u.displayName || '').trim().toLowerCase().replace(/\s+/g, ' ');
+      if (!dn) continue;
+      dnTotal++;
+      const p = u._ngParts;
+      const g = p.gRaw.split(/\s+/)[0].toLowerCase();
+      const s = p.sRaw.toLowerCase().replace(/\s+/g, ' ');
+      /* Insert-if-absent: when the given name is a single word, "first last" and
+         "givennames last" collapse to the same string and the fuller reading must
+         not steal the count from the plainer one. */
+      const cands = new Map();
+      const put = (k, v) => { if (!cands.has(k)) cands.set(k, v); };
+      put(g + ' ' + s, 'first last');
+      put(s + ', ' + g, 'last, first');
+      put(p.gRaw.toLowerCase() + ' ' + s, 'givennames last');
+      put(g + ' ' + p.bare, 'first bare');
+      const fmt = cands.get(dn);
+      if (fmt) { dnMatched++; dnCounts.set(fmt, (dnCounts.get(fmt) || 0) + 1); }
+    }
+    const dnRanked = Array.from(dnCounts.entries()).sort((a, b) => b[1] - a[1])
+      .map(([id, n]) => ({ id, n, pct: dnTotal ? n / dnTotal : 0 }));
+
+    /* The intake's yes/no facts, counted rather than asked. */
+    const withMail = users.filter(u => u.mail && u.upn);
+    const upnEqMail = withMail.filter(u => u.mail.toLowerCase() === u.upn.toLowerCase()).length;
+    const upnDomains = U.counts(users.filter(u => u.upn), u => domainOf(u.upn));
+    const mailDomains = U.counts(users.filter(u => u.mail), u => domainOf(u.mail));
+    const withProxies = users.filter(u => (u.proxyAddresses || []).length);
+    const aliasDomains = new Map();
+    let primaryEqMail = 0;
+    for (const u of withProxies) {
+      const primary = (u.proxyAddresses || []).find(a => a.startsWith('SMTP:'));
+      if (primary && u.mail && primary.slice(5).toLowerCase() === u.mail.toLowerCase()) primaryEqMail++;
+      for (const a of (u.proxyAddresses || [])) {
+        const d = domainOf(a.replace(/^smtp:/i, ''));
+        if (d) aliasDomains.set(d, (aliasDomains.get(d) || 0) + 1);
+      }
+    }
+    const managerFill = users.filter(u => u.managerId).length;
+    const usage = U.counts(users.filter(u => u.usageLocation), u => u.usageLocation);
+    const synced = users.filter(u => u.synced).length;
+
+    return {
+      parts: withParts.length, users: users.length,
+      fields, displayName: { total: dnTotal, matched: dnMatched, ranked: dnRanked.slice(0, 3) },
+      upnEqMail: { n: upnEqMail, m: withMail.length },
+      upnDomains: Array.from(upnDomains.entries()).sort((a, b) => b[1] - a[1]),
+      mailDomains: Array.from(mailDomains.entries()).sort((a, b) => b[1] - a[1]),
+      proxies: { users: withProxies.length, primaryEqMail, aliasDomains:
+        Array.from(aliasDomains.entries()).sort((a, b) => b[1] - a[1]) },
+      managerFill: { n: managerFill, m: users.length },
+      usage: Array.from(usage.entries()).sort((a, b) => b[1] - a[1]),
+      synced
+    };
+  }
+
   function build(model) {
     return { usernames: usernames(model), entitlements: entitlements(model),
       attributes: attributes(model) };
   }
 
-  HR.conventions = { build, signature };
+  HR.conventions = { build, signature, namegen };
 })(window.HR);

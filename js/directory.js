@@ -146,6 +146,7 @@
       meta: {
         fileName: fileName || 'directory.json',
         source, system,
+        tenant: data.tenant || null,
         collectedAt: data.collectedAt ? Date.parse(data.collectedAt) || null : null,
         domain: str(data.domain),
         userCount: users.length,
@@ -176,6 +177,7 @@
         ExternalId: str(u.employeeId) || u.id,
         DisplayName: u.displayName || u.userName,
         UserName: u.userName,
+        Name: { GivenName: str(u.givenName), FamilyName: str(u.surname), Initials: str(u.initials) },
         Status: { Blocked: u.enabled === false },
         Custom: nonEmpty({
           mail: u.mail, phone: u.phone, mobile: u.mobile, homePhone: u.homePhone,

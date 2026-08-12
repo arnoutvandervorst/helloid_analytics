@@ -16,13 +16,17 @@
     ])));
 
     const res = HR.conventions.build(m);
+    const dir = HR.app.state.directory;
+    const ng = dir ? HR.conventions.namegen(dir.users) : null;
     f.appendChild(tabbed('conventions', [
       { id: 'accounts', label: T('cv.tab.accounts'),
         count: res.usernames.summary.mixed || null, build: () => accountsTab(m, res.usernames) },
       { id: 'entitlements', label: T('cv.tab.entitlements'),
         count: res.entitlements.summary.strays || null, build: () => entitlementsTab(m, res.entitlements) },
       res.attributes ? { id: 'attributes', label: T('cv.tab.attributes'),
-        count: res.attributes.summary.candidates || null, build: () => attributesTab(m, res.attributes) } : null
+        count: res.attributes.summary.candidates || null, build: () => attributesTab(m, res.attributes) } : null,
+      (ng || (dir && dir.meta.tenant)) ? { id: 'namegen', label: T('cv.tab.namegen'),
+        build: () => namegenTab(dir, ng) } : null
     ].filter(Boolean), params));
     return f;
   }
@@ -365,6 +369,107 @@
       search: (r, q) => r.value.toLowerCase().includes(q)
     })));
     HR.viewkit.openDrawer(head, body);
+  }
+
+  /* ------------------------------------------------------- name generation */
+  /* The connector intake, answered from the tenant instead of from memory: the
+     connection facts, the dominant convention per generated field rendered with
+     the intake's own example person, and the countable yes/no facts. */
+  const NG_SAMPLE = { first: 'janine', f: 'j', last: 'vandenboele', bare: 'boele', vd: 'vdboele' };
+  const NG_DN_SAMPLE = {
+    'first last': 'Janine van den Boele',
+    'last, first': 'van den Boele, Janine',
+    'givennames last': 'Hendrika Cornelia van den Boele',
+    'first bare': 'Janine Boele'
+  };
+
+  function ngExample(id) {
+    const sep = (id.match(/[.\-_+]/) || [''])[0];
+    const tokens = sep ? id.split(sep) : [id];
+    return tokens.map(t => NG_SAMPLE[t] || t).join(sep === '+' ? '' : sep);
+  }
+  function ngLabel(id) {
+    return id.replace(/first|last|bare|vd|f/g, t => T('cv.ng.tok.' + t)).replace(/\+/g, '·');
+  }
+
+  function namegenTab(dir, ng) {
+    const wrap = document.createDocumentFragment();
+    const tenant = dir.meta.tenant;
+
+    if (tenant) {
+      wrap.appendChild(card(T('cv.ngTenant'), T('cv.ngTenantNote'), el('dl', { class: 'kv' }, [
+        [T('cv.ngTenantId'), tenant.tenantId],
+        [T('cv.ngInitialDomain'), tenant.initialDomain],
+        [T('cv.ngDefaultDomain'), tenant.defaultDomain],
+        [T('cv.ngDomains'), (tenant.verifiedDomains || []).join(', ')]
+      ].filter(x => x[1]).flatMap(([k, v]) => [
+        el('dt', { text: k }), el('dd', {}, el('span', { class: 'mono', text: v }))
+      ]))));
+    }
+
+    if (ng) {
+      const rows = ng.fields.map(f => ({
+        field: T('cv.ng.field.' + f.key),
+        best: f.res.best, total: f.res.total, exceptions: f.res.exceptions,
+        iterated: f.res.iterated, maxIter: f.res.maxIter,
+        runners: f.res.ranked.slice(1)
+      }));
+      if (ng.displayName.ranked.length) {
+        const d = ng.displayName;
+        rows.push({
+          field: T('cv.ng.field.displayName'),
+          best: d.ranked[0], total: d.total, exceptions: d.total - d.matched,
+          iterated: 0, maxIter: 0, runners: d.ranked.slice(1), dn: true
+        });
+      }
+      wrap.appendChild(card(T('cv.ngFieldsTitle'), T('cv.ngFieldsNote'), HR.table.make({
+        columns: [
+          { key: 'field', label: T('cv.ngField') },
+          { key: 'best', label: T('cv.ngConvention'), sortable: false, render: r => r.best
+              ? el('span', { class: 'mono', title: r.dn ? r.best.id : ngLabel(r.best.id),
+                  text: r.dn ? (NG_DN_SAMPLE[r.best.id] || r.best.id) : ngExample(r.best.id) })
+              : el('span', { class: 'note', text: '—' }) },
+          { key: 'pct', label: T('cv.ngCoverage'), num: true, value: r => r.best ? r.best.pct : 0,
+            render: r => r.best
+              ? el('span', { class: 'sev ' + (r.best.pct >= 0.8 ? 'good' : r.best.pct >= 0.5 ? 'medium' : 'high'),
+                  text: U.fmtPct(r.best.pct, 0) })
+              : el('span', { text: '—' }) },
+          { key: 'runners', label: T('cv.ngRunners'), sortable: false,
+            render: r => el('span', { class: 'note trunc', text: r.runners.length
+              ? r.runners.map(x => (r.dn ? (NG_DN_SAMPLE[x.id] || x.id) : ngExample(x.id)) + ' ×' + x.n).join('  ') : '—' }) },
+          { key: 'iterated', label: T('cv.ngIter'), num: true,
+            render: r => r.iterated ? U.fmtInt(r.iterated) + ' · max ' + r.maxIter : '0' },
+          { key: 'exceptions', label: T('cv.ngExc'), num: true,
+            render: r => r.exceptions
+              ? el('span', { class: 'sev medium', text: U.fmtInt(r.exceptions) })
+              : el('span', { class: 'note', text: '0' }) }
+        ],
+        rows, pageSize: 10, exportName: 'name-generation'
+      })));
+
+      const pct = (n, m) => m ? U.fmtInt(n) + ' / ' + U.fmtInt(m) + ' · ' + U.fmtPct(n / m, 0) : '—';
+      const factRows = [
+        [T('cv.ngUpnEqMail'), pct(ng.upnEqMail.n, ng.upnEqMail.m)],
+        [T('cv.ngUpnDomains'), ng.upnDomains.slice(0, 4).map(([d, n]) => d + ' ×' + U.fmtInt(n)).join(' · ')],
+        [T('cv.ngMailDomains'), ng.mailDomains.slice(0, 4).map(([d, n]) => d + ' ×' + U.fmtInt(n)).join(' · ')],
+        ng.proxies.users ? [T('cv.ngPrimaryEqMail'), pct(ng.proxies.primaryEqMail, ng.proxies.users)] : null,
+        ng.proxies.aliasDomains.length ? [T('cv.ngAliasDomains'),
+          ng.proxies.aliasDomains.slice(0, 5).map(([d, n]) => d + ' ×' + U.fmtInt(n)).join(' · ')] : null,
+        [T('cv.ngManagerFill'), pct(ng.managerFill.n, ng.managerFill.m)],
+        ng.usage.length ? [T('cv.ngUsage'), ng.usage.slice(0, 4).map(([v, n]) => v + ' ×' + U.fmtInt(n)).join(' · ')] : null,
+        ng.synced ? [T('cv.ngSynced'), U.fmtInt(ng.synced)] : null
+      ].filter(Boolean);
+      wrap.appendChild(card(T('cv.ngFacts'), T('cv.ngFactsNote'), el('dl', { class: 'kv' },
+        factRows.flatMap(([k, v]) => [el('dt', { text: k }), el('dd', { text: v })]))));
+      wrap.appendChild(el('p', { class: 'note', text: T('cv.ngFoot', {
+        n: U.fmtInt(ng.parts), total: U.fmtInt(ng.users) }) }));
+    } else {
+      wrap.appendChild(el('div', { class: 'notice' }, [
+        el('strong', { text: T('cv.ngNoParts') }),
+        el('span', { text: ' ' + T('cv.ngNoPartsWhy') })
+      ]));
+    }
+    return wrap;
   }
 
   HR.views.conventions = conventionsView;

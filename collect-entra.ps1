@@ -64,9 +64,10 @@ $skuNames = @{}
 foreach ($sku in Get-MgSubscribedSku -All) { $skuNames[[string]$sku.SkuId] = $sku.SkuPartNumber }
 
 $userProps = @(
-  'id','userPrincipalName','displayName','accountEnabled','createdDateTime',
+  'id','userPrincipalName','displayName','givenName','surname','accountEnabled','createdDateTime',
   'department','jobTitle','companyName','employeeId','employeeType',
-  'employeeHireDate','officeLocation','mail','onPremisesSamAccountName',
+  'employeeHireDate','officeLocation','mail','mailNickname','proxyAddresses',
+  'usageLocation','onPremisesSamAccountName','onPremisesSyncEnabled',
   'onPremisesDistinguishedName','onPremisesExtensionAttributes','assignedLicenses',
   'businessPhones','mobilePhone','faxNumber','streetAddress','city','state',
   'postalCode','country'
@@ -74,7 +75,7 @@ $userProps = @(
 if ($IncludeSignInActivity) { $userProps += 'signInActivity' }
 
 Write-Host "Reading users..." -NoNewline
-$mgUsers = Get-MgUser -All -Property ($userProps -join ',') -ConsistencyLevel eventual -CountVariable c
+$mgUsers = Get-MgUser -All -Property ($userProps -join ',') -ExpandProperty 'manager($select=id,displayName)' -ConsistencyLevel eventual -CountVariable c
 Write-Host " $($mgUsers.Count)"
 
 Write-Host "Reading groups..." -NoNewline
@@ -115,6 +116,13 @@ $users = foreach ($u in $mgUsers) {
     userName    = if ($u.OnPremisesSamAccountName) { [string]$u.OnPremisesSamAccountName } else { [string]$u.UserPrincipalName }
     upn         = [string]$u.UserPrincipalName
     displayName = [string]$u.DisplayName
+    givenName   = [string]$u.GivenName
+    surname     = [string]$u.Surname
+    initials    = ''
+    mailNickname = [string]$u.MailNickname
+    proxyAddresses = @(@($u.ProxyAddresses) | Where-Object { $_ })
+    usageLocation = [string]$u.UsageLocation
+    synced      = [bool]$u.OnPremisesSyncEnabled
     enabled     = [bool]$u.AccountEnabled
     created     = if ($u.CreatedDateTime) { $u.CreatedDateTime.ToUniversalTime().ToString('o') } else { $null }
     lastLogon   = $lastSignIn
@@ -142,8 +150,8 @@ $users = foreach ($u in $mgUsers) {
     postalCode  = [string]$u.PostalCode
     country     = [string]$u.Country
     ou          = ParentOuOf $u
-    managerId   = ''
-    managerName = ''
+    managerId   = if ($u.Manager) { [string]$u.Manager.Id } else { '' }
+    managerName = if ($u.Manager -and $u.Manager.AdditionalProperties) { [string]$u.Manager.AdditionalProperties['displayName'] } else { '' }
     licenses    = $licenses
     extensionAttributes = $ext
   }
@@ -187,6 +195,14 @@ $envelope = [ordered]@{
   collectedAt = (Get-Date).ToUniversalTime().ToString('o')
   domain      = [string]$org.DisplayName
   searchBase  = ''
+  # The connector intake's connection facts, straight from the tenant.
+  tenant      = [ordered]@{
+    tenantId        = [string]$org.Id
+    displayName     = [string]$org.DisplayName
+    initialDomain   = [string](@($org.VerifiedDomains | Where-Object { $_.IsInitial }) | ForEach-Object { $_.Name } | Select-Object -First 1)
+    defaultDomain   = [string](@($org.VerifiedDomains | Where-Object { $_.IsDefault }) | ForEach-Object { $_.Name } | Select-Object -First 1)
+    verifiedDomains = @(@($org.VerifiedDomains) | ForEach-Object { [string]$_.Name })
+  }
   users       = @($users)
   groups      = @($groups)
 }
