@@ -11,15 +11,21 @@
    *   search?: (row, q) => boolean
    *   filters?: [{key, label, options:[{value,label}], match:(row,value)=>boolean}]
    *   pageSize?: number, onRowClick?: (row)=>void, exportName?: string, initialSort?: {key, dir}
+   *   bulkActions?: [{label:(n)=>string, run:(rows)=>void}] — adds a checkbox column,
+   *     a header checkbox that selects every *filtered* row (not just the page), and a
+   *     bulk bar in the toolbar while anything is selected.
    */
   function make(o) {
     const state = {
       sort: o.initialSort || { key: o.columns[0].key, dir: 1 },
       q: '', page: 0, pageSize: o.pageSize || 50,
-      filters: {}
+      filters: {},
+      selected: new Set()
     };
     const root = el('div');
     const toolbar = el('div', { class: 'toolbar' });
+    const bulkBar = el('span', { class: 'row', hidden: true });
+    if (o.bulkActions) toolbar.appendChild(bulkBar);
     const searchBox = el('input', {
       type: 'search', placeholder: o.searchPlaceholder || U.t('c.search'),
       oninput: e => { state.q = e.target.value.trim().toLowerCase(); state.page = 0; render(); }
@@ -76,6 +82,18 @@
       return rows;
     }
 
+    function renderBulkBar() {
+      if (!o.bulkActions) return;
+      const n = state.selected.size;
+      bulkBar.hidden = !n;
+      bulkBar.innerHTML = '';
+      if (!n) return;
+      o.bulkActions.forEach(a => bulkBar.appendChild(el('button', {
+        class: 'btn sm primary', text: a.label(n),
+        onclick: () => { const rows = Array.from(state.selected); state.selected.clear(); a.run(rows); }
+      })));
+    }
+
     function render() {
       const rows = filtered();
       const pages = Math.max(1, Math.ceil(rows.length / state.pageSize));
@@ -83,9 +101,23 @@
       const slice = rows.slice(state.page * state.pageSize, (state.page + 1) * state.pageSize);
 
       countNote.textContent = U.t('c.rowsOf', { shown: U.fmtInt(rows.length), total: U.fmtInt(o.rows.length) });
+      renderBulkBar();
 
       const table = el('table', { class: 'tbl' });
       const thead = el('thead'), htr = el('tr');
+      if (o.bulkActions) {
+        const all = rows.length > 0 && rows.every(r => state.selected.has(r));
+        const head = el('input', { type: 'checkbox' });
+        head.checked = all;
+        head.addEventListener('change', () => {
+          if (all) rows.forEach(r => state.selected.delete(r));
+          else rows.forEach(r => state.selected.add(r));
+          render();
+        });
+        const th = el('th', { class: 'no-sort' });
+        th.appendChild(head);
+        htr.appendChild(th);
+      }
       o.columns.forEach(c => {
         const active = state.sort.key === c.key;
         const th = el('th', {
@@ -106,6 +138,18 @@
       const tb = el('tbody');
       slice.forEach(r => {
         const tr = el('tr', { class: o.onRowClick ? 'click' : '' });
+        if (o.bulkActions) {
+          const box = el('input', { type: 'checkbox' });
+          box.checked = state.selected.has(r);
+          box.addEventListener('change', () => {
+            if (box.checked) state.selected.add(r); else state.selected.delete(r);
+            render();
+          });
+          const td = el('td');
+          td.addEventListener('click', e => e.stopPropagation());
+          td.appendChild(box);
+          tr.appendChild(td);
+        }
         o.columns.forEach(c => {
           const td = el('td', { class: c.num ? 'num' : '' });
           const v = c.render ? c.render(r) : raw(c, r);

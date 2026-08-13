@@ -132,6 +132,114 @@
     openDrawer(head, body);
   }
 
+  /* ----------------------------------------------------------------- batch */
+
+  /** One book write, one re-score, one undoable unit for any number of decisions. */
+  function applyBatch(entries) {
+    const book = HR.config.getMatchBook();
+    const stamp = new Date().toISOString();
+    entries.forEach(e => {
+      book.decisions[e.account.key] = {
+        decision: e.decision,
+        personExternalId: e.person ? (e.person.externalId || '') : '',
+        personId: e.person ? (e.person.personId || '') : '',
+        personName: e.person ? e.person.displayName : '',
+        decidedAt: stamp, batch: stamp
+      };
+    });
+    HR.config.save();
+    return HR.app.rebuildBusy().then(() =>
+      U.toast(T('mt.toastBatch', { n: U.fmtInt(entries.length) }), 5000));
+  }
+
+  /* Clear winners, grouped by their evidence signature: the best candidate exists
+     and either has no runner-up or leads it by at least the gap. A tie is never a
+     clear winner, whatever it scores — that is the whole point of the gap. */
+  function batchGroups(queue, gap) {
+    const groups = new Map();
+    for (const r of queue) {
+      const best = r.candidates[0], next = r.candidates[1];
+      if (!best) continue;
+      if (next && best.points - next.points < gap) continue;
+      const key = best.evidence.join(', ');
+      if (!groups.has(key)) groups.set(key, { evidence: key, rows: [], min: best.points, max: best.points });
+      const g = groups.get(key);
+      g.rows.push(r);
+      g.min = Math.min(g.min, best.points);
+      g.max = Math.max(g.max, best.points);
+    }
+    return Array.from(groups.values()).sort((a, b) => b.rows.length - a.rows.length);
+  }
+
+  function ownerlessGroups(queue) {
+    const byCls = new Map();
+    for (const r of queue) {
+      if (r.candidates.length) continue;
+      if (!byCls.has(r.account.clsLabel)) byCls.set(r.account.clsLabel, []);
+      byCls.get(r.account.clsLabel).push(r);
+    }
+    return Array.from(byCls.entries()).map(([cls, rows]) => ({ cls, rows }))
+      .sort((a, b) => b.rows.length - a.rows.length);
+  }
+
+  function suggestionsCard(queue) {
+    const cfg = HR.config.get();
+    const body = el('div');
+    const draw = () => {
+      body.innerHTML = '';
+      const gap = cfg.correlation.batchGap || 30;
+      const gapInput = el('input', { type: 'number', value: gap, step: '5',
+        oninput: e => { cfg.correlation.batchGap = parseFloat(e.target.value) || 0; HR.config.save(); draw(); } });
+      gapInput.style.width = '70px';
+      body.appendChild(el('p', { class: 'note' }, [
+        document.createTextNode(T('mt.batchGapPre') + ' '), gapInput,
+        document.createTextNode(' ' + T('mt.batchGapPost'))
+      ]));
+
+      const groups = batchGroups(queue, cfg.correlation.batchGap || 30);
+      const owner = ownerlessGroups(queue);
+      if (!groups.length && !owner.length) {
+        body.appendChild(el('p', { class: 'note', text: T('mt.batchEmpty') }));
+        return;
+      }
+      const ul = el('ul', { class: 'clean' });
+      groups.forEach(g => {
+        const sample = g.rows[0];
+        const li = el('li', { class: 'row' });
+        li.append(
+          el('strong', { text: g.evidence }),
+          el('span', { class: 'pill', text: g.min === g.max ? String(g.max) : g.min + '–' + g.max }),
+          el('span', { class: 'note trunc', text: T('mt.sample') + ' ' + sample.account.userName +
+            ' → ' + personLabel(sample.candidates[0].person) }),
+          el('span', { style: 'flex:1' }),
+          el('button', { class: 'btn sm primary', text: T('mt.batchApprove', { n: U.fmtInt(g.rows.length) }),
+            onclick: () => {
+              if (!confirm(T('mt.batchApproveSure', { n: U.fmtInt(g.rows.length), evidence: g.evidence }))) return;
+              applyBatch(g.rows.map(r => ({ account: r.account, person: r.candidates[0].person, decision: 'confirmed' })));
+            } })
+        );
+        ul.appendChild(li);
+      });
+      owner.forEach(g => {
+        const li = el('li', { class: 'row' });
+        li.append(
+          el('strong', { text: g.cls }),
+          el('span', { class: 'note', text: T('mt.batchNoCands') }),
+          el('span', { style: 'flex:1' }),
+          el('button', { class: 'btn sm', text: T('mt.batchOwnerless', { n: U.fmtInt(g.rows.length) }),
+            onclick: () => {
+              if (!confirm(T('mt.batchOwnerlessSure', { n: U.fmtInt(g.rows.length), cls: g.cls }))) return;
+              applyBatch(g.rows.map(r => ({ account: r.account, person: null, decision: 'ownerless' })));
+            } })
+        );
+        ul.appendChild(li);
+      });
+      body.appendChild(ul);
+    };
+    draw();
+    return card(T('mt.batchTitle'), T('mt.batchNote'), body);
+  }
+
   /* ------------------------------------------------------------------ tabs */
 
   function reviewTab(m, table, corr) {
@@ -139,6 +247,8 @@
 
     const queue = table.filter(r => !r.person && r.layer !== 'ownerless' && !r.account.ownerless)
       .sort((x, y) => y.account.monthlyCost - x.account.monthlyCost || y.account.riskScore - x.account.riskScore);
+
+    if (queue.length) wrap.appendChild(suggestionsCard(queue));
     wrap.appendChild(card(T('mt.queueTitle'), T('mt.queueNote'), queue.length ? HR.table.make({
       columns: [
         { key: 'userName', label: T('c.account'), value: r => r.account.userName,
@@ -160,27 +270,29 @@
       ],
       rows: queue, pageSize: 20, exportName: 'matching-queue',
       search: (r, q) => (r.account.userName + ' ' + r.account.displayName).toLowerCase().includes(q),
-      onRowClick: r => drawerMatch(m, r)
+      onRowClick: r => drawerMatch(m, r),
+      bulkActions: [
+        { label: n => T('mt.bulkApprove', { n: U.fmtInt(n) }),
+          run: rows => {
+            const withBest = rows.filter(r => r.candidates.length);
+            if (!withBest.length) { U.toast(T('mt.bulkNoBest'), 5000); return; }
+            applyBatch(withBest.map(r => ({ account: r.account, person: r.candidates[0].person, decision: 'confirmed' })));
+          } },
+        { label: n => T('mt.bulkOwnerless', { n: U.fmtInt(n) }),
+          run: rows => applyBatch(rows.map(r => ({ account: r.account, person: null, decision: 'ownerless' }))) }
+      ]
     }) : el('p', { class: 'note', text: T('mt.queueEmpty') })));
 
     /* Scored matches nobody confirmed yet: right until proven wrong, and one
-       button away from becoming written-down truth. */
-    const strong = (corr ? corr.matches : []).filter(x => !x.manual);
+       button away from becoming written-down truth. Matches carried by a vault
+       Accounts[] reference are excluded — that is HelloID's own recorded truth
+       and needs nobody's approval. */
+    const strong = (corr ? corr.matches : []).filter(x => !x.manual && !x.vaultRef);
     if (strong.length) {
       const confirmAll = el('button', { class: 'btn sm', text: T('mt.confirmAll', { n: U.fmtInt(strong.length) }),
         onclick: () => {
           if (!confirm(T('mt.confirmAllSure', { n: U.fmtInt(strong.length) }))) return;
-          const book = HR.config.getMatchBook();
-          const stamp = new Date().toISOString();
-          strong.forEach(x => {
-            book.decisions[x.account.key] = {
-              decision: 'confirmed',
-              personExternalId: x.person.externalId || '', personId: x.person.personId || '',
-              personName: x.person.displayName, decidedAt: stamp
-            };
-          });
-          HR.config.save();
-          HR.app.rebuildBusy().then(() => U.toast(T('mt.toastConfirmedAll', { n: U.fmtInt(strong.length) }), 5000));
+          applyBatch(strong.map(x => ({ account: x.account, person: x.person, decision: 'confirmed' })));
         } });
       wrap.appendChild(card(T('mt.strongTitle'), T('mt.strongNote'), [
         el('div', { class: 'toolbar' }, [el('span', { class: 'spacer' }), confirmAll]),
@@ -198,6 +310,10 @@
           rows: strong, pageSize: 15, exportName: 'matching-strong',
           initialSort: { key: 'points', dir: -1 },
           search: (r, q) => (r.account.userName + ' ' + r.person.displayName).toLowerCase().includes(q),
+          bulkActions: [
+            { label: n => T('mt.bulkConfirm', { n: U.fmtInt(n) }),
+              run: rows => applyBatch(rows.map(x => ({ account: x.account, person: x.person, decision: 'confirmed' }))) }
+          ],
           onRowClick: r => {
             const row = { account: r.account, person: r.person, layer: 'name',
               points: r.points, evidence: r.evidence, decision: null,
@@ -366,6 +482,34 @@
           HR.app.rebuildBusy().then(() => U.toast(T('mt.toastCleared'), 4000));
         } }) : null
       ].filter(Boolean)),
+      (() => {
+        /* Batches are one undoable unit: everything written by one approval. */
+        const byBatch = new Map();
+        rows.forEach(r => {
+          if (!r.d.batch) return;
+          if (!byBatch.has(r.d.batch)) byBatch.set(r.d.batch, []);
+          byBatch.get(r.d.batch).push(r);
+        });
+        if (!byBatch.size) return null;
+        return el('ul', { class: 'clean' }, Array.from(byBatch.entries())
+          .sort((a, b) => b[0].localeCompare(a[0]))
+          .map(([stamp, list]) => {
+            const li = el('li', { class: 'row' });
+            li.append(
+              el('span', { text: T('mt.batchRow', {
+                when: U.fmtDate(Date.parse(stamp)), n: U.fmtInt(list.length) }) }),
+              el('span', { style: 'flex:1' }),
+              el('button', { class: 'btn sm ghost', text: T('mt.undoBatch'), onclick: () => {
+                if (!confirm(T('mt.undoBatchSure', { n: U.fmtInt(list.length) }))) return;
+                const book = HR.config.getMatchBook();
+                list.forEach(r => delete book.decisions[r.key]);
+                HR.config.save();
+                HR.app.rebuildBusy().then(() => U.toast(T('mt.toastUndone'), 3000));
+              } })
+            );
+            return li;
+          }));
+      })(),
       rows.length ? HR.table.make({
         columns: [
           { key: 'userName', label: T('c.account'), render: r => el('span', { class: 'mono', text: r.userName }) },

@@ -326,7 +326,12 @@ own export/import file, so the hard tenant is worked out once and the answers tr
 the next session or colleague. Confirmed decisions can be written back: the view
 generates a `fix-matching-*.ps1` that sets the matching attribute (employeeID,
 extensionAttribute, …) in AD or Entra — read-only by default, writes only with `-Apply`,
-and containing exclusively human-decided rows.
+and containing exclusively human-decided rows. Approval scales in batches: suggestion
+cards group clear winners by evidence pattern (best candidate leads the runner-up by an
+adjustable gap; ties never qualify), zero-candidate classes offer mark-all-ownerless, and
+checkbox selection adds a bulk bar to the tables — every batch is one undoable unit in
+the match book. A vault `Accounts[]` reference is treated as recorded truth and never
+asks for approval.
 
 ## The models
 
