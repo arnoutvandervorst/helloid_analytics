@@ -127,8 +127,7 @@
       label, pattern, sensitivity, color: 2
     });
     HR.config.save(cfg);
-    HR.app.rebuild();
-    U.toast(T('cv.ruleAdded', { label }), 5000);
+    HR.app.rebuildBusy().then(() => U.toast(T('cv.ruleAdded', { label }), 5000));
   }
 
   function ruleCell(label, pattern, sensitivity) {

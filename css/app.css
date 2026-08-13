@@ -320,6 +320,25 @@ svg.chart text { font-family: inherit; }
   display: flex; align-items: center; justify-content: center; color: #fff; font-size: 20px;
 }
 #drop-veil > div { border: 2px dashed rgba(255,255,255,.6); border-radius: 16px; padding: 40px 60px; }
+/* The model builds synchronously, so an import or re-score blocks the thread. The
+   veil paints first (the caller yields two frames before the work), and its spinner
+   is functional feedback, not decoration — the one justified motion beyond the rail. */
+#busy-veil {
+  position: fixed; inset: 0; z-index: 400; background: rgba(0,0,0,.25);
+  display: flex; align-items: center; justify-content: center;
+}
+.busy-box {
+  display: flex; align-items: center; gap: 10px; font-size: 13px;
+  background: var(--surface-2); border: 1px solid var(--border-strong);
+  border-radius: 10px; padding: 12px 18px; box-shadow: var(--shadow);
+}
+.busy-spin {
+  width: 14px; height: 14px; border-radius: 50%; flex: none;
+  border: 2px solid var(--grid); border-top-color: var(--series-1);
+  animation: busy-rotate .8s linear infinite;
+}
+@keyframes busy-rotate { to { transform: rotate(360deg); } }
+
 .toast {
   position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); z-index: 300;
   background: var(--surface-2); border: 1px solid var(--border-strong); border-radius: 10px;

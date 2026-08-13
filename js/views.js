@@ -56,6 +56,52 @@
     ]);
   }
 
+  /* A vault synthesized from a directory import answers different questions than a
+     real one: the notice says where each shown field really comes from, and the
+     mapping drawer spells out the whole translation with its caveats. */
+  function syntheticVaultNotice(m) {
+    if (!m || !m.vault || !m.vault.meta.synthetic) return null;
+    const dir = HR.app.state.directory;
+    return el('div', { class: 'notice' }, [
+      el('strong', { text: T('syn.title') }),
+      el('span', { text: ' ' + T('syn.body', { system: dir ? dir.meta.system : '—' }) + ' ' }),
+      el('button', { class: 'btn ghost sm', text: T('syn.mapping'), onclick: showSyntheticMapping })
+    ]);
+  }
+
+  function showSyntheticMapping() {
+    const rows = [
+      [T('c.employeeId'), 'employeeID / employeeNumber', T('syn.cav.emptyWhenUnfilled')],
+      [T('syn.f.contractType'), 'employeeType', ''],
+      [T('pp.department'), 'department', ''],
+      [T('pp.jobTitle'), 'title', ''],
+      [T('syn.f.employer'), 'company / companyName', ''],
+      [T('syn.f.location'), 'physicalDeliveryOfficeName / officeLocation', ''],
+      [T('syn.f.manager'), 'manager', T('syn.cav.managerResolved')],
+      [T('syn.f.start'), 'whenCreated · Entra: employeeHireDate', T('syn.cav.start')],
+      [T('syn.f.end'), 'accountExpires', T('syn.cav.end')],
+      [T('syn.f.custom'), 'extensionAttribute1-15 · OU', ''],
+      [T('syn.f.personCustom'), 'mail · phones · address', '']
+    ];
+    const t = el('table', { class: 'tbl' });
+    t.appendChild(el('thead', {}, el('tr', {}, [
+      el('th', { class: 'no-sort', text: T('syn.thShown') }),
+      el('th', { class: 'no-sort', text: T('syn.thSource') }),
+      el('th', { class: 'no-sort', text: T('syn.thNote') })
+    ])));
+    t.appendChild(el('tbody', {}, rows.map(([shown, src, note]) => el('tr', {}, [
+      el('td', { text: shown }),
+      el('td', {}, el('span', { class: 'mono', text: src })),
+      el('td', {}, note ? el('span', { class: 'note', text: note }) : null)
+    ]))));
+    const head = el('div', {}, el('h2', { text: T('syn.title') }));
+    const body = el('div', { class: 'stack' }, [
+      card(null, null, el('div', { class: 'tbl-wrap' }, t)),
+      el('p', { class: 'note', text: T('syn.footer') })
+    ]);
+    openDrawer(head, body);
+  }
+
   /* ------------------------------------------------------------ import gates */
   /* What each view cannot say anything without. Every entry is required; a
      pipe-separated entry is satisfied by any one of its options. Views absent
@@ -1221,45 +1267,69 @@
       };
     });
 
-    const counts = U.counts(rows, r => r.life.state);
+    /* A synthesized vault knows no lifecycle: its dates are account dates and every
+       person carries exactly one pseudo-contract, so the state tiles, the contract
+       columns and the joiner/leaver reading are withheld rather than shown wrong. */
+    const synthetic = !!m.vault.meta.synthetic;
+    if (synthetic) f.appendChild(syntheticVaultNotice(m));
+
     const k = el('div', { class: 'grid g4' });
-    k.append(
-      tile(T('pp.persons'), U.fmtInt(rows.length), T('pp.personsFoot'), { small: true }),
-      tile(T('pp.stateCurrent'), U.fmtInt(counts.get('current') || 0), T('pp.contracts'), { small: true, severity: 'good' }),
-      tile(T('pp.statePast'), U.fmtInt(counts.get('past') || 0), T('pp.statePast'), { small: true, severity: (counts.get('past') || 0) ? 'critical' : 'good' }),
-      tile(T('pp.stateFuture'), U.fmtInt(counts.get('future') || 0), T('pp.stateFuture'), { small: true, severity: 'info' })
-    );
+    if (synthetic) {
+      const depts = U.uniq(rows.map(r => r.department).filter(Boolean)).length;
+      const withId = rows.filter(r => r.person.externalId).length;
+      const withMgr = rows.filter(r => {
+        const pc = r.person.primaryContract;
+        return pc && pc.manager && pc.manager.displayName;
+      }).length;
+      k.append(
+        tile(T('pp.persons'), U.fmtInt(rows.length), T('pp.personsFoot'), { small: true }),
+        tile(T('syn.departments'), U.fmtInt(depts), T('pp.department'), { small: true }),
+        tile(T('syn.withEmployeeId'), U.fmtInt(withId), U.fmtPct(rows.length ? withId / rows.length : 0, 0), { small: true, severity: withId === rows.length ? 'good' : 'medium' }),
+        tile(T('syn.withManager'), U.fmtInt(withMgr), U.fmtPct(rows.length ? withMgr / rows.length : 0, 0), { small: true, severity: withMgr ? 'good' : 'medium' })
+      );
+    } else {
+      const counts = U.counts(rows, r => r.life.state);
+      k.append(
+        tile(T('pp.persons'), U.fmtInt(rows.length), T('pp.personsFoot'), { small: true }),
+        tile(T('pp.stateCurrent'), U.fmtInt(counts.get('current') || 0), T('pp.contracts'), { small: true, severity: 'good' }),
+        tile(T('pp.statePast'), U.fmtInt(counts.get('past') || 0), T('pp.statePast'), { small: true, severity: (counts.get('past') || 0) ? 'critical' : 'good' }),
+        tile(T('pp.stateFuture'), U.fmtInt(counts.get('future') || 0), T('pp.stateFuture'), { small: true, severity: 'info' })
+      );
+    }
     f.appendChild(k);
 
+    const columns = [
+      { key: 'name', label: T('c.person'), value: r => r.person.displayName },
+      { key: 'externalId', label: T('c.employeeId'), value: r => r.person.externalId,
+        render: r => r.person.externalId ? el('span', { text: r.person.externalId }) : el('span', { class: 'note', text: '—' }) },
+      !synthetic ? { key: 'state', label: T('pp.state'), value: r => r.life.state,
+        render: r => el('span', { class: 'sev ' + STATE_SEV[r.life.state], text: stateLabel(r.life.state) }) } : null,
+      !synthetic ? { key: 'offset', label: T('pp.offset'), num: true, hint: T('pp.offsetHint'),
+        value: r => r.life.state === 'past' ? -(r.life.days || 0) : (r.life.days == null ? 1e9 : r.life.days),
+        render: r => offsetText(r.life) } : null,
+      !synthetic ? { key: 'contracts', label: T('pp.contracts'), num: true, value: r => r.person.contracts.length } : null,
+      { key: 'department', label: T('pp.department'), value: r => r.department },
+      { key: 'title', label: T('pp.jobTitle'), value: r => r.title },
+      { key: 'accounts', label: T('pp.accounts'), num: true, value: r => r.accounts.length },
+      { key: 'perms', label: T('c.perms'), num: true, value: r => r.perms.length },
+      { key: 'cost', label: T('c.costMo'), num: true, value: r => r.monthlyCost, render: r => U.fmtMoney(r.monthlyCost) },
+      { key: 'risk', label: T('pp.maxRisk'), num: true, value: r => r.maxRisk, render: r => r.accounts.length ? scoreBar(r.maxRisk) : '—' }
+    ].filter(Boolean);
+
     f.appendChild(el('div', { style: 'margin-top:14px' }, card(null, null, HR.table.make({
-      columns: [
-        { key: 'name', label: T('c.person'), value: r => r.person.displayName },
-        { key: 'externalId', label: T('c.employeeId'), value: r => r.person.externalId },
-        { key: 'state', label: T('pp.state'), value: r => r.life.state,
-          render: r => el('span', { class: 'sev ' + STATE_SEV[r.life.state], text: stateLabel(r.life.state) }) },
-        { key: 'offset', label: T('pp.offset'), num: true, hint: T('pp.offsetHint'),
-          value: r => r.life.state === 'past' ? -(r.life.days || 0) : (r.life.days == null ? 1e9 : r.life.days),
-          render: r => offsetText(r.life) },
-        { key: 'contracts', label: T('pp.contracts'), num: true, value: r => r.person.contracts.length },
-        { key: 'department', label: T('pp.department'), value: r => r.department },
-        { key: 'title', label: T('pp.jobTitle'), value: r => r.title },
-        { key: 'accounts', label: T('pp.accounts'), num: true, value: r => r.accounts.length },
-        { key: 'perms', label: T('c.perms'), num: true, value: r => r.perms.length },
-        { key: 'cost', label: T('c.costMo'), num: true, value: r => r.monthlyCost, render: r => U.fmtMoney(r.monthlyCost) },
-        { key: 'risk', label: T('pp.maxRisk'), num: true, value: r => r.maxRisk, render: r => r.accounts.length ? scoreBar(r.maxRisk) : '—' }
-      ],
+      columns,
       rows, pageSize: 40, exportName: 'people',
-      initialSort: { key: 'state', dir: 1 },
+      initialSort: synthetic ? { key: 'risk', dir: -1 } : { key: 'state', dir: 1 },
       search: (r, q) => (r.person.displayName + ' ' + r.person.externalId + ' ' + r.department + ' ' + r.title +
         ' ' + r.accounts.map(a => a.userName).join(' ')).toLowerCase().includes(q),
       filters: [
-        { key: 'state', label: T('pp.state'),
+        !synthetic ? { key: 'state', label: T('pp.state'),
           options: ['current', 'past', 'future', 'unknown'].map(v => ({ value: v, label: T('pp.state' + v.charAt(0).toUpperCase() + v.slice(1)) })),
-          match: (r, v) => r.life.state === v },
+          match: (r, v) => r.life.state === v } : null,
         { key: 'accounts', label: T('pp.accounts'),
           options: [{ value: 'with', label: '1+' }, { value: 'without', label: '0' }],
           match: (r, v) => (v === 'with') === (r.accounts.length > 0) }
-      ],
+      ].filter(Boolean),
       onRowClick: r => drawerVaultPerson(r, m)
     }))));
     return f;
@@ -1755,8 +1825,8 @@
         el('p', { class: 'note', text: T('st.persistNote') })
       ]),
       el('div', { class: 'row' }, [
-        el('button', { class: 'btn primary', text: T('st.save'), onclick: () => { HR.config.save(cfg); settingsDraft = null; HR.app.rebuild(); U.toast(T('toast.settingsSaved')); } }),
-        el('button', { class: 'btn', text: T('st.reset'), onclick: () => { if (confirm(T('st.resetConfirm'))) { settingsDraft = null; HR.config.reset(); HR.app.rebuild(); HR.app.go('settings'); } } }),
+        el('button', { class: 'btn primary', text: T('st.save'), onclick: async () => { HR.config.save(cfg); settingsDraft = null; await HR.app.rebuildBusy(); U.toast(T('toast.settingsSaved')); } }),
+        el('button', { class: 'btn', text: T('st.reset'), onclick: async () => { if (confirm(T('st.resetConfirm'))) { settingsDraft = null; HR.config.reset(); await HR.app.rebuildBusy(); HR.app.go('settings'); } } }),
         el('button', { class: 'btn', text: T('st.exportFile'), onclick: () => {
           HR.config.save(cfg);
           U.download('analytics-settings.json', HR.config.exportJson(), 'application/json');
@@ -1768,7 +1838,7 @@
             try {
               const counts = HR.config.importJson(await file.text());
               settingsDraft = null;
-              HR.app.applyChrome(); HR.app.rebuild(); HR.app.go('settings');
+              HR.app.applyChrome(); await HR.app.rebuildBusy(); HR.app.go('settings');
               U.toast(T('toast.settingsImported', counts), 5000);
             } catch (err) { U.toast(err.message, 7000); }
           } })
@@ -2446,7 +2516,7 @@
         el('p', { text: T('ru.lead') })
       ]),
       c ? el('button', { class: 'btn sm', text: T('ru.clear'), onclick: () => {
-        HR.app.state.ruleSet = null; HR.app.rebuild(); U.toast(T('toast.rulesCleared'));
+        HR.app.state.ruleSet = null; HR.app.rebuildBusy().then(() => U.toast(T('toast.rulesCleared')));
       } }) : null
     ]));
 
@@ -2893,7 +2963,7 @@
     /* ---- apply ---- */
     const skip = el('input', { type: 'checkbox', onchange: e => { cfg.skipReview = e.target.checked; } });
     f.appendChild(el('div', { class: 'row', style: 'margin-top:16px' }, [
-      el('button', { class: 'btn primary', text: T('rv.apply'), onclick: () => {
+      el('button', { class: 'btn primary', text: T('rv.apply'), onclick: async () => {
         /* Order matters: mined rules are more specific than the catch-all, so they go
            in front of it and keep the shipped defaults ahead of them. */
         const insertBefore = (list, id, items) => {
@@ -2917,7 +2987,7 @@
         }));
         HR.config.save(cfg);
         HR.app.state.review = null;
-        HR.app.rebuild();
+        await HR.app.rebuildBusy();
         U.toast(T('toast.settingsSaved'));
         HR.app.go('overview');
       } }),
@@ -3132,7 +3202,7 @@
   /* What the split-out view files build with. Everything here was already shared inside
      this file; naming it makes the seam explicit rather than accidental. */
   HR.viewkit = {
-    card, tile, scoreBar, dl, partialNotice, personRow, peopleIndex, entitlementTable,
+    card, tile, scoreBar, dl, partialNotice, syntheticVaultNotice, personRow, peopleIndex, entitlementTable,
     openDrawer, closeDrawer, drawerAccount, drawerPermission, drawerVaultPerson,
     STATE_SEV, stateLabel, offsetText, sourcesCard, tabbed
   };

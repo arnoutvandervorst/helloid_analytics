@@ -9,7 +9,7 @@
 
   const U = HR.util, el = U.el, C = HR.charts;
   const T = (k, p) => HR.i18n.t(k, p);
-  const { card, tile, scoreBar, dl, partialNotice, personRow, peopleIndex,
+  const { card, tile, scoreBar, dl, partialNotice, syntheticVaultNotice, personRow, peopleIndex,
     drawerPermission, drawerVaultPerson, openDrawer, STATE_SEV, stateLabel } = HR.viewkit;
 
   /* ============================================================ ORGANISATION
@@ -38,6 +38,8 @@
           titles: q.titles.length }) })
       ])
     ]));
+    const synNote = syntheticVaultNotice(m);
+    if (synNote) f.appendChild(synNote);
 
     if (!tree.meta.hierarchical) {
       /* A flat list is what the export gave, not what the organisation is. */
@@ -1324,6 +1326,9 @@
       f.appendChild(proposalsCard(m));
       return f;
     }
+
+    const synNote = syntheticVaultNotice(m);
+    if (synNote) f.appendChild(synNote);
 
     let P;
     try { P = HR.pyramid.build(m); } catch (e) { P = null; }

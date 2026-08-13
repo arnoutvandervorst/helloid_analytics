@@ -92,7 +92,38 @@
   }
 
   /* ---------------------------------------------------------------- import */
+  /* ---- busy veil -----------------------------------------------------------
+     The model builds synchronously on the main thread, so an import or a
+     re-score freezes the page for as long as it takes. The veil is shown first
+     and the browser is given two frames plus a macrotask to actually paint it
+     before the blocking work starts. Depth-counted, so a batch of imports (the
+     demo set) shows one veil from first file to last. */
+  let busyDepth = 0, busyEl = null, busyLabel = null;
+  function busyVeil() {
+    if (busyEl) return busyEl;
+    busyLabel = el('span', {});
+    busyEl = el('div', { id: 'busy-veil', hidden: true },
+      el('div', { class: 'busy-box' }, [el('span', { class: 'busy-spin' }), busyLabel]));
+    document.body.appendChild(busyEl);
+    return busyEl;
+  }
+  async function withBusy(label, fn) {
+    const v = busyVeil();
+    busyDepth++;
+    if (busyDepth === 1) busyLabel.textContent = label;   // a nested phase keeps the first label
+    v.hidden = false;
+    await new Promise(resolve => requestAnimationFrame(() =>
+      requestAnimationFrame(() => setTimeout(resolve, 0))));
+    try { return await fn(); }
+    finally { busyDepth--; if (!busyDepth) v.hidden = true; }
+  }
+  const rebuildBusy = () => withBusy(T('busy.recalc'), () => rebuild());
+
   async function importText(text, fileName, opts) {
+    return withBusy(T('busy.import'), () => importTextNow(text, fileName, opts));
+  }
+
+  async function importTextNow(text, fileName, opts) {
     opts = opts || {};
     /* One drop zone: route by what the file says it is. JSON is either a settings
        file, a snapshot bundle or a vault export. */
@@ -208,8 +239,8 @@
     delete state.importedAt[kind];
     delete state.fileNames[kind];
     HR.store.saveContext({ [kind]: null, importedAt: state.importedAt, fileNames: state.fileNames });
-    rebuild();
-    U.toast(T('toast.sourceCleared', { kind: T('src.' + kind) }), 4000);
+    withBusy(T('busy.recalc'), () => rebuild()).then(() =>
+      U.toast(T('toast.sourceCleared', { kind: T('src.' + kind) }), 4000));
   }
 
   /**
@@ -222,8 +253,8 @@
     state.currentSnapshotId = null;
     state.noAutoRecon = true;
     HR.store.saveContext({ noAutoRecon: true });
-    rebuild();
-    U.toast(T('toast.sourceCleared', { kind: T('src.recon') }), 4000);
+    withBusy(T('busy.recalc'), () => rebuild()).then(() =>
+      U.toast(T('toast.sourceCleared', { kind: T('src.recon') }), 4000));
   }
 
   /* HelloID → Rules → Entitlements exports under the same name as the two files this
@@ -486,13 +517,15 @@
     if (!id) {
       state.baselineId = null; state.baselineModel = null; state.baselineSnapshot = null; state.diff = null;
     } else {
-      const snap = await HR.store.get(id);
-      if (!snap) { U.toast(T('toast.snapNotFound')); return; }
-      state.baselineId = id;
-      state.baselineSnapshot = snap;
-      state.baselineModel = HR.model.build(snap.records, buildOpts());
-      await recomputeDiff();
-      if (!quiet) U.toast(T('toast.baselineSet', { name: snap.name }));
+      await withBusy(T('busy.baseline'), async () => {
+        const snap = await HR.store.get(id);
+        if (!snap) { U.toast(T('toast.snapNotFound')); return; }
+        state.baselineId = id;
+        state.baselineSnapshot = snap;
+        state.baselineModel = HR.model.build(snap.records, buildOpts());
+        await recomputeDiff();
+        if (!quiet) U.toast(T('toast.baselineSet', { name: snap.name }));
+      });
     }
     updateTopbar();
     render();
@@ -503,6 +536,10 @@
   }
 
   async function loadSnapshot(id) {
+    return withBusy(T('busy.snapshot'), () => loadSnapshotNow(id));
+  }
+
+  async function loadSnapshotNow(id) {
     const snap = await HR.store.get(id);
     if (!snap) { U.toast(T('toast.snapNotFound')); return; }
     state.currentSnapshotId = id;
@@ -723,7 +760,7 @@
 
   const REPO_URL = 'https://github.com/arnoutvandervorst/helloid_analytics';
 
-  HR.app = { REPO_URL, state, go, rebuild, batch, loadSnapshot, setBaseline, refreshSnapshots, importText, render, applyChrome,
+  HR.app = { REPO_URL, state, go, rebuild, rebuildBusy, batch, loadSnapshot, setBaseline, refreshSnapshots, importText, render, applyChrome,
     importFileAs, clearSource, clearRecon, detectKind, loadSample, findSample, sampleName: () => sampleFile || null,
     demoAvailable: () => demoManifest };
   document.addEventListener('DOMContentLoaded', init);

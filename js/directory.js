@@ -174,7 +174,9 @@
     return {
       Persons: users.map(u => ({
         PersonId: u.id,
-        ExternalId: str(u.employeeId) || u.id,
+        /* No employee id in the directory means no employee id — a DN standing in
+           would read like one and mislead every list it appears in. */
+        ExternalId: str(u.employeeId),
         DisplayName: u.displayName || u.userName,
         UserName: u.userName,
         Name: { GivenName: str(u.givenName), FamilyName: str(u.surname), Initials: str(u.initials) },
