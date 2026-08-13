@@ -49,6 +49,10 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+$sw = [System.Diagnostics.Stopwatch]::StartNew()
+function Write-Step([string]$Message) {
+  Write-Host ("[{0:hh\:mm\:ss}] {1}" -f $sw.Elapsed, $Message)
+}
 
 $scopes = @('User.Read.All', 'Group.Read.All', 'Organization.Read.All')
 if ($IncludeSignInActivity) { $scopes += 'AuditLog.Read.All' }
@@ -56,12 +60,15 @@ if ($IncludeSignInActivity) { $scopes += 'AuditLog.Read.All' }
 Write-Host "Connecting to Microsoft Graph with read-only scopes:"
 $scopes | ForEach-Object { Write-Host "  $_" }
 Connect-MgGraph -Scopes $scopes -NoWelcome
+Write-Step "Connected."
 
 $org = Get-MgOrganization | Select-Object -First 1
+Write-Step "Tenant: $($org.DisplayName) ($($org.Id))"
 
 # SKU id -> part number, so license assignments come out readable.
 $skuNames = @{}
 foreach ($sku in Get-MgSubscribedSku -All) { $skuNames[[string]$sku.SkuId] = $sku.SkuPartNumber }
+Write-Step "$($skuNames.Count) license SKUs in the tenant"
 
 $userProps = @(
   'id','userPrincipalName','displayName','givenName','surname','accountEnabled','createdDateTime',
@@ -74,13 +81,13 @@ $userProps = @(
 )
 if ($IncludeSignInActivity) { $userProps += 'signInActivity' }
 
-Write-Host "Reading users..." -NoNewline
+Write-Step "Reading users (paged; large tenants take a while)..."
 $mgUsers = Get-MgUser -All -Property ($userProps -join ',') -ExpandProperty 'manager($select=id,displayName)' -ConsistencyLevel eventual -CountVariable c
-Write-Host " $($mgUsers.Count)"
+Write-Step "  $($mgUsers.Count) users ($(@($mgUsers | Where-Object { $_.AccountEnabled }).Count) enabled, $(@($mgUsers | Where-Object { $_.OnPremisesSyncEnabled }).Count) synced from on-prem)"
 
-Write-Host "Reading groups..." -NoNewline
+Write-Step "Reading groups..."
 $mgGroups = Get-MgGroup -All -Property 'id,displayName,description,groupTypes,securityEnabled,mailEnabled,membershipRule,membershipRuleProcessingState,createdDateTime,mail'
-Write-Host " $($mgGroups.Count)"
+Write-Step "  $($mgGroups.Count) groups ($(@($mgGroups | Where-Object { @($_.GroupTypes) -contains 'DynamicMembership' }).Count) dynamic)"
 
 $userIds = @{}; foreach ($u in $mgUsers) { $userIds[$u.Id] = $true }
 $groupIds = @{}; foreach ($g in $mgGroups) { $groupIds[$g.Id] = $true }
@@ -157,17 +164,19 @@ $users = foreach ($u in $mgUsers) {
   }
 }
 
-Write-Host "Reading memberships (one call per group)..."
+Write-Step "Shaping users..."
+Write-Step "Reading memberships (one Graph call per group)..."
 $groups = @()
+$edgeCount = 0
 $i = 0
 foreach ($g in $mgGroups) {
   $i++
-  if ($i % 50 -eq 0) { Write-Host "  $i / $($mgGroups.Count)" }
+  if ($i % 25 -eq 0) { Write-Step "  $i / $($mgGroups.Count) groups, $edgeCount memberships so far" }
   $memberUsers = [System.Collections.Generic.List[string]]::new()
   $memberGroups = [System.Collections.Generic.List[string]]::new()
   foreach ($m in (Get-MgGroupMember -GroupId $g.Id -All)) {
-    if ($userIds.ContainsKey($m.Id)) { $memberUsers.Add($m.Id) }
-    elseif ($groupIds.ContainsKey($m.Id)) { $memberGroups.Add($m.Id) }
+    if ($userIds.ContainsKey($m.Id)) { $memberUsers.Add($m.Id); $edgeCount++ }
+    elseif ($groupIds.ContainsKey($m.Id)) { $memberGroups.Add($m.Id); $edgeCount++ }
     # devices and service principals are deliberately dropped
   }
   $groups += [ordered]@{
@@ -207,15 +216,18 @@ $envelope = [ordered]@{
   groups      = @($groups)
 }
 
+Write-Step "Writing JSON..."
 $envelope | ConvertTo-Json -Depth 8 -Compress | Out-File -FilePath $OutFile -Encoding utf8
 
 Disconnect-MgGraph | Out-Null
+Write-Step "Disconnected from Graph. Done in $([math]::Round($sw.Elapsed.TotalSeconds)) s."
 
 $nested = ($groups | ForEach-Object { $_.memberGroups.Count } | Measure-Object -Sum).Sum
 $dynamic = ($groups | Where-Object { $_.dynamic }).Count
+$size = [math]::Round((Get-Item $OutFile).Length / 1MB, 1)
 Write-Host ""
-Write-Host "Wrote $OutFile"
-Write-Host "  $($users.Count) users, $($groups.Count) groups, $nested group-in-group edges, $dynamic dynamic groups"
+Write-Host "Wrote $OutFile ($size MB)"
+Write-Host "  $($users.Count) users, $($groups.Count) groups, $edgeCount memberships, $nested group-in-group edges, $dynamic dynamic groups"
 Write-Host ""
 Write-Host "This file contains personal data. Hand it only to the analyst who asked for it;"
 Write-Host "it is read locally in their browser and is never uploaded anywhere."

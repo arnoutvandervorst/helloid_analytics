@@ -32,7 +32,14 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+$sw = [System.Diagnostics.Stopwatch]::StartNew()
+function Write-Step([string]$Message) {
+  Write-Host ("[{0:hh\:mm\:ss}] {1}" -f $sw.Elapsed, $Message)
+}
+
+Write-Step "Importing ActiveDirectory module..."
 Import-Module ActiveDirectory
+Write-Step "Module loaded. Domain: $((Get-ADDomain).DNSRoot)"
 
 $extAttrs = 1..15 | ForEach-Object { "extensionAttribute$_" }
 $userProps = @(
@@ -51,16 +58,37 @@ $groupProps = @(
   'managedBy','member','distinguishedName','whenCreated','mail'
 )
 
-$userArgs  = @{ Filter = '*'; Properties = $userProps }
+$userArgs  = @{ Filter = '*' }
 $groupArgs = @{ Filter = '*'; Properties = $groupProps }
 if ($SearchBase) { $userArgs.SearchBase = $SearchBase; $groupArgs.SearchBase = $SearchBase }
 
-Write-Host "Reading users..." -NoNewline
-$adUsers = Get-ADUser @userArgs
-Write-Host " $($adUsers.Count)"
-Write-Host "Reading groups..." -NoNewline
+<#
+  Not every schema carries every attribute: mailNickname needs the Exchange schema
+  extension, others may be blocked or renamed. Rather than assuming, ask — and when
+  the domain controller rejects a property by name, drop that one, say so, and try
+  again. The output simply lacks the fields this schema does not have.
+#>
+function Get-AdUsersResilient([hashtable]$BaseArgs, [string[]]$Props) {
+  while ($true) {
+    try {
+      $args2 = $BaseArgs.Clone()
+      $args2.Properties = $Props
+      return , (Get-ADUser @args2)
+    } catch {
+      $bad = if ($_.Exception.Message -match 'Parameter name:\s*(\S+)') { $Matches[1] } else { $null }
+      if (-not $bad -or $Props -notcontains $bad) { throw }
+      Write-Step "  attribute '$bad' is not in this schema - skipped"
+      $Props = @($Props | Where-Object { $_ -ne $bad })
+    }
+  }
+}
+
+Write-Step "Reading users$(if ($SearchBase) { " under $SearchBase" })..."
+$adUsers = Get-AdUsersResilient $userArgs $userProps
+Write-Step "  $($adUsers.Count) users ($(@($adUsers | Where-Object { $_.Enabled }).Count) enabled)"
+Write-Step "Reading groups..."
 $adGroups = Get-ADGroup @groupArgs
-Write-Host " $($adGroups.Count)"
+Write-Step "  $($adGroups.Count) groups ($(@($adGroups | Where-Object { $_.groupCategory -eq 'Security' }).Count) security)"
 
 $userDns  = @{}; foreach ($u in $adUsers)  { $userDns[$u.DistinguishedName] = $u }
 $groupDns = @{}; foreach ($g in $adGroups) { $groupDns[$g.DistinguishedName] = $g }
@@ -74,7 +102,11 @@ function ParentOu([string]$dn) {
   return ($dn -replace '^[^,]+,', '')
 }
 
+Write-Step "Shaping users..."
+$shaped = 0
 $users = foreach ($u in $adUsers) {
+  $shaped++
+  if ($shaped % 500 -eq 0) { Write-Step "  $shaped / $($adUsers.Count) users" }
   $ext = [ordered]@{}
   foreach ($ea in $extAttrs) { if ($u.$ea) { $ext[$ea] = [string]$u.$ea } }
   $mgr = if ($u.manager -and $userDns.ContainsKey($u.manager)) { $userDns[$u.manager] } else { $null }
@@ -123,7 +155,11 @@ $users = foreach ($u in $adUsers) {
   }
 }
 
+Write-Step "Classifying group members (users vs nested groups)..."
+$shapedG = 0
 $groups = foreach ($g in $adGroups) {
+  $shapedG++
+  if ($shapedG % 200 -eq 0) { Write-Step "  $shapedG / $($adGroups.Count) groups" }
   $memberUsers = [System.Collections.Generic.List[string]]::new()
   $memberGroups = [System.Collections.Generic.List[string]]::new()
   foreach ($dn in @($g.member)) {
@@ -159,12 +195,17 @@ $envelope = [ordered]@{
   groups      = @($groups)
 }
 
+Write-Step "Writing JSON..."
 $envelope | ConvertTo-Json -Depth 8 -Compress | Out-File -FilePath $OutFile -Encoding utf8
 
 $nested = ($groups | ForEach-Object { $_.memberGroups.Count } | Measure-Object -Sum).Sum
+$edges = ($groups | ForEach-Object { $_.memberUsers.Count } | Measure-Object -Sum).Sum
+$size = [math]::Round((Get-Item $OutFile).Length / 1MB, 1)
+Write-Step "Done in $([math]::Round($sw.Elapsed.TotalSeconds)) s."
 Write-Host ""
-Write-Host "Wrote $OutFile"
-Write-Host "  $($users.Count) users, $($groups.Count) groups, $nested group-in-group edges"
+Write-Host "Wrote $OutFile ($size MB)"
+Write-Host "  $($users.Count) users, $($groups.Count) groups"
+Write-Host "  $edges direct memberships, $nested group-in-group edges"
 Write-Host ""
 Write-Host "This file contains personal data. Hand it only to the analyst who asked for it;"
 Write-Host "it is read locally in their browser and is never uploaded anywhere."
