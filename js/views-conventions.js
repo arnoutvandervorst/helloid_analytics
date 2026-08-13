@@ -111,30 +111,32 @@
      permission taxonomy should be written in. Each one can become a category rule;
      the row shows how the current settings already carve it, so a family that is
      100% uncategorised is a visible classification gap. */
-  const familyPattern = prefix => '^' + HR.mine.escapeRx(prefix) + '(?=[-_. ]|$)';
-  const suffixPattern = sfx => '[-_.]' + HR.mine.escapeRx(sfx) + '$';
+  /* Rules mined here land as structured matchers, not regex — the separator is
+     known per system, so "starts with ORG-" says exactly what the lookahead said. */
+  const familySpec = (prefix, sep) => ({ op: 'starts', value: prefix + (sep || '') });
+  const suffixSpec = (sfx, sep) => ({ op: 'ends', value: (sep || '-') + sfx });
 
   const rulePatternExists = pattern =>
     HR.config.get().categories.some(c => c.pattern === pattern);
 
-  function addCategoryRule(label, pattern, sensitivity) {
+  function addCategoryRule(label, spec, sensitivity) {
     const cfg = HR.config.clone(HR.config.get());
     /* Mined rules are more specific than the catch-all, so they go in front of it —
        the same placement the import review uses. */
     const at = cfg.categories.findIndex(c => c.id === 'other');
     cfg.categories.splice(at < 0 ? cfg.categories.length : at, 0, {
       id: 'mined-' + label.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
-      label, pattern, sensitivity, color: 2
+      label, pattern: HR.config.compileMatch(spec), match: spec, sensitivity, color: 2
     });
     HR.config.save(cfg);
     HR.app.rebuildBusy().then(() => U.toast(T('cv.ruleAdded', { label }), 5000));
   }
 
-  function ruleCell(label, pattern, sensitivity) {
-    if (rulePatternExists(pattern)) return el('span', { class: 'pill ok', text: T('cv.ruleExists') });
+  function ruleCell(label, spec, sensitivity) {
+    if (rulePatternExists(HR.config.compileMatch(spec))) return el('span', { class: 'pill ok', text: T('cv.ruleExists') });
     return el('button', {
       class: 'btn sm', text: T('cv.addRule'),
-      onclick: e => { e.stopPropagation(); addCategoryRule(label, pattern, sensitivity); }
+      onclick: e => { e.stopPropagation(); addCategoryRule(label, spec, sensitivity); }
     });
   }
 
@@ -214,7 +216,7 @@
                 : el('span', { class: 'note', text: '0' }) },
             { key: 'rule', label: '', sortable: false, render: r => {
                 const hint = HR.mine.hintFor(r.prefix);
-                return ruleCell(r.prefix, familyPattern(r.prefix), hint ? hint.sensitivity : 1.0);
+                return ruleCell(r.prefix, familySpec(r.prefix, sys.sep), hint ? hint.sensitivity : 1.0);
               } }
           ],
           rows: sys.families, pageSize: 8, exportName: 'ent-families-' + sys.system,
@@ -230,7 +232,7 @@
             { key: 'count', label: T('pm.title'), num: true },
             { key: 'families', label: T('cv.cFamiliesCol'), num: true },
             { key: 'rule', label: '', sortable: false,
-              render: r => ruleCell(r.suffix, suffixPattern(r.suffix), 1.0) }
+              render: r => ruleCell(r.suffix, suffixSpec(r.suffix, sys.sep), 1.0) }
           ],
           rows: sys.vocab.slice(0, 12), pageSize: 12, exportName: 'ent-suffixes-' + sys.system
         }));
@@ -262,18 +264,18 @@
   function drawerFamily(m, sys, f) {
     const d = dominantCategory(f.perms);
     const hint = HR.mine.hintFor(f.prefix);
-    const pattern = familyPattern(f.prefix);
+    const spec = familySpec(f.prefix, sys.sep);
     const head = el('div', {}, [
       el('h2', { text: f.prefix + (sys.sep || '') + '…' }),
       el('div', { class: 'row' }, [
         el('span', { class: 'pill', text: U.fmtInt(f.count) + ' ' + T('pm.title').toLowerCase() }),
         d ? el('span', { class: d.other ? 'pill removed' : 'pill', text: d.label + ' · ' + U.fmtPct(d.share, 0) }) : null,
         el('span', { class: 'pill', text: T('cv.cSens') + ' ' + U.fmtNum(meanSens(f.perms), 1) }),
-        ruleCell(f.prefix, pattern, hint ? hint.sensitivity : 1.0)
+        ruleCell(f.prefix, spec, hint ? hint.sensitivity : 1.0)
       ])
     ]);
     const body = el('div', { class: 'stack' });
-    body.appendChild(el('p', { class: 'note', text: T('cv.familyPattern', { pattern }) }));
+    body.appendChild(el('p', { class: 'note', text: T('cv.familyRule', { value: spec.value }) }));
     body.appendChild(card(null, null, HR.table.make({
       columns: [
         { key: 'name', label: T('ct.group'), render: r => el('span', { class: 'mono', text: r.name }) },
