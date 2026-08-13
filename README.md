@@ -314,6 +314,20 @@ value distribution, and the value → group pairs strong enough (≥5 people, �
 clearly above baseline) to become HelloID business-rule conditions or connector mappings.
 `make-directory.py` generates a fictional envelope to try it without a tenant.
 
+## Matching workbench
+
+Account↔person matching is scored evidence (vault correlation, employee ids, name
+conventions — weights and threshold tunable in Settings, with a live preview). The
+Matching view is where a human finishes the job: every account with its attribution and
+score, a review queue of the unmatched and ambiguous ones with candidates shown even
+below the threshold (the duplicate-provisioning risk made visible), and per account
+confirm / assign / reject / mark-ownerless. Decisions land in the **match book** — its
+own export/import file, so the hard tenant is worked out once and the answers travel to
+the next session or colleague. Confirmed decisions can be written back: the view
+generates a `fix-matching-*.ps1` that sets the matching attribute (employeeID,
+extensionAttribute, …) in AD or Entra — read-only by default, writes only with `-Apply`,
+and containing exclusively human-decided rows.
+
 ## The models
 
 All three are assumptions, all three are editable in **Settings**, and every change

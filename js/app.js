@@ -195,6 +195,7 @@
       try { peek = JSON.parse(text); } catch (e) { return null; }
       if (HR.config.looksLikeSettings(peek)) return 'settings';
       if (HR.config.looksLikeProductMap(peek)) return 'productmap';
+      if (HR.config.looksLikeMatchBook(peek)) return 'matchbook';
       if (peek.kind === 'helloid-recon-snapshots' || Array.isArray(peek.snapshots)) return 'snapshots';
       if (HR.directory.looksLikeDirectory(peek)) return 'directory';
       if (HR.products.looksLikeProducts(peek)) return 'products';
@@ -374,6 +375,14 @@
         const res = HR.config.importMap(text, { merge: true });
         rebuild();
         U.toast(T('toast.productMapImported', res), 5000);
+      } catch (err) { U.toast(err.message, 7000); }
+      return;
+    }
+    if (peek && HR.config.looksLikeMatchBook(peek)) {
+      try {
+        const res = HR.config.importMatchBook(text, { merge: true });
+        await withBusy(T('busy.recalc'), () => rebuild());
+        U.toast(T('toast.matchBookImported', res), 5000);
       } catch (err) { U.toast(err.message, 7000); }
       return;
     }

@@ -5,20 +5,67 @@
 
   const KEY = 'hr.config.v1';
 
+  /* --- structured matchers --------------------------------------------------
+     Regex is the engine's language, not the analyst's. Every pattern field can
+     carry a sibling spec — { op, value } with a comma-separated value list —
+     that compiles to the regex the engine actually runs. The compiled string
+     stays stored in the original field, so exports, older builds and the
+     matching code never notice. Ops: equals, starts, ends, contains, and regex
+     as the escape hatch. The compiled style deliberately mirrors the legacy
+     hand-written patterns ('^(A|B)') so restated defaults stay byte-identical
+     where they can, which is what lets stored configs adopt the specs. */
+  const escapeRx = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+  function compileMatch(spec) {
+    if (!spec || !spec.op) return '';
+    if (spec.op === 'regex') return String(spec.value || '');
+    const values = String(spec.value || '').split(',').map(v => v.trim()).filter(Boolean);
+    if (!values.length) return '';
+    const body = values.length === 1 ? escapeRx(values[0]) : '(' + values.map(escapeRx).join('|') + ')';
+    switch (spec.op) {
+      case 'equals': return '^' + body + '$';
+      case 'starts': return '^' + body;
+      case 'ends': return body + '$';
+      case 'contains': return body;
+      default: return '';
+    }
+  }
+
+  /* Which pattern field pairs with which spec field, per list. */
+  const MATCH_FIELDS = {
+    categories: [['pattern', 'match']],
+    accountClasses: [['pattern', 'match'], ['groupPattern', 'groupMatch'], ['vaultPattern', 'vaultMatch']],
+    employeeCategories: [['vaultPattern', 'vaultMatch'], ['accountPattern', 'accountMatch'], ['groupPattern', 'groupMatch']],
+    priceBook: [['pattern', 'match']]
+  };
+
+  /* A row that carries a spec is authored through it: the spec wins, the pattern
+     field is its compilation. Rows without one are hand-written regex and stay so. */
+  function syncMatchSpecs(cfg) {
+    Object.keys(MATCH_FIELDS).forEach(listKey => {
+      (cfg[listKey] || []).forEach(row => {
+        MATCH_FIELDS[listKey].forEach(([patternField, specField]) => {
+          const spec = row[specField];
+          if (spec && spec.op) row[patternField] = compileMatch(spec);
+        });
+      });
+    });
+  }
+
   /* --- permission taxonomy -------------------------------------------------
      Matched in order against the permission display name. `sensitivity` is the
      multiplier applied to a permission-level risk weight. */
   const DEFAULT_CATEGORIES = [
-    { id: 'privileged', key: 'cat.privileged', label: 'Privileged / PAM', pattern: '^(PRIV|ADMIN|TIER0)', sensitivity: 3.0, color: 8 },
-    { id: 'server', key: 'cat.server',     label: 'Server / infra',   pattern: '^(SRV|DB|LOG)',       sensitivity: 2.4, color: 7 },
-    { id: 'security', key: 'cat.security',   label: 'Security control', pattern: '^SEC',                sensitivity: 1.6, color: 5 },
-    { id: 'licence', key: 'cat.licence',    label: 'Licence',          pattern: '^LIC',                sensitivity: 1.0, color: 4 },
-    { id: 'role', key: 'cat.role',       label: 'Business role',    pattern: '^(ROLE|ROL)',         sensitivity: 1.8, color: 3 },
-    { id: 'fileshare', key: 'cat.fileshare',  label: 'File share',       pattern: '^(FS|SHARE)',         sensitivity: 1.5, color: 2 },
-    { id: 'application', key: 'cat.application',label: 'Application',      pattern: '^APP',                sensitivity: 1.2, color: 1 },
-    { id: 'mailbox', key: 'cat.mailbox',    label: 'Mailbox',          pattern: '^MBX',                sensitivity: 1.2, color: 6 },
-    { id: 'team', key: 'cat.team',       label: 'Team / collab',    pattern: '^TEAM',               sensitivity: 0.8, color: 3 },
-    { id: 'device', key: 'cat.device',     label: 'Device / print',   pattern: '^(PRINT|WIFI|VPN)',   sensitivity: 0.8, color: 6 },
+    { id: 'privileged', key: 'cat.privileged', label: 'Privileged / PAM', pattern: '^(PRIV|ADMIN|TIER0)', match: { op: 'starts', value: 'PRIV, ADMIN, TIER0' }, sensitivity: 3.0, color: 8 },
+    { id: 'server', key: 'cat.server',     label: 'Server / infra',   pattern: '^(SRV|DB|LOG)',       match: { op: 'starts', value: 'SRV, DB, LOG' }, sensitivity: 2.4, color: 7 },
+    { id: 'security', key: 'cat.security',   label: 'Security control', pattern: '^SEC',                match: { op: 'starts', value: 'SEC' }, sensitivity: 1.6, color: 5 },
+    { id: 'licence', key: 'cat.licence',    label: 'Licence',          pattern: '^LIC',                match: { op: 'starts', value: 'LIC' }, sensitivity: 1.0, color: 4 },
+    { id: 'role', key: 'cat.role',       label: 'Business role',    pattern: '^(ROLE|ROL)',         match: { op: 'starts', value: 'ROLE, ROL' }, sensitivity: 1.8, color: 3 },
+    { id: 'fileshare', key: 'cat.fileshare',  label: 'File share',       pattern: '^(FS|SHARE)',         match: { op: 'starts', value: 'FS, SHARE' }, sensitivity: 1.5, color: 2 },
+    { id: 'application', key: 'cat.application',label: 'Application',      pattern: '^APP',                match: { op: 'starts', value: 'APP' }, sensitivity: 1.2, color: 1 },
+    { id: 'mailbox', key: 'cat.mailbox',    label: 'Mailbox',          pattern: '^MBX',                match: { op: 'starts', value: 'MBX' }, sensitivity: 1.2, color: 6 },
+    { id: 'team', key: 'cat.team',       label: 'Team / collab',    pattern: '^TEAM',               match: { op: 'starts', value: 'TEAM' }, sensitivity: 0.8, color: 3 },
+    { id: 'device', key: 'cat.device',     label: 'Device / print',   pattern: '^(PRINT|WIFI|VPN)',   match: { op: 'starts', value: 'PRINT, WIFI, VPN' }, sensitivity: 0.8, color: 6 },
     { id: 'other', key: 'cat.other',      label: 'Uncategorised',    pattern: '.',                   sensitivity: 1.0, color: 2 }
   ];
 
@@ -31,11 +78,26 @@
      account that does not announce itself. The last row is the fallback and is
      not matched on patterns. */
   const DEFAULT_ACCOUNT_CLASSES = [
-    { id: 'admin', key: 'cls.admin',   label: 'Admin account',   pattern: '^(adm[-_.]|admin[-_.]|a-|_adm)', weight: 2.4, groupPattern: '^(PRIV|TIER0)', vaultPattern: '' },
-    { id: 'service', key: 'cls.service', label: 'Service account', pattern: '^(svc|srv|sa[-_.]|app[-_.]|sys[-_.])', weight: 1.6, groupPattern: '', vaultPattern: '' },
-    { id: 'test', key: 'cls.test',    label: 'Test / demo',     pattern: '^(test|tst|demo|dummy|poc)', weight: 1.8, groupPattern: '', vaultPattern: '' },
-    { id: 'shared', key: 'cls.shared',  label: 'Shared / generic',pattern: '^(shared|gen[-_.]|info|balie|receptie|algemeen)', weight: 1.5, groupPattern: '', vaultPattern: '' },
-    { id: 'external', key: 'cls.external',label: 'External / vendor',pattern: '(leverancier|partner|extern|detachering|contractor|vendor)', weight: 1.7, groupPattern: '(leverancier|extern|contractor|vendor)', vaultPattern: '' },
+    { id: 'admin', key: 'cls.admin',   label: 'Admin account',
+      pattern: '^(adm[-_.]|admin[-_.]|a-|_adm)', legacyPattern: '^(adm[-_.]|admin[-_.]|a-|_adm)',
+      match: { op: 'starts', value: 'adm-, adm_, adm., admin-, admin_, admin., a-, _adm' },
+      weight: 2.4, groupPattern: '^(PRIV|TIER0)', groupMatch: { op: 'starts', value: 'PRIV, TIER0' }, vaultPattern: '' },
+    { id: 'service', key: 'cls.service', label: 'Service account',
+      pattern: '^(svc|srv|sa[-_.]|app[-_.]|sys[-_.])', legacyPattern: '^(svc|srv|sa[-_.]|app[-_.]|sys[-_.])',
+      match: { op: 'starts', value: 'svc, srv, sa-, sa_, sa., app-, app_, app., sys-, sys_, sys.' },
+      weight: 1.6, groupPattern: '', vaultPattern: '' },
+    { id: 'test', key: 'cls.test',    label: 'Test / demo',
+      pattern: '^(test|tst|demo|dummy|poc)', match: { op: 'starts', value: 'test, tst, demo, dummy, poc' },
+      weight: 1.8, groupPattern: '', vaultPattern: '' },
+    { id: 'shared', key: 'cls.shared',  label: 'Shared / generic',
+      pattern: '^(shared|gen[-_.]|info|balie|receptie|algemeen)', legacyPattern: '^(shared|gen[-_.]|info|balie|receptie|algemeen)',
+      match: { op: 'starts', value: 'shared, gen-, gen_, gen., info, balie, receptie, algemeen' },
+      weight: 1.5, groupPattern: '', vaultPattern: '' },
+    { id: 'external', key: 'cls.external',label: 'External / vendor',
+      pattern: '(leverancier|partner|extern|detachering|contractor|vendor)',
+      match: { op: 'contains', value: 'leverancier, partner, extern, detachering, contractor, vendor' },
+      weight: 1.7, groupPattern: '(leverancier|extern|contractor|vendor)',
+      groupMatch: { op: 'contains', value: 'leverancier, extern, contractor, vendor' }, vaultPattern: '' },
     { id: 'user', key: 'cls.user',    label: 'User account',    pattern: '.', weight: 1.0, groupPattern: '', vaultPattern: '' }
   ];
 
@@ -50,23 +112,30 @@
   const DEFAULT_EMPLOYEE_CATEGORIES = [
     { id: 'payroll', key: 'ecat.payroll', label: 'Payroll', multiplier: 1.0,
       vaultPattern: '(payroll|loondienst|dienstverband|vast|onbepaalde|bepaalde|cao)',
+      vaultMatch: { op: 'contains', value: 'payroll, loondienst, dienstverband, vast, onbepaalde, bepaalde, cao' },
       accountPattern: '', groupPattern: '' },
     { id: 'student', key: 'ecat.student', label: 'Intern / student', multiplier: 1.15,
       vaultPattern: '(stagiair|stage|student|trainee|leerling)',
+      vaultMatch: { op: 'contains', value: 'stagiair, stage, student, trainee, leerling' },
       accountPattern: '(^stg[-_.]|stagiair|student|trainee)',
-      groupPattern: '(stagiair|student|trainee)' },
+      groupPattern: '(stagiair|student|trainee)',
+      groupMatch: { op: 'contains', value: 'stagiair, student, trainee' } },
     { id: 'volunteer', key: 'ecat.volunteer', label: 'Volunteer', multiplier: 1.2,
-      vaultPattern: '(vrijwillig|volunteer)',
-      accountPattern: '(vrijwillig|volunteer)',
-      groupPattern: '(vrijwillig|volunteer)' },
+      vaultPattern: '(vrijwillig|volunteer)', vaultMatch: { op: 'contains', value: 'vrijwillig, volunteer' },
+      accountPattern: '(vrijwillig|volunteer)', accountMatch: { op: 'contains', value: 'vrijwillig, volunteer' },
+      groupPattern: '(vrijwillig|volunteer)', groupMatch: { op: 'contains', value: 'vrijwillig, volunteer' } },
     { id: 'temp', key: 'ecat.temp', label: 'Temp / external', multiplier: 1.25,
       vaultPattern: '(inhuur|uitzend|extern|detacher|interim|zzp|freelan|temp|contractor|flex)',
+      vaultMatch: { op: 'contains', value: 'inhuur, uitzend, extern, detacher, interim, zzp, freelan, temp, contractor, flex' },
       accountPattern: '(^ext[-_.]|extern|inhuur|uitzend|contractor)',
-      groupPattern: '(extern|inhuur|uitzend|contractor)' },
+      groupPattern: '(extern|inhuur|uitzend|contractor)',
+      groupMatch: { op: 'contains', value: 'extern, inhuur, uitzend, contractor' } },
     { id: 'supplier', key: 'ecat.supplier', label: 'Supplier / vendor', multiplier: 1.5,
       vaultPattern: '(leverancier|supplier|vendor|partner)',
+      vaultMatch: { op: 'contains', value: 'leverancier, supplier, vendor, partner' },
       accountPattern: '(^sup[-_.]|^vnd[-_.]|leverancier|supplier|vendor|partner)',
-      groupPattern: '(leverancier|supplier|vendor|partner)' },
+      groupPattern: '(leverancier|supplier|vendor|partner)',
+      groupMatch: { op: 'contains', value: 'leverancier, supplier, vendor, partner' } },
     { id: 'ecatUnknown', key: 'ecat.unknown', label: 'Unknown', multiplier: 1.0,
       vaultPattern: '', accountPattern: '', groupPattern: '' }
   ];
@@ -80,16 +149,16 @@
      Defaults are public EUR list prices (annual commitment, monthly billing) and
      are meant to be corrected to the customer's contract. */
   const DEFAULT_PRICE_BOOK = [
-    { classification: 'licence',     pattern: 'M365-E5$',          price: 54.75, unit: 'month', label: 'Microsoft 365 E5' },
-    { classification: 'licence',     pattern: 'M365-E3$',          price: 33.75, unit: 'month', label: 'Microsoft 365 E3' },
-    { classification: 'licence',     pattern: 'M365-E1$',          price: 10.25, unit: 'month', label: 'Microsoft 365 E1' },
-    { classification: 'licence',     pattern: 'M365-F3$',          price:  7.50, unit: 'month', label: 'Microsoft 365 F3' },
+    { classification: 'licence',     pattern: 'M365-E5$',          match: { op: 'ends', value: 'M365-E5' }, price: 54.75, unit: 'month', label: 'Microsoft 365 E5' },
+    { classification: 'licence',     pattern: 'M365-E3$',          match: { op: 'ends', value: 'M365-E3' }, price: 33.75, unit: 'month', label: 'Microsoft 365 E3' },
+    { classification: 'licence',     pattern: 'M365-E1$',          match: { op: 'ends', value: 'M365-E1' }, price: 10.25, unit: 'month', label: 'Microsoft 365 E1' },
+    { classification: 'licence',     pattern: 'M365-F3$',          match: { op: 'ends', value: 'M365-F3' }, price:  7.50, unit: 'month', label: 'Microsoft 365 F3' },
     { classification: 'licence',     pattern: '',                  price: 10.00, unit: 'month', label: 'Other licence group' },
-    { classification: 'application', pattern: 'Copilot',           price: 28.10, unit: 'month', label: 'Microsoft 365 Copilot' },
-    { classification: 'application', pattern: 'Adobe-AcrobatPro',  price: 23.99, unit: 'month', label: 'Adobe Acrobat Pro' },
-    { classification: 'application', pattern: 'PowerBI-Pro',       price:  9.40, unit: 'month', label: 'Power BI Pro' },
-    { classification: 'application', pattern: 'Visio',             price: 15.10, unit: 'month', label: 'Visio Plan 2' },
-    { classification: 'application', pattern: 'Project',           price: 27.10, unit: 'month', label: 'Project Plan 3' }
+    { classification: 'application', pattern: 'Copilot',           match: { op: 'contains', value: 'Copilot' }, price: 28.10, unit: 'month', label: 'Microsoft 365 Copilot' },
+    { classification: 'application', pattern: 'Adobe-AcrobatPro',  match: { op: 'contains', value: 'Adobe-AcrobatPro' }, price: 23.99, unit: 'month', label: 'Adobe Acrobat Pro' },
+    { classification: 'application', pattern: 'PowerBI-Pro',       match: { op: 'contains', value: 'PowerBI-Pro' }, price:  9.40, unit: 'month', label: 'Power BI Pro' },
+    { classification: 'application', pattern: 'Visio',             match: { op: 'contains', value: 'Visio' }, price: 15.10, unit: 'month', label: 'Visio Plan 2' },
+    { classification: 'application', pattern: 'Project',           match: { op: 'contains', value: 'Project' }, price: 27.10, unit: 'month', label: 'Project Plan 3' }
   ];
 
   /* --- effort / labour cost of remediation --------------------------------- */
@@ -245,20 +314,37 @@
      patterns, the multiplier) are adopted from the default with the same id; only
      `undefined` is filled, so a value the user cleared to empty stays cleared. */
   function adoptKeys(cfg) {
-    const pair = [[cfg.categories, DEFAULTS.categories], [cfg.accountClasses, DEFAULT_ACCOUNT_CLASSES],
-      [cfg.employeeCategories, DEFAULT_EMPLOYEE_CATEGORIES]];
-    pair.forEach(([list, defs]) => list.forEach(item => {
+    const pair = [[cfg.categories, DEFAULTS.categories, 'categories'],
+      [cfg.accountClasses, DEFAULT_ACCOUNT_CLASSES, 'accountClasses'],
+      [cfg.employeeCategories, DEFAULT_EMPLOYEE_CATEGORIES, 'employeeCategories']];
+    pair.forEach(([list, defs, listKey]) => list.forEach(item => {
       const def = defs.find(d => d.id === item.id);
       if (!def) return;
       ['groupPattern', 'vaultPattern', 'accountPattern', 'multiplier'].forEach(k => {
         if (def[k] !== undefined && item[k] === undefined) item[k] = def[k];
       });
+      /* Structured specs introduced after the row was saved are adopted only when
+         the stored regex is still the shipped one (byte-equal, or equal to the
+         pre-spec legacy form) — a hand-tuned pattern stays hand-tuned. */
+      (MATCH_FIELDS[listKey] || []).forEach(([pf, sf]) => {
+        if (item[sf] !== undefined || !def[sf]) return;
+        if (item[pf] === def[pf] || (pf === 'pattern' && def.legacyPattern && item[pf] === def.legacyPattern)) {
+          item[sf] = clone(def[sf]);
+        }
+      });
       if (!item.key && def.label === item.label) item.key = def.key;
     }));
+    /* Price rows carry no id; the shipped ones are recognisable by label + pattern. */
+    (cfg.priceBook || []).forEach(item => {
+      if (item.match !== undefined) return;
+      const def = DEFAULT_PRICE_BOOK.find(d => d.label === item.label && d.pattern === item.pattern);
+      if (def && def.match) item.match = clone(def.match);
+    });
   }
 
   /* Pre-compile the regexes once per config change. */
   function compile(cfg) {
+    syncMatchSpecs(cfg);
     const rx = list => list.forEach(r => {
       try { r._rx = new RegExp(r.pattern, 'i'); }
       catch (e) { r._rx = /$^/; r._bad = true; }
@@ -452,7 +538,72 @@
 
   const looksLikeProductMap = data => !!data && data.kind === MAP_KIND;
 
-  HR.config = { get: load, save, reset, DEFAULTS, categoryFor, accountClassFor, priceFor,
+  /* --- the match book, as its own file --------------------------------------
+     Human decisions about which account belongs to which person. Like the
+     product map this is tenant knowledge, not analyst preference: one person
+     works through the hard matches once, exports the book, and the next session
+     — or the next colleague — starts from those answers instead of from zero.
+     Keys are system+userName (stable across exports); people are referenced by
+     employee id first, so the book survives a re-imported vault. */
+  const MATCH_KIND = 'helloid-analytics-match-book';
+
+  function getMatchBook() {
+    const cfg = load();
+    if (!cfg.matchBook) cfg.matchBook = { decisions: {} };
+    if (!cfg.matchBook.decisions) cfg.matchBook.decisions = {};
+    return cfg.matchBook;
+  }
+
+  /**
+   * @param {string} key HR.model.accountKey(system, userName)
+   * @param {Object|null} patch merged into the entry; null removes it.
+   *   { decision, personExternalId, personId, personName } — 'rejected' people
+   *   accumulate in entry.rejected[] and can coexist with a decision.
+   */
+  function setMatchDecision(key, patch) {
+    const book = getMatchBook();
+    if (patch === null) delete book.decisions[key];
+    else {
+      const entry = book.decisions[key] || {};
+      if (patch.reject) {
+        entry.rejected = (entry.rejected || []).concat([patch.reject])
+          .filter((v, i, a) => a.indexOf(v) === i);
+      } else {
+        Object.assign(entry, patch);
+      }
+      entry.decidedAt = new Date().toISOString();
+      book.decisions[key] = entry;
+    }
+    save();
+    return book;
+  }
+
+  function exportMatchBook() {
+    return JSON.stringify({
+      kind: MATCH_KIND, version: 1, exportedAt: new Date().toISOString(),
+      decisions: getMatchBook().decisions
+    }, null, 2);
+  }
+
+  function importMatchBook(text, opts) {
+    let data;
+    try { data = JSON.parse(text); }
+    catch (e) { throw new Error('Match book is not valid JSON: ' + e.message); }
+    if (!data || data.kind !== MATCH_KIND || !data.decisions) {
+      throw new Error('Not a match book (expected kind "' + MATCH_KIND + '").');
+    }
+    const book = getMatchBook();
+    book.decisions = (opts && opts.merge === false)
+      ? data.decisions
+      : Object.assign({}, book.decisions, data.decisions);
+    save();
+    return { decisions: Object.keys(book.decisions).length };
+  }
+
+  const looksLikeMatchBook = data => !!data && data.kind === MATCH_KIND;
+
+  HR.config = { get: load, save, reset, DEFAULTS, categoryFor, accountClassFor, priceFor, compileMatch,
     severityOf, clone, labelOf, exportJson, importJson, looksLikeSettings, FILE_KIND,
-    getMap, setMapping, exportMap, exportMapCsv, importMap, looksLikeProductMap, MAP_KIND };
+    getMap, setMapping, exportMap, exportMapCsv, importMap, looksLikeProductMap, MAP_KIND,
+    getMatchBook, setMatchDecision, exportMatchBook, importMatchBook, looksLikeMatchBook, MATCH_KIND };
 })(window.HR);

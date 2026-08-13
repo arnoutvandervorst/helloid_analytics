@@ -109,7 +109,7 @@
   const REQUIRES = {
     overview: ['recon'], risk: ['recon'], cost: ['recon'],
     accounts: ['recon'], permissions: ['recon'],
-    people: ['vault|recon'], org: ['vault'],
+    people: ['vault|recon'], org: ['vault'], matching: ['recon', 'vault'],
     mining: ['vault', 'recon|granted'], rules: ['rules'],
     products: ['products|assignments'], activity: ['granted|history'],
     explain: ['recon'], diff: ['recon'], board: ['recon'],
@@ -1858,7 +1858,33 @@
           const tr = el('tr');
           fields.forEach(fl => {
             const td = el('td', { class: fl.num ? 'num' : '' });
-            if (fl.options) {
+            if (fl.matcher) {
+              /* Structured matcher: op dropdown + comma-separated values, compiled
+                 to the regex the engine runs. Rows saved as raw regex keep their
+                 pattern and show as "advanced". */
+              const spec = (item[fl.matcher] && item[fl.matcher].op)
+                ? item[fl.matcher]
+                : { op: item[fl.key] ? 'regex' : 'contains', value: item[fl.key] || '' };
+              const apply = () => {
+                item[fl.matcher] = spec;
+                item[fl.key] = HR.config.compileMatch(spec);
+              };
+              const val = el('input', {
+                type: 'text', value: spec.value, placeholder: T('st.opValuesPh'),
+                oninput: e => { spec.value = e.target.value; apply(); }
+              });
+              val.style.width = fl.width || '150px';
+              if (spec.op === 'regex') val.classList.add('mono');
+              const sel = el('select', { onchange: e => {
+                if (e.target.value === 'regex') spec.value = item[fl.key] || spec.value;
+                spec.op = e.target.value;
+                apply(); draw();
+              } });
+              ['equals', 'starts', 'ends', 'contains', 'regex'].forEach(op => sel.appendChild(
+                el('option', { value: op, text: T('st.op.' + op), selected: spec.op === op })));
+              const wrap = el('div', { class: 'row', style: 'gap:4px;flex-wrap:nowrap' }, [sel, val]);
+              td.appendChild(wrap);
+            } else if (fl.options) {
               /* A linked reference, not free text: pick from what is defined. */
               const sel = el('select', { onchange: e => { item[fl.key] = e.target.value; draw(); } });
               fl.options().forEach(o => sel.appendChild(el('option', {
@@ -1914,26 +1940,29 @@
     const classificationTab = () => grid([
       editableList(T('st.categories'), T('st.categoriesNote'),
         cfg.categories,
-        [{ key: 'label', label: T('c.category'), translated: true }, { key: 'pattern', label: T('st.patternShort') }, { key: 'sensitivity', label: T('st.sensitivity'), num: true, step: '0.1' }],
-        () => ({ id: 'custom' + Date.now(), label: 'New category', pattern: '^X', sensitivity: 1, color: 2 }), { target: 'permission' }),
+        [{ key: 'label', label: T('c.category'), translated: true },
+         { key: 'pattern', matcher: 'match', label: T('st.patternShort'), width: '180px' },
+         { key: 'sensitivity', label: T('st.sensitivity'), num: true, step: '0.1' }],
+        () => ({ id: 'custom' + Date.now(), label: 'New category', pattern: '', match: { op: 'starts', value: '' }, sensitivity: 1, color: 2 }), { target: 'permission' }),
 
       editableList(T('st.classes'), T('st.classesNote'),
         cfg.accountClasses,
         [{ key: 'label', label: T('c.class'), translated: true },
-         { key: 'pattern', label: T('st.accountPattern'), width: '160px' },
-         { key: 'groupPattern', label: T('st.groupPattern'), width: '160px' },
-         { key: 'vaultPattern', label: T('st.vaultPattern'), width: '140px' },
+         { key: 'pattern', matcher: 'match', label: T('st.accountPattern'), width: '140px' },
+         { key: 'groupPattern', matcher: 'groupMatch', label: T('st.groupPattern'), width: '130px' },
+         { key: 'vaultPattern', matcher: 'vaultMatch', label: T('st.vaultPattern'), width: '110px' },
          { key: 'weight', label: T('st.weight'), num: true, step: '0.1' }],
-        () => ({ id: 'custom' + Date.now(), label: 'New class', pattern: '^X', groupPattern: '', vaultPattern: '', weight: 1 }), { target: 'account' }),
+        () => ({ id: 'custom' + Date.now(), label: 'New class', pattern: '', match: { op: 'starts', value: '' }, groupPattern: '', vaultPattern: '', weight: 1 }), { target: 'account' }),
 
       editableList(T('st.ecats'), T('st.ecatsNote'),
         cfg.employeeCategories,
         [{ key: 'label', label: T('c.empCategory'), translated: true },
          { key: 'multiplier', label: T('st.multiplier'), num: true, step: '0.05' },
-         { key: 'vaultPattern', label: T('st.vaultPattern'), width: '160px' },
-         { key: 'accountPattern', label: T('st.accountPattern'), width: '160px' },
-         { key: 'groupPattern', label: T('st.groupPattern'), width: '160px' }],
-        () => ({ id: 'custom' + Date.now(), label: 'New category', multiplier: 1, vaultPattern: '', accountPattern: '', groupPattern: '' }))
+         { key: 'vaultPattern', matcher: 'vaultMatch', label: T('st.vaultPattern'), width: '130px' },
+         { key: 'accountPattern', matcher: 'accountMatch', label: T('st.accountPattern'), width: '130px' },
+         { key: 'groupPattern', matcher: 'groupMatch', label: T('st.groupPattern'), width: '130px' }],
+        () => ({ id: 'custom' + Date.now(), label: 'New category', multiplier: 1,
+          vaultPattern: '', vaultMatch: { op: 'contains', value: '' }, accountPattern: '', groupPattern: '' }))
     ]);
 
     const pricingTab = () => grid([
@@ -1943,9 +1972,9 @@
          { key: 'classification', label: T('st.classification'), options: () =>
             [{ value: '', label: T('st.anyClassification') }].concat(
               cfg.categories.map(c => ({ value: c.id, label: HR.config.labelOf(c) }))) },
-         { key: 'pattern', label: T('st.refine'), width: '160px' },
+         { key: 'pattern', matcher: 'match', label: T('st.refine'), width: '140px' },
          { key: 'price', label: T('st.price'), num: true, step: '0.01' }],
-        () => ({ label: 'New SKU', classification: 'licence', pattern: '', price: 0, unit: 'month' }),
+        () => ({ label: 'New SKU', classification: 'licence', pattern: '', match: { op: 'ends', value: '' }, price: 0, unit: 'month' }),
         { matchFn: item => {
             const m = HR.app.state.model;
             if (!m) return null;
@@ -2008,41 +2037,76 @@
       const c = cfg.correlation;
       const m = HR.app.state.model;
       const stats = (m && m.vault) ? HR.correlate.attributionStats(m, m.vault, m.correlation) : null;
+      /* The scoring, spoken instead of coded: each rule is a sentence about the
+         evidence, its number says how much that evidence weighs, and the preview
+         line answers the only question that matters while tuning — what would
+         these settings match, right now, on this tenant. */
+      const preview = el('p', { class: 'note', style: 'margin-top:10px' });
+      let previewTimer = null;
+      const refreshPreview = () => {
+        clearTimeout(previewTimer);
+        previewTimer = setTimeout(() => {
+          if (!m || !m.vault) { preview.textContent = T('st.mNoVault'); return; }
+          const sim = HR.correlate.matchUnowned(m, m.vault, { cfg: c });
+          preview.textContent = T('st.mPreview', {
+            matched: U.fmtInt(sim.stats.matched), ambiguous: U.fmtInt(sim.stats.ambiguous),
+            unmatched: U.fmtInt(sim.stats.unmatched)
+          });
+        }, 250);
+      };
+
       const toggle = (key, labelKey) => {
-        const box = el('input', { type: 'checkbox', checked: c[key], onchange: e => c[key] = e.target.checked });
+        const box = el('input', { type: 'checkbox', checked: c[key],
+          onchange: e => { c[key] = e.target.checked; refreshPreview(); } });
         return el('label', { class: 'inline' }, [box, document.createTextNode(T(labelKey))]);
       };
-      const weight = (key, labelKey) => {
+      const rule = (key, labelKey) => {
         const i = el('input', { type: 'number', value: c.weights[key], step: '5',
-          oninput: e => c.weights[key] = parseFloat(e.target.value) || 0 });
-        i.style.width = '80px';
-        return el('label', { class: 'inline' }, [document.createTextNode(T(labelKey)), i]);
+          oninput: e => { c.weights[key] = parseFloat(e.target.value) || 0; refreshPreview(); } });
+        i.style.width = '70px';
+        return el('div', { class: 'row', style: 'gap:8px' }, [
+          i, el('span', { class: 'note', text: T(labelKey) })
+        ]);
       };
       const threshold = el('input', { type: 'number', value: c.strongThreshold, step: '5',
-        oninput: e => c.strongThreshold = parseFloat(e.target.value) || 0 });
-      threshold.style.width = '80px';
+        oninput: e => { c.strongThreshold = parseFloat(e.target.value) || 0; refreshPreview(); } });
+      threshold.style.width = '70px';
 
+      const preset = (labelKey, value) => el('button', { class: 'btn sm', text: T(labelKey),
+        onclick: () => { c.strongThreshold = value; threshold.value = value; refreshPreview(); } });
+
+      refreshPreview();
       return card(T('st.matching'), T('st.matchingNote'), [
         el('div', { class: 'row' }, [
           toggle('useVaultCorrelation', 'st.mUseVault'),
           toggle('useReconPerson', 'st.mUseRecon'),
-          toggle('useNameMatch', 'st.mUseName'),
-          el('label', { class: 'inline' }, [document.createTextNode(T('st.mThreshold')), threshold])
+          toggle('useNameMatch', 'st.mUseName')
+        ]),
+        el('div', { style: 'margin-top:10px; display:flex; flex-direction:column; gap:6px' }, [
+          rule('vaultCorrelated', 'st.wVaultCorrelated'),
+          rule('displayNameExact', 'st.wDisplayExact'),
+          rule('employeeIdInUsername', 'st.wEmployeeId'),
+          rule('displayNameContains', 'st.wDisplayContains'),
+          rule('surnameInUsername', 'st.wSurname'),
+          rule('firstAndSurnameInUsername', 'st.wFirstSurname'),
+          rule('initialBeforeSurname', 'st.wInitial')
         ]),
         el('div', { class: 'row', style: 'margin-top:10px' }, [
-          weight('vaultCorrelated', 'st.wVaultCorrelated'),
-          weight('displayNameExact', 'st.wDisplayExact'),
-          weight('employeeIdInUsername', 'st.wEmployeeId'),
-          weight('displayNameContains', 'st.wDisplayContains'),
-          weight('surnameInUsername', 'st.wSurname'),
-          weight('firstAndSurnameInUsername', 'st.wFirstSurname'),
-          weight('initialBeforeSurname', 'st.wInitial')
+          el('label', { class: 'inline' }, [
+            document.createTextNode(T('st.mThresholdPre') + ' '), threshold,
+            document.createTextNode(' ' + T('st.mThresholdPost'))
+          ]),
+          el('span', { class: 'spacer', style: 'flex:1' }),
+          preset('st.presetStrict', 120),
+          preset('st.presetBalanced', 90),
+          preset('st.presetLoose', 55)
         ]),
-        stats ? el('p', { class: 'note', style: 'margin-top:10px', text: T('st.mStats', {
+        preview,
+        stats ? el('p', { class: 'note', text: T('st.mStats', {
           attributed: U.fmtInt(stats.attributed), total: U.fmtInt(stats.accounts),
           vault: U.fmtInt(stats.byLayer.vault || 0), recon: U.fmtInt(stats.byLayer.recon || 0),
           name: U.fmtInt(stats.byLayer.name || 0), left: U.fmtInt(stats.unattributed)
-        }) }) : el('p', { class: 'note', style: 'margin-top:10px', text: T('st.mNoVault') })
+        }) }) : null
       ]);
     };
 

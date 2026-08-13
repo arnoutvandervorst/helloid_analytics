@@ -93,8 +93,25 @@
        vault is already in opts here; only the exact-evidence lookup is built — the
        fuzzy correlation still happens later and does not feed the multiplier. */
     const vaultLookup = (opts && opts.vault) ? buildVaultLookup(opts.vault) : null;
+    const matchDecisions = HR.config.getMatchBook().decisions;
     for (const a of accounts.values()) {
       a.orphan = !a.personRaw;
+      /* A human decision in the match book outranks what the export says: a
+         confirmed or assigned account has an owner, an ownerless one is owner-
+         less on purpose — neither may keep raising orphan findings. */
+      const md = matchDecisions[a.key];
+      a.matchDecision = md || null;
+      a.ownerless = false;
+      if (md) {
+        if (md.decision === 'confirmed' || md.decision === 'assigned') {
+          a.orphan = false;
+          if (md.personName) { if (!a.personRaw) a.personRaw = md.personName; a.personName = md.personName; }
+          a.matchSource = 'manual';
+        } else if (md.decision === 'ownerless') {
+          a.orphan = false;
+          a.ownerless = true;
+        }
+      }
       a.permCount = a.permKeys.size;
       a.missingCount = a.missingPermKeys.size;
       a.unmanagedPermCount = a.issues[ISSUE_PERM_UNMANAGED] || 0;
