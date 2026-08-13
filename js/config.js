@@ -178,7 +178,6 @@
      where they are firstname.lastname, the display-name rules do. */
   const DEFAULT_CORRELATION = {
     strongThreshold: 90,          // points needed before a match is proposed at all
-    batchGap: 30,                 // lead over the runner-up that makes a winner "clear" for batching
     useVaultCorrelation: true,    // trust Accounts[] in the vault
     useReconPerson: true,         // trust the Person column on the reconciliation row
     useNameMatch: true,           // fall back to scored name evidence
