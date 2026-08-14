@@ -161,16 +161,20 @@
 
   function index(list, key) {
     const map = new Map();
-    (list || []).forEach(item => { if (item[key]) map.set(item[key].toLowerCase(), item); });
+    (list || []).forEach(item => { if (item[key]) map.set(String(item[key]).toLowerCase(), item); });
     return map;
   }
 
   function resolver(book) {
-    const deps = index(book.lookups.departments, 'name');
-    const tits = index(book.lookups.titles, 'name');
-    const teams = index(book.lookups.teams, 'name');
-    const locs = index(book.lookups.locations, 'name');
-    const find = (map, name) => name ? map.get(name.toLowerCase()) || null : null;
+    /* By name first, by id second: imported connector CSVs carry raw IDs, and
+       until somebody names them in the lookup lists the ID doubles as the
+       display value. The byId fallback keeps such rows exporting correctly. */
+    const pair = list => ({ byName: index(list, 'name'), byId: index(list, 'id') });
+    const deps = pair(book.lookups.departments);
+    const tits = pair(book.lookups.titles);
+    const teams = pair(book.lookups.teams);
+    const locs = pair(book.lookups.locations);
+    const find = (p, n) => n ? p.byName.get(n.toLowerCase()) || p.byId.get(n.toLowerCase()) || null : null;
     return {
       dept: n => find(deps, n), title: n => find(tits, n),
       team: n => find(teams, n), location: n => find(locs, n)
@@ -202,10 +206,11 @@
         if (!t) { errors.push({ key: 'no.err.unresolvedTarget', args: { row: i + 1, name } }); return; }
         ids.push(t.id);
       }
-      rows.push([dept.id, title ? title.id : '', ids.join(','), m.all ? 'true' : 'false']);
+      /* Official connector format writes the flag as "true" or leaves it empty. */
+      rows.push([dept.id, title ? title.id : '', ids.join(','), m.all ? 'true' : '']);
     });
     return {
-      csv: csvText(['Department.ExternalId', 'Title.ExternalId', idHeader, flagHeader], rows, delim),
+      csv: csvText(['HelloIDPrimaryLookupKey', 'HelloIDSecondaryLookupKey', idHeader, flagHeader], rows, delim),
       rows: rows.length, errors
     };
   }
@@ -223,6 +228,125 @@
       'registrationProfile', 'weeksheetName', 'clusterId', 'teamName', 'clusterName'];
     const rows = book.employees.map(e => f.map(k => e[k] || ''));
     return { csv: csvText(EMP_HEADERS, rows, delim || ';'), rows: rows.length, errors: [] };
+  }
+
+  /* ---- connector CSV import ------------------------------------------------
+
+     The reverse direction: a running connector's Mapping-Teams.csv /
+     Mapping-Locations.csv carries raw IDs (that is what the API takes), while
+     the editors here work in names. Accepted headers are the official
+     HelloIDPrimaryLookupKey / HelloIDSecondaryLookupKey / NedapTeamIds
+     [/ AllEmployees] family (the flag column may be unnamed, legacy style) and
+     the Department.ExternalId / Title.ExternalId variant. IDs translate to
+     names through the lookup lists; IDs the lists do not know are added to
+     them as id-named entries, so the rows edit and export correctly from a
+     blank start and pick up readable names the moment somebody fills them in. */
+
+  function parseCsvRows(text, delim) {
+    if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
+    const rows = [];
+    let field = '', row = [], q = false;
+    for (let i = 0; i < text.length; i++) {
+      const c = text[i];
+      if (q) {
+        if (c === '"') { if (text[i + 1] === '"') { field += '"'; i++; } else q = false; }
+        else field += c;
+      } else if (c === '"' && field === '') q = true;
+      else if (c === delim) { row.push(field); field = ''; }
+      else if (c === '\n' || c === '\r') {
+        if (c === '\r' && text[i + 1] === '\n') i++;
+        row.push(field); field = '';
+        if (row.some(f => f.trim() !== '')) rows.push(row);
+        row = [];
+      } else field += c;
+    }
+    if (field !== '' || row.length) {
+      row.push(field);
+      if (row.some(f => f.trim() !== '')) rows.push(row);
+    }
+    return rows;
+  }
+
+  const MAPPING_HEADS = {
+    primary: ['helloidprimarylookupkey', 'department.externalid'],
+    secondary: ['helloidsecondarylookupkey', 'title.externalid'],
+    teams: 'nedapteamids', locations: 'nedaplocationids'
+  };
+
+  /** null when the text is not a mapping CSV; otherwise which area it feeds. */
+  function sniffMappingCsv(text) {
+    text = text || '';
+    if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
+    const line = text.split(/\r?\n/, 1)[0].toLowerCase();
+    const delim = line.includes(';') ? ';' : ',';
+    const cols = line.split(delim).map(s => s.trim().replace(/^"|"$/g, ''));
+    if (!MAPPING_HEADS.primary.some(h => cols.includes(h))) return null;
+    if (cols.includes(MAPPING_HEADS.teams)) return { area: 'teams', delim };
+    if (cols.includes(MAPPING_HEADS.locations)) return { area: 'locations', delim };
+    return null;
+  }
+
+  function parseMappingCsv(text) {
+    const sniff = sniffMappingCsv(text);
+    if (!sniff) return { errors: [{ key: 'no.err.csvHeader' }] };
+    const raw = parseCsvRows(text, sniff.delim);
+    const header = raw[0].map(s => s.trim().toLowerCase());
+    const col = names => header.findIndex(h => names.includes(h));
+    const pIdx = col(MAPPING_HEADS.primary);
+    const sIdx = col(MAPPING_HEADS.secondary);
+    const idIdx = header.indexOf(MAPPING_HEADS[sniff.area]);
+    const rows = [];
+    const errors = [];
+    raw.slice(1).forEach((r, i) => {
+      const key = (r[pIdx] || '').trim();
+      if (!key) { errors.push({ key: 'no.err.csvNoKey', args: { row: i + 2 } }); return; }
+      const ids = (r[idIdx] || '').split(',').map(s => s.trim()).filter(Boolean);
+      /* The flag either has its own header (AllEmployees/AllClients) or, in
+         current-format files, rides unnamed as the column after the IDs. */
+      const flagField = r.slice(idIdx + 1).map(s => (s || '').trim()).find(Boolean) || '';
+      rows.push({
+        key,
+        titleKey: sIdx === -1 ? '' : (r[sIdx] || '').trim(),
+        ids,
+        all: /^true$/i.test(flagField)
+      });
+    });
+    return { area: sniff.area, rows, errors };
+  }
+
+  /** Merge a parsed mapping CSV into the book: that area's rows are replaced. */
+  function applyMappingImport(book, parsed) {
+    const res = resolver(book);
+    let added = 0;
+    /* The resolver indexes are built once; values added mid-import land in a
+       local cache so a key repeated across rows is only added once. */
+    const fresh = new Map();
+    const ensure = (list, resolveFn, value) => {
+      const hit = resolveFn(value);
+      if (hit) return hit.name;
+      let cache = fresh.get(list);
+      if (!cache) { cache = new Map(); fresh.set(list, cache); }
+      const k = value.toLowerCase();
+      if (cache.has(k)) return cache.get(k);
+      list.push(list === book.lookups.teams || list === book.lookups.locations
+        ? { name: value, identificationNo: '', id: value }
+        : { name: value, code: '', id: value });
+      added++;
+      cache.set(k, value);
+      return value;
+    };
+    const nameKey = parsed.area === 'teams' ? 'teamNames' : 'locationNames';
+    const targetList = parsed.area === 'teams' ? book.lookups.teams : book.lookups.locations;
+    const targetRes = parsed.area === 'teams' ? res.team : res.location;
+    const mapped = parsed.rows.map(r => ({
+      dept: ensure(book.lookups.departments, res.dept, r.key),
+      title: r.titleKey ? ensure(book.lookups.titles, res.title, r.titleKey) : '',
+      all: r.all,
+      [nameKey]: r.ids.map(id => ensure(targetList, targetRes, id))
+    }));
+    if (parsed.area === 'teams') book.teamMappings = mapped;
+    else book.locationMappings = mapped;
+    return { area: parsed.area, rows: mapped.length, added };
   }
 
   /* ---- validation ("sanity") ----------------------------------------------- */
@@ -251,7 +375,7 @@
     mappings.forEach(m => { if (!m.title) wildcardByDept.set(m.dept.toLowerCase(), m); });
 
     mappings.forEach((m, i) => {
-      const key = m.dept.toLowerCase() + ' ' + m.title.toLowerCase();
+      const key = m.dept.toLowerCase() + '\u0000' + m.title.toLowerCase();
       if (seen.has(key)) push('duplicate-row', 'warning', i, m, { other: seen.get(key) + 1 });
       else seen.set(key, i);
 
@@ -301,7 +425,7 @@
       const push = (rule, severity, args) =>
         issues.push({ rule, severity, area: 'employees', row: i, dept: e.deptName, title: e.titleName,
           msgKey: 'no.chk.' + rule, msgArgs: args || {} });
-      const key = e.titleId + ' ' + e.deptId;
+      const key = e.titleId + '\u0000' + e.deptId;
       const prior = empSeen.get(key);
       if (prior !== undefined) {
         const p = book.employees[prior];
@@ -431,6 +555,7 @@
   window.HR.nedapons = {
     SHEETS, EMP_HEADERS, emptyBook, isEmptyBook, parseWorkbook, resolver,
     buildTeamsCsv, buildLocationsCsv, buildEmployeesCsv,
+    sniffMappingCsv, parseMappingCsv, applyMappingImport,
     checkBook, coverage, effectiveFor, personContracts
   };
 })();

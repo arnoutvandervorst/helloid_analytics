@@ -356,10 +356,16 @@ warning anyone gets. A simulator shows per person (or per manual department/titl
 pair) exactly what the connector would apply, with the contributing rows named.
 
 Export produces the three connector files deterministically —
-`MappingTeams.csv`, `MappingLocations.csv` (`Department.ExternalId;Title.ExternalId;
-NedapTeamIds;AllEmployees`) and `MedewerkersKoppeling.csv` (the orange tab
-column-for-column) — with names resolved to IDs through the lookup lists at export
-time; a row that cannot resolve is blocked and reported instead of silently wrong.
+`MappingTeams.csv`, `MappingLocations.csv` (official headers:
+`HelloIDPrimaryLookupKey;HelloIDSecondaryLookupKey;NedapTeamIds;AllEmployees`) and
+`MedewerkersKoppeling.csv` (the orange tab column-for-column) — with names resolved to
+IDs through the lookup lists at export time; a row that cannot resolve is blocked and
+reported instead of silently wrong. The reverse direction works too: drop a running
+connector's `Mapping-Teams.csv` / `Mapping-Locations.csv` (official headers, the
+unnamed-flag-column variant, or the `Department.ExternalId` naming) and its raw IDs
+become editable names through the lookup lists — IDs the lists do not know are added
+there as id-named entries, so a blank start from just the connector CSVs edits and
+round-trips exactly, and picks up readable names the moment somebody fills them in.
 
 ## The models
 

@@ -455,7 +455,7 @@
 
   /* ------------------------------------------------------------------ export */
 
-  function lookupCard(tab, key, titleKey, fields) {
+  function lookupCard(tab, key, titleKey, fields, extraNoteKey) {
     const b = book();
     const list = b.lookups[key];
     const edit = () => {
@@ -464,7 +464,8 @@
       ta.value = list.map(item => fields.map(f => item[f] || '').join('\t')).join('\n');
       openDrawer(el('div', {}, [
         el('h2', { text: T(titleKey) }),
-        el('p', { class: 'note', text: T('no.lookupEditNote', { cols: fields.join(' → ') }) })
+        el('p', { class: 'note', text: T('no.lookupEditNote', { cols: fields.join(' → ') }) }),
+        extraNoteKey ? el('p', { class: 'note', text: T(extraNoteKey) }) : ''
       ]), el('div', { class: 'stack' }, [
         ta,
         el('div', { class: 'row' }, el('button', { class: 'btn primary', text: T('no.save'), onclick: () => {
@@ -509,7 +510,13 @@
         csvRow('no.csvTeams', 'MappingTeams.csv', x => N.buildTeamsCsv(x)),
         csvRow('no.csvLocations', 'MappingLocations.csv', x => N.buildLocationsCsv(x)),
         csvRow('no.csvEmployees', 'MedewerkersKoppeling.csv', x => N.buildEmployeesCsv(x)),
-        el('p', { class: 'note', text: T('no.exportFullSet') })
+        el('p', { class: 'note', text: T('no.exportFullSet') }),
+        el('div', { class: 'row' }, el('button', { class: 'btn ghost', text: T('no.importCsv'), onclick: () => {
+          const inp = el('input', { type: 'file', accept: '.csv' });
+          inp.onchange = () => { if (inp.files[0]) HR.app.importFileAs(inp.files[0]); };
+          inp.click();
+        } })),
+        el('p', { class: 'note', text: T('no.importCsvNote') })
       ])),
       card(T('no.bookTitle'), T('no.bookNote'), el('div', { class: 'stack' }, [
         el('div', { class: 'row' }, [
@@ -529,8 +536,8 @@
       card(T('no.lookupsTitle'), T('no.lookupsNote'), el('div', { class: 'stack' }, [
         lookupCard(tab, 'departments', 'no.lkDepartments', ['name', 'code', 'id']),
         lookupCard(tab, 'titles', 'no.lkTitles', ['name', 'code', 'id']),
-        lookupCard(tab, 'teams', 'no.lkTeams', ['name', 'identificationNo', 'id']),
-        lookupCard(tab, 'locations', 'no.lkLocations', ['name', 'identificationNo', 'id']),
+        lookupCard(tab, 'teams', 'no.lkTeams', ['name', 'identificationNo', 'id'], 'no.lkIdNote'),
+        lookupCard(tab, 'locations', 'no.lkLocations', ['name', 'identificationNo', 'id'], 'no.lkIdNote'),
         lookupCard(tab, 'expertiseProfiles', 'no.lkExpertise', ['name', 'code']),
         lookupCard(tab, 'weeksheetProfiles', 'no.lkWeeksheet', ['name'])
       ]))));

@@ -129,6 +129,7 @@
     /* One drop zone: route by what the file says it is. JSON is either a settings
        file, a snapshot bundle or a vault export. */
     if (/^\s*[{[]/.test(text)) return importJsonFile(text, fileName);
+    if (HR.nedapons.sniffMappingCsv(text)) return importNedapMappingCsv(text);
     if (looksLikeRuleExport(text)) return importRules(text, fileName);
     if (looksLikeAssignmentExport(text)) return importAssignments(text, fileName);
     const activityKind = looksLikeActivityExport(text);
@@ -205,6 +206,7 @@
     }
     const header = headerOf(text);
     if (!header || !header.length) return null;
+    if (HR.nedapons.sniffMappingCsv(text)) return 'nedapmapping';
     if (HR.rules.looksLikeRules(header)) return 'rules';
     if (HR.products.looksLikeAssignments(header)) return 'assignments';
     const activity = HR.activity.classify(header);
@@ -445,6 +447,31 @@
       HR.usage.imported('nedap-workbook', b.teamMappings.length + b.locationMappings.length + b.employees.length);
       go('nedap');
     });
+  }
+
+  /**
+   * A running connector's Mapping-Teams.csv / Mapping-Locations.csv: raw IDs in,
+   * translated to names through the book's lookup lists (unknown IDs join the
+   * lists as id-named entries). Replaces that area's mapping rows in the book.
+   */
+  async function importNedapMappingCsv(text) {
+    const parsed = HR.nedapons.parseMappingCsv(text);
+    if (!parsed.rows) {
+      const e = parsed.errors[0];
+      U.toast(T(e.key, e.args), 7000);
+      return;
+    }
+    if (parsed.errors.length) U.toast(T(parsed.errors[0].key, parsed.errors[0].args), 6000);
+    const book = HR.config.getNedapBook();
+    book.started = true;
+    const res = HR.nedapons.applyMappingImport(book, parsed);
+    HR.config.setNedapBook(book);
+    rebuild();
+    U.toast(T('toast.nedapMappingImported', {
+      area: T('no.area.' + res.area), rows: res.rows, added: res.added
+    }), 7000);
+    HR.usage.imported('nedap-mapping-csv', res.rows);
+    go('nedap', { tab: res.area });
   }
 
   /**
