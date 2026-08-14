@@ -31,6 +31,10 @@
   {
    "slot": "assignments",
    "file": "product-assignments.csv"
+  },
+  {
+   "slot": "nedapbook",
+   "file": "nedap-book.json"
   }
  ]
 }

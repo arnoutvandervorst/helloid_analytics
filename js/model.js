@@ -249,6 +249,10 @@
       }
     }
 
+    /* Nedap workbench findings live off the config book, not an import — they
+       speak only when a book has been loaded there. */
+    model.findings = model.findings.concat(HR.findings.runNedap(model));
+
     /* Runs last: every other input is an ingredient of an explanation. */
     model.explanation = HR.explain.build(model);
     model.findings = model.findings.concat(HR.findings.runExplanation(model));

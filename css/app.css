@@ -517,6 +517,7 @@ table.board-tbl .owner-cell { border-bottom: 1px solid #e3e2dc; min-width: 90px;
 .slot.filled { border-color: var(--good); }
 .sev.none { color: var(--text-secondary); } .sev.none::before { background: var(--muted); }
 .pill.ok { color: var(--good-ink); border-color: var(--good); }
+.pill.warn { color: var(--warning); border-color: var(--warning); }
 .pill.muted { color: var(--text-secondary); }
 
 /* Demo mode has to be impossible to miss and impossible to print away. */

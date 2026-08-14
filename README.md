@@ -333,6 +333,34 @@ move on. Every page is one undoable batch in the match book; zero-candidate clas
 offer mark-all-ownerless. A vault `Accounts[]` reference is treated as recorded truth
 and never asks for approval.
 
+## Nedap ONS workbench
+
+Customers feed the HelloID Nedap ONS target connector from the "NEDAP - Matrices
+functies deskundigheden" Excel workbook: names typed by hand, hidden helper formulas
+translating them to IDs, and a manual save-as-CSV per tab. The **Nedap ONS** view
+replaces that workflow. Drop the workbook (.xlsx) anywhere on the page — it is read
+entirely in the browser, no library, nothing uploaded — and the two scope-mapping tabs,
+the Medewerkers koppeling, the Autorisatierollen matrix and all lookup sheets become an
+editable **Nedap book** (its own export/import file, like the match book). Starting
+blank works too: fill the lookup lists first (pasting columns from Excel works), then
+add rows.
+
+The editors validate live against the loaded vault — the connection the Excel never
+had: department and title pickers suggest real HR values, and the health tab flags
+unresolvable names, wildcard-shadowed rows, redundant or empty grants, duplicates and
+names HR does not know. Coverage lists every person no scope row reaches. These also
+surface as findings under Risk & findings, because Nedap provisioning is **full-set**:
+the connector PUTs the complete desired state per source, there is no reconciliation
+behind it — a dropped row is a revoked entitlement, and these checks are the only
+warning anyone gets. A simulator shows per person (or per manual department/title
+pair) exactly what the connector would apply, with the contributing rows named.
+
+Export produces the three connector files deterministically —
+`MappingTeams.csv`, `MappingLocations.csv` (`Department.ExternalId;Title.ExternalId;
+NedapTeamIds;AllEmployees`) and `MedewerkersKoppeling.csv` (the orange tab
+column-for-column) — with names resolved to IDs through the lookup lists at export
+time; a row that cannot resolve is blocked and reported instead of silently wrong.
+
 ## The models
 
 All three are assumptions, all three are editable in **Settings**, and every change

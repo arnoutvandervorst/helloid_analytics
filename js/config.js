@@ -602,8 +602,67 @@
 
   const looksLikeMatchBook = data => !!data && data.kind === MATCH_KIND;
 
+  /* --- the Nedap ONS book, as its own file ----------------------------------
+     The contents of the "NEDAP - Matrices functies deskundigheden" workbook as
+     editable data: lookup lists, the two scope-mapping tabs, the Medewerkers-
+     koppeling rows and the Autorisatierollen matrix. Like the match book this
+     is tenant knowledge — import the customer's workbook once, refine it here,
+     export the connector CSVs and the book itself for the next session. */
+  const NEDAP_KIND = 'helloid-analytics-nedap-book';
+
+  function getNedapBook() {
+    const cfg = load();
+    if (!cfg.nedapBook) cfg.nedapBook = HR.nedapons.emptyBook();
+    const b = cfg.nedapBook;
+    b.lookups = b.lookups || {};
+    ['departments', 'titles', 'teams', 'locations', 'expertiseProfiles', 'weeksheetProfiles']
+      .forEach(k => { if (!Array.isArray(b.lookups[k])) b.lookups[k] = []; });
+    ['teamMappings', 'locationMappings', 'employees', 'roles']
+      .forEach(k => { if (!Array.isArray(b[k])) b[k] = []; });
+    return b;
+  }
+
+  /** Replace the whole book (workbook import) or mutate-and-save (editors call with no args after editing in place). */
+  function setNedapBook(book) {
+    const cfg = load();
+    if (book) cfg.nedapBook = book;
+    cfg.nedapBook.updatedAt = new Date().toISOString();
+    save();
+    return cfg.nedapBook;
+  }
+
+  function exportNedapBook() {
+    const b = getNedapBook();
+    return JSON.stringify({
+      kind: NEDAP_KIND, version: 1, exportedAt: new Date().toISOString(),
+      lookups: b.lookups, teamMappings: b.teamMappings, locationMappings: b.locationMappings,
+      employees: b.employees, roles: b.roles
+    }, null, 2);
+  }
+
+  function importNedapBook(text) {
+    let data;
+    try { data = JSON.parse(text); }
+    catch (e) { throw new Error('Nedap book is not valid JSON: ' + e.message); }
+    if (!data || data.kind !== NEDAP_KIND) {
+      throw new Error('Not a Nedap book (expected kind "' + NEDAP_KIND + '").');
+    }
+    const book = HR.nedapons.emptyBook();
+    Object.keys(book.lookups).forEach(k => { book.lookups[k] = (data.lookups || {})[k] || []; });
+    ['teamMappings', 'locationMappings', 'employees', 'roles']
+      .forEach(k => { book[k] = Array.isArray(data[k]) ? data[k] : []; });
+    setNedapBook(book);
+    return {
+      mappings: book.teamMappings.length + book.locationMappings.length,
+      employees: book.employees.length, roles: book.roles.length
+    };
+  }
+
+  const looksLikeNedapBook = data => !!data && data.kind === NEDAP_KIND;
+
   HR.config = { get: load, save, reset, DEFAULTS, categoryFor, accountClassFor, priceFor, compileMatch,
     severityOf, clone, labelOf, exportJson, importJson, looksLikeSettings, FILE_KIND,
     getMap, setMapping, exportMap, exportMapCsv, importMap, looksLikeProductMap, MAP_KIND,
-    getMatchBook, setMatchDecision, exportMatchBook, importMatchBook, looksLikeMatchBook, MATCH_KIND };
+    getMatchBook, setMatchDecision, exportMatchBook, importMatchBook, looksLikeMatchBook, MATCH_KIND,
+    getNedapBook, setNedapBook, exportNedapBook, importNedapBook, looksLikeNedapBook, NEDAP_KIND };
 })(window.HR);

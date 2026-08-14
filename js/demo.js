@@ -76,6 +76,8 @@
   async function exit() {
     await HR.store.clear();
     await HR.store.clearContext();
+    /* The demo Nedap book lives in config, which the store wipe does not touch. */
+    if (HR.config.getNedapBook().demo) HR.config.setNedapBook(HR.nedapons.emptyBook());
     HR.usage.action('demo-exit');
     location.hash = 'sources';
     location.reload();

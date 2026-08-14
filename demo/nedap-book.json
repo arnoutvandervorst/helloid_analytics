@@ -1,0 +1,80 @@
+{
+  "kind": "helloid-analytics-nedap-book",
+  "version": 1,
+  "exportedAt": "2026-08-14T00:00:00.000Z",
+  "lookups": {
+    "departments": [
+      { "name": "Thuiszorg", "code": "250", "id": "CA010" },
+      { "name": "Wijkzorg", "code": "251", "id": "ZRG06" },
+      { "name": "Dagbesteding", "code": "252", "id": "CB12" },
+      { "name": "Begeleiding", "code": "253", "id": "CZ08" },
+      { "name": "Revalidatie", "code": "254", "id": "CA060" },
+      { "name": "Techniek", "code": "255", "id": "ICT03" }
+    ],
+    "titles": [
+      { "name": "Verzorgende IG", "code": "300", "id": "500" },
+      { "name": "Verpleegkundige", "code": "301", "id": "510" },
+      { "name": "Wijkverpleegkundige", "code": "302", "id": "520" },
+      { "name": "Begeleider niveau 1", "code": "303", "id": "530" },
+      { "name": "Begeleider niveau 3", "code": "304", "id": "540" },
+      { "name": "Activiteitenbegeleider", "code": "305", "id": "550" },
+      { "name": "Teamleider", "code": "306", "id": "560" },
+      { "name": "Casemanager", "code": "307", "id": "570" },
+      { "name": "Applicatiebeheerder", "code": "308", "id": "580" }
+    ],
+    "teams": [
+      { "name": "Team Thuiszorg 1", "identificationNo": "11", "id": "1001" },
+      { "name": "Team Thuiszorg 2", "identificationNo": "12", "id": "1002" },
+      { "name": "Team Wijkzorg Noord", "identificationNo": "13", "id": "1003" },
+      { "name": "Team Wijkzorg Zuid", "identificationNo": "14", "id": "1004" },
+      { "name": "Team Dagbesteding", "identificationNo": "15", "id": "1005" },
+      { "name": "Team Begeleiding", "identificationNo": "16", "id": "1006" }
+    ],
+    "locations": [
+      { "name": "Locatie De Linde", "identificationNo": "215", "id": "2201" },
+      { "name": "Locatie Rozenhof", "identificationNo": "216", "id": "2202" },
+      { "name": "Locatie Centrum", "identificationNo": "217", "id": "2203" }
+    ],
+    "expertiseProfiles": [
+      { "name": "Algemeen", "code": "D001" },
+      { "name": "Verzorgende", "code": "D006" },
+      { "name": "Verpleegkundige", "code": "D007" },
+      { "name": "Begeleider", "code": "D010" }
+    ],
+    "weeksheetProfiles": [
+      { "name": "Intramuraal" },
+      { "name": "Extramuraal" },
+      { "name": "Kantoor" }
+    ]
+  },
+  "teamMappings": [
+    { "dept": "Thuiszorg", "title": "", "all": false, "teamNames": ["Team Thuiszorg 1", "Team Thuiszorg 2"] },
+    { "dept": "Wijkzorg", "title": "", "all": false, "teamNames": ["Team Wijkzorg Noord", "Team Wijkzorg Zuid"] },
+    { "dept": "Wijkzorg", "title": "Teamleider", "all": true, "teamNames": [] },
+    { "dept": "Wijkzorg", "title": "Wijkverpleegkundige", "all": false, "teamNames": ["Team Wijkzorg Noord"] },
+    { "dept": "Dagbesteding", "title": "", "all": false, "teamNames": ["Team Dagbesteding"] },
+    { "dept": "Begeleiding", "title": "", "all": false, "teamNames": ["Team Begeleiding"] },
+    { "dept": "Tuiszorg", "title": "Casemanager", "all": false, "teamNames": ["Team Thuiszorg 1"] },
+    { "dept": "Techniek", "title": "Applicatiebeheerder", "all": true, "teamNames": [] }
+  ],
+  "locationMappings": [
+    { "dept": "Thuiszorg", "title": "", "all": true, "locationNames": [] },
+    { "dept": "Wijkzorg", "title": "", "all": false, "locationNames": ["Locatie De Linde", "Locatie Centrum"] },
+    { "dept": "Dagbesteding", "title": "", "all": false, "locationNames": ["Locatie Rozenhof"] },
+    { "dept": "Dagbesteding", "title": "Activiteitenbegeleider", "all": false, "locationNames": ["Locatie Rozenhof"] },
+    { "dept": "Begeleiding", "title": "", "all": false, "locationNames": ["Locatie De Linde", "Locatie Rozenhof"] },
+    { "dept": "Revalidatie", "title": "", "all": false, "locationNames": ["Locatie Centrum"] }
+  ],
+  "employees": [
+    { "titleId": "500", "titleName": "Verzorgende IG", "deptId": "CA010", "deptName": "Thuiszorg", "educationId": "D006", "expertiseName": "Verzorgende", "registrationProfile": "Extramuraal", "weeksheetName": "Extramuraal", "clusterId": "1001", "teamName": "Team Thuiszorg 1", "clusterName": "Team Thuiszorg 1" },
+    { "titleId": "510", "titleName": "Verpleegkundige", "deptId": "CA010", "deptName": "Thuiszorg", "educationId": "D007", "expertiseName": "Verpleegkundige", "registrationProfile": "Extramuraal", "weeksheetName": "Extramuraal", "clusterId": "1002", "teamName": "Team Thuiszorg 2", "clusterName": "Team Thuiszorg 2" },
+    { "titleId": "520", "titleName": "Wijkverpleegkundige", "deptId": "ZRG06", "deptName": "Wijkzorg", "educationId": "D007", "expertiseName": "Verpleegkundige", "registrationProfile": "Extramuraal", "weeksheetName": "Extramuraal", "clusterId": "1003", "teamName": "Team Wijkzorg Noord", "clusterName": "Team Wijkzorg Noord" },
+    { "titleId": "530", "titleName": "Begeleider niveau 1", "deptId": "CZ08", "deptName": "Begeleiding", "educationId": "D010", "expertiseName": "Begeleider", "registrationProfile": "Intramuraal", "weeksheetName": "Intramuraal", "clusterId": "1006", "teamName": "Team Begeleiding", "clusterName": "Team Begeleiding" },
+    { "titleId": "550", "titleName": "Activiteitenbegeleider", "deptId": "CB12", "deptName": "Dagbesteding", "educationId": "D001", "expertiseName": "Algemeen", "registrationProfile": "Intramuraal", "weeksheetName": "Kantoor", "clusterId": "1005", "teamName": "Team Dagbesteding", "clusterName": "Team Dagbesteding" }
+  ],
+  "roles": [
+    { "name": "Zorgmedewerker", "standaardBereik": true, "rolBereik": false, "mijnRooster": false, "mijnPlanning": false, "notes": "", "functies": ["Verzorgende IG", "Verpleegkundige", "Wijkverpleegkundige"] },
+    { "name": "Planner", "standaardBereik": false, "rolBereik": true, "mijnRooster": false, "mijnPlanning": true, "notes": "", "functies": ["Teamleider"] },
+    { "name": "Applicatiebeheer", "standaardBereik": false, "rolBereik": true, "mijnRooster": false, "mijnPlanning": false, "notes": "Alleen beheer, geen dossierinzage", "functies": ["Applicatiebeheerder"] }
+  ]
+}

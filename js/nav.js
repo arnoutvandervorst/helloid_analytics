@@ -43,14 +43,15 @@
     expand: 'M9 5l7 7-7 7M4 5v14',
     lock: 'M6 11h12v9H6zM9 11V8a3 3 0 016 0v3',
     conventions: 'M4 6h16M4 12h10M4 18h13M19 16l2 2-2 2',
-    matching: 'M8 12h8M5 8a4 4 0 000 8h3M19 8a4 4 0 010 8h-3'
+    matching: 'M8 12h8M5 8a4 4 0 000 8h3M19 8a4 4 0 010 8h-3',
+    nedap: 'M4 5h16v4H4zM4 10.5h10v4H4zM4 16h13v4H4zM16.5 12.5l2 2 3-3.5'
   };
 
   /* The groups are the questions somebody arrives with, not the modules that answer them. */
   const GROUPS = [
     { key: 'state', views: ['overview', 'risk', 'cost'] },
     { key: 'who', views: ['accounts', 'permissions', 'people', 'matching', 'org', 'conventions'] },
-    { key: 'model', views: ['mining', 'rules', 'products', 'activity', 'explain'] },
+    { key: 'model', views: ['mining', 'rules', 'products', 'nedap', 'activity', 'explain'] },
     { key: 'data', views: ['diff', 'snapshots', 'sources'] },
     { key: 'out', views: ['board', 'settings'] }
   ];

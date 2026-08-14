@@ -1166,6 +1166,72 @@
     return out;
   }
 
+  /* --- Nedap ONS workbench ---------------------------------------------------
+     Only speaks when a Nedap book is loaded. The book is config, not an import,
+     so these rules read it directly; the vault (when present) supplies the HR
+     reality the mappings are checked against. */
+  const NEDAP_RULES = [
+    /* People no scope mapping reaches: HelloID has nothing to provision. */
+    function nedapUncoveredPeople(m) {
+      const cov = HR.nedapons.coverage(HR.config.getNedapBook(), m.vault);
+      if (!cov.uncovered.length) return null;
+      return Object.assign({
+        id: 'nedap-uncovered', severity: 'high', category: T('fi.cat.nedap'),
+        entities: cov.uncovered.slice(0, 80).map(u => ({
+          type: 'person', key: u.person.personId, label: u.person.displayName,
+          detail: u.contracts.map(c => (c.department || c.departmentId) + (c.title ? ' · ' + c.title : '')).join('; ')
+        })),
+        count: cov.uncovered.length, impactMonthly: 0
+      }, prose('nedap-uncovered', { n: cov.uncovered.length, total: cov.total }));
+    },
+
+    /* Names the lookup lists cannot resolve: the CSV row silently drops. */
+    function nedapUnresolvedNames(m) {
+      const issues = HR.nedapons.checkBook(HR.config.getNedapBook(), m.vault)
+        .filter(i => i.rule === 'unresolved-name');
+      if (!issues.length) return null;
+      return Object.assign({
+        id: 'nedap-unresolved', severity: 'high', category: T('fi.cat.nedap'),
+        entities: issues.slice(0, 80).map(i => ({
+          type: 'mapping', key: i.area + ':' + i.row, label: (i.dept || '—') + ' / ' + (i.title || T('no.allTitles')),
+          detail: T('no.area.' + i.area) + ' · ' + T(i.msgKey, i.msgArgs)
+        })),
+        count: issues.length, impactMonthly: 0
+      }, prose('nedap-unresolved', { n: issues.length }));
+    },
+
+    /* The rest of the lint: wildcards that swallow rows, redundant grants,
+       duplicates, conflicts, names unknown to the imported vault. */
+    function nedapLint(m) {
+      const issues = HR.nedapons.checkBook(HR.config.getNedapBook(), m.vault)
+        .filter(i => i.rule !== 'unresolved-name' && i.severity === 'warning');
+      if (!issues.length) return null;
+      return Object.assign({
+        id: 'nedap-lint', severity: 'medium', category: T('fi.cat.nedap'),
+        entities: issues.slice(0, 80).map(i => ({
+          type: 'mapping', key: i.area + ':' + i.row + ':' + i.rule,
+          label: (i.dept || '—') + ' / ' + (i.title || T('no.allTitles')),
+          detail: T('no.area.' + i.area) + ' · ' + T(i.msgKey, i.msgArgs)
+        })),
+        count: issues.length, impactMonthly: 0
+      }, prose('nedap-lint', { n: issues.length }));
+    }
+  ];
+
+  function runNedap(model) {
+    if (HR.nedapons.isEmptyBook(HR.config.getNedapBook())) return [];
+    const out = [];
+    for (const rule of NEDAP_RULES) {
+      let f = null;
+      try { f = rule(model); } catch (e) { console.error('nedap rule failed:', rule.name, e); }
+      if (!f) continue;
+      if (f.count == null) f.count = f.entities.length;
+      f.annualImpact = (f.impactMonthly || 0) * 12;
+      out.push(f);
+    }
+    return out;
+  }
+
   function runVault(model) {
     const out = [];
     for (const rule of VAULT_RULES) {
@@ -1180,7 +1246,7 @@
   }
 
   HR.findings = { run, runComparison, runVault, runCorrelation, runExplanation, runActivity, runProducts,
-    runVaultQuality,
+    runVaultQuality, runNedap,
     RULES, COMPARISON_RULES, VAULT_RULES, CORRELATION_RULES, EXPLANATION_RULES,
-    ACTIVITY_RULES, PRODUCT_RULES, VAULT_QUALITY_RULES };
+    ACTIVITY_RULES, PRODUCT_RULES, VAULT_QUALITY_RULES, NEDAP_RULES };
 })(window.HR);

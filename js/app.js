@@ -34,7 +34,8 @@
     applyChromeBanner();
     const root = document.getElementById('view-root');
     root.innerHTML = '';
-    const worksEmpty = state.view === 'settings' || state.view === 'snapshots' || state.view === 'sources';
+    const worksEmpty = state.view === 'settings' || state.view === 'snapshots' || state.view === 'sources' ||
+      state.view === 'nedap';
     if (!state.model && !worksEmpty) { emptyState(root); return; }
     const fn = HR.views[state.view] || HR.views.overview;
     const missing = HR.views.missingFor ? HR.views.missingFor(state.view) : [];
@@ -196,6 +197,7 @@
       if (HR.config.looksLikeSettings(peek)) return 'settings';
       if (HR.config.looksLikeProductMap(peek)) return 'productmap';
       if (HR.config.looksLikeMatchBook(peek)) return 'matchbook';
+      if (HR.config.looksLikeNedapBook(peek)) return 'nedapbook';
       if (peek.kind === 'helloid-recon-snapshots' || Array.isArray(peek.snapshots)) return 'snapshots';
       if (HR.directory.looksLikeDirectory(peek)) return 'directory';
       if (HR.products.looksLikeProducts(peek)) return 'products';
@@ -386,6 +388,18 @@
       } catch (err) { U.toast(err.message, 7000); }
       return;
     }
+    if (peek && HR.config.looksLikeNedapBook(peek)) {
+      try {
+        const res = HR.config.importNedapBook(text);
+        /* Demo-loaded books are config, which "Leave demo" does not wipe —
+           mark them so the demo exit can. */
+        if (/^demo-/.test(fileName || '')) { HR.config.getNedapBook().demo = true; HR.config.save(); }
+        await withBusy(T('busy.recalc'), () => rebuild());
+        U.toast(T('toast.nedapBookImported', res), 5000);
+        if (!/^demo-/.test(fileName || '')) go('nedap');
+      } catch (err) { U.toast(err.message, 7000); }
+      return;
+    }
     if (peek && HR.directory.looksLikeDirectory(peek)) return importDirectory(text, fileName);
     if (peek && HR.products.looksLikeProducts(peek)) return importProducts(text, fileName);
     if (peek && (peek.kind === 'helloid-recon-snapshots' || Array.isArray(peek.snapshots))) {
@@ -397,6 +411,40 @@
       return;
     }
     return importVault(text, fileName);
+  }
+
+  /**
+   * The Nedap matrix workbook (.xlsx). Parsed in the browser, stored as the
+   * editable Nedap book in config; the workbench exports the connector CSVs
+   * from it. Import replaces the whole book — the workbook is the customer's
+   * source of truth at hand-over time.
+   */
+  async function importWorkbook(buf, fileName) {
+    return withBusy(T('busy.import'), async () => {
+      let parsed;
+      try {
+        const sheets = await HR.xlsx.read(buf);
+        parsed = HR.nedapons.parseWorkbook(sheets);
+      } catch (err) {
+        U.toast(T('toast.workbookFail', { name: fileName, msg: err.message }), 9000);
+        return;
+      }
+      if (HR.nedapons.isEmptyBook(parsed.book)) {
+        const first = parsed.errors[0];
+        U.toast(first ? T(first.key, first.args) : T('toast.workbookEmpty', { name: fileName }), 9000);
+        return;
+      }
+      HR.config.setNedapBook(parsed.book);
+      if (parsed.errors.length) U.toast(T(parsed.errors[0].key, parsed.errors[0].args), 7000);
+      rebuild();
+      const b = parsed.book;
+      U.toast(T('toast.workbookLoaded', {
+        m: b.teamMappings.length + b.locationMappings.length,
+        e: b.employees.length, r: b.roles.length
+      }), 7000);
+      HR.usage.imported('nedap-workbook', b.teamMappings.length + b.locationMappings.length + b.employees.length);
+      go('nedap');
+    });
   }
 
   /**
@@ -465,7 +513,12 @@
     const reader = new FileReader();
     /* Decode from bytes rather than trusting readAsText: a UTF-16 export would
        otherwise parse into mangled names instead of failing. */
-    reader.onload = () => { const d = HR.parse.decode(reader.result); then(d.text, d.encoding); };
+    reader.onload = () => {
+      /* Binary zip = the Nedap matrix workbook (.xlsx) — the one import that is
+         not text. Route it before decoding mangles it. */
+      if (HR.xlsx.isZip(reader.result)) { importWorkbook(reader.result, file.name); return; }
+      const d = HR.parse.decode(reader.result); then(d.text, d.encoding);
+    };
     reader.onerror = () => U.toast(T('toast.readFail'));
     reader.readAsArrayBuffer(file);
   }
