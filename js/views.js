@@ -588,10 +588,10 @@
     const kpis2 = el('div', { class: 'grid g4' });
     kpis2.style.marginTop = '14px';
     kpis2.append(
-      tile(T('ov.accounts'), U.fmtInt(s.accounts), T('ov.enabledDisabled', { e: s.enabledAccounts, d: s.disabledAccounts }), { small: true, delta: bDelta('accounts') }),
-      tile(T('ov.coverage'), U.fmtPct(s.coverage, 0), T('ov.coverageFoot'), { small: true, severity: s.coverage > .9 ? 'good' : 'medium' }),
-      tile(T('ov.licenceSpend'), U.fmtMoney(s.monthlyCost) + '/mo', T('ov.pricedGroups', { n: m.cost.pricedPermissions }), { small: true, delta: bDelta('monthlyCost'), deltaFormat: U.fmtMoney }),
-      tile(T('ov.cleanup'), U.fmtMoney(m.cost.remediationCost), T('ov.cleanupFoot', { h: Math.round(m.cost.remediation.hours), rate: U.fmtMoney(m.cost.remediation.rate) }), { small: true })
+      tile(T('ov.accounts'), U.fmtInt(s.accounts), T('ov.enabledDisabled', { e: s.enabledAccounts, d: s.disabledAccounts }), { small: true, delta: bDelta('accounts'), onClick: () => HR.app.go('accounts') }),
+      tile(T('ov.coverage'), U.fmtPct(s.coverage, 0), T('ov.coverageFoot'), { small: true, severity: s.coverage > .9 ? 'good' : 'medium', onClick: () => HR.app.go('people') }),
+      tile(T('ov.licenceSpend'), U.fmtMoney(s.monthlyCost) + '/mo', T('ov.pricedGroups', { n: m.cost.pricedPermissions }), { small: true, delta: bDelta('monthlyCost'), deltaFormat: U.fmtMoney, onClick: () => HR.app.go('cost', { tab: 'spend' }) }),
+      tile(T('ov.cleanup'), U.fmtMoney(m.cost.remediationCost), T('ov.cleanupFoot', { h: Math.round(m.cost.remediation.hours), rate: U.fmtMoney(m.cost.remediation.rate) }), { small: true, onClick: () => HR.app.go('cost', { tab: 'case' }) })
     );
     f.appendChild(kpis2);
 
@@ -736,7 +736,7 @@
   }
 
   /* =================================================================== RISK */
-  function riskView(m) {
+  function riskView(m, params) {
     const f = document.createDocumentFragment();
     f.appendChild(el('div', { class: 'view-head' }, el('div', {}, [
       el('h1', { text: T('rk.title') }),
@@ -752,7 +752,20 @@
     );
     f.appendChild(top);
 
-    const g = el('div', { class: 'grid g2' }); g.style.marginTop = '14px';
+    /* The rest in tabs — the score build-up, the findings and the permission
+       ranking are three different reads, not one scroll. */
+    f.appendChild(tabbed('risk', [
+      { id: 'findings', label: T('rk.tab.findings'), count: m.findings.length,
+        build: () => riskFindings(m) },
+      { id: 'score', label: T('rk.tab.score'), build: () => riskScoreTab(m) },
+      { id: 'permissions', label: T('rk.tab.permissions'), build: () => riskPermsTab(m) }
+    ], params));
+    return f;
+  }
+
+  /* How the overall number is built, and which classes and categories carry it. */
+  function riskScoreTab(m) {
+    const g = el('div', { class: 'grid g2' });
     g.appendChild(card(T('rk.formula'), null, [
       (() => {
         const t = el('table', { class: 'tbl' });
@@ -783,7 +796,8 @@
         { key: 'high', label: T('c.high'), num: true },
         { key: 'monthlyCost', label: T('c.costMo'), num: true, render: r => U.fmtMoney(r.monthlyCost) }
       ], rows: m.risk.byClass, pageSize: 12, exportName: 'risk-by-class',
-      initialSort: { key: 'meanRisk', dir: -1 }
+      initialSort: { key: 'meanRisk', dir: -1 },
+      onRowClick: r => HR.app.go('accounts', { cls: r.key })
     })));
 
     /* Who the accounts work for: the multiplier column explains why two accounts
@@ -803,12 +817,12 @@
       initialSort: { key: 'meanRisk', dir: -1 },
       onRowClick: r => HR.app.go('accounts', { ecat: r.key })
     })));
-    f.appendChild(g);
+    return g;
+  }
 
-    /* findings */
-    const list = el('div', { class: 'stack' }); list.style.marginTop = '14px';
+  function riskFindings(m) {
+    const list = el('div', { class: 'stack' });
     list.appendChild(el('div', { class: 'row' }, [
-      el('h2', { text: T('rk.findings', { n: m.findings.length }) }),
       el('span', { class: 'spacer' }),
       el('button', {
         class: 'btn sm', text: T('rk.exportReport'),
@@ -826,9 +840,11 @@
       })
     ]));
     m.findings.forEach(fd => list.appendChild(findingCard(fd, m)));
-    f.appendChild(list);
+    return list;
+  }
 
-    f.appendChild(el('div', { class: 'grid' }, card(T('rk.topPerms'), T('rk.topPermsNote'), HR.table.make({
+  function riskPermsTab(m) {
+    return el('div', { class: 'grid' }, card(T('rk.topPerms'), T('rk.topPermsNote'), HR.table.make({
       columns: [
         { key: 'name', label: T('c.permission'), render: r => el('a', { href: '#', text: r.name, onclick: e => { e.preventDefault(); drawerPermission(r, m); } }) },
         { key: 'categoryLabel', label: T('c.category') },
@@ -840,9 +856,7 @@
       exportName: 'permission-risk', initialSort: { key: 'riskScore', dir: -1 },
       search: (r, q) => r.name.toLowerCase().includes(q),
       onRowClick: r => drawerPermission(r, m)
-    }))));
-
-    return f;
+    })));
   }
 
   function findingCard(fd, m) {
@@ -956,7 +970,7 @@
   }
 
   /* =================================================================== COST */
-  function costView(m) {
+  function costView(m, params) {
     const f = document.createDocumentFragment();
     const c = m.cost;
     f.appendChild(el('div', { class: 'view-head' }, el('div', {}, [
@@ -966,34 +980,54 @@
 
     const k = el('div', { class: 'grid g4' });
     k.append(
-      tile(T('ov.licenceSpend'), U.fmtMoney(c.totalMonthly) + '/mo', T('ov.perYear', { amount: U.fmtMoney(c.totalAnnual) }), { delta: bDelta('monthlyCost'), deltaFormat: U.fmtMoney }),
-      tile(T('ct.recoverableNow'), U.fmtMoney(c.wasteMonthly) + '/mo', T('ov.perYear', { amount: U.fmtMoney(c.wasteAnnual) }), { severity: c.wasteMonthly ? 'high' : 'good' }),
-      tile(T('ct.outsideControl'), U.fmtMoney(c.unmanagedSpend) + '/mo', T('ct.outsideControlFoot'), { severity: 'medium' }),
-      tile(T('ov.cleanup'), U.fmtMoney(c.remediationCost), T('ct.cleanupFoot', { h: Math.round(c.remediation.hours) }) + (c.paybackMonths ? ' · ' + T('ct.payback', { n: U.fmtNum(c.paybackMonths, 1) }) : ''), { small: true })
+      tile(T('ov.licenceSpend'), U.fmtMoney(c.totalMonthly) + '/mo', T('ov.perYear', { amount: U.fmtMoney(c.totalAnnual) }), { delta: bDelta('monthlyCost'), deltaFormat: U.fmtMoney, onClick: () => HR.app.go('cost', { tab: 'spend' }) }),
+      tile(T('ct.recoverableNow'), U.fmtMoney(c.wasteMonthly) + '/mo', T('ov.perYear', { amount: U.fmtMoney(c.wasteAnnual) }), { severity: c.wasteMonthly ? 'high' : 'good', onClick: () => HR.app.go('cost', { tab: 'waste' }) }),
+      tile(T('ct.outsideControl'), U.fmtMoney(c.unmanagedSpend) + '/mo', T('ct.outsideControlFoot'), { severity: 'medium', onClick: () => HR.app.go('permissions') }),
+      tile(T('ov.cleanup'), U.fmtMoney(c.remediationCost), T('ct.cleanupFoot', { h: Math.round(c.remediation.hours) }) + (c.paybackMonths ? ' \u00b7 ' + T('ct.payback', { n: U.fmtNum(c.paybackMonths, 1) }) : ''), { small: true, onClick: () => HR.app.go('cost', { tab: 'case' }) })
     );
     f.appendChild(k);
 
-    const g = el('div', { class: 'grid g2' }); g.style.marginTop = '14px';
+    f.appendChild(tabbed('cost', [
+      { id: 'waste', label: T('ct.tab.waste'), count: c.disabledHolders.length || null,
+        build: () => costWasteTab(m) },
+      { id: 'case', label: T('ct.tab.case'), build: () => costCaseTab(m) },
+      { id: 'spend', label: T('ct.tab.spend'), build: () => costSpendTab(m) }
+    ], params));
+    return f;
+  }
 
-    /* waste buckets */
+  function costWasteTab(m) {
+    const c = m.cost;
+    const f = document.createDocumentFragment();
     const buckets = [
       { label: T('ct.bucketDisabled'), value: c.disabledWaste, n: c.disabledHolders.length, color: C.STATUS.critical, hard: true },
       { label: T('ct.bucketStacked'), value: c.stackedWasteNet, n: c.stacked.length, color: C.STATUS.serious, hard: true },
       { label: T('ct.bucketOrphan'), value: c.orphanExposure, n: c.orphanEnabled.length, color: C.STATUS.warning, hard: false }
     ];
-    g.appendChild(card(T('ct.leaks'), T('ct.leaksNote'), [
+    f.appendChild(el('div', { class: 'grid' }, card(T('ct.leaks'), T('ct.leaksNote'), [
       C.barList(buckets.map(b => ({ label: b.label, value: b.value, color: b.color, note: T('ct.bucketFoot', { n: b.n }) })),
         { format: v => U.fmtMoney(v), valueLabel: T('c.perMonth') }),
       el('p', { class: 'note', text: T('ct.leaksNote2') })
-    ]));
+    ])));
 
-    /* savings scenario */
+    f.appendChild(el('div', { class: 'grid', style: 'margin-top:14px' }, card(T('ct.disabledHolding'), T('ct.disabledHoldingNote', { n: c.disabledHolders.length, amount: U.fmtMoney(c.disabledWaste) }), HR.table.make({
+      columns: [
+        { key: 'userName', label: T('c.account') },
+        { key: 'displayName', label: T('c.displayName') },
+        { key: 'perms', label: T('ct.paidGroups'), render: r => el('span', { class: 'trunc', text: r.perms.filter(p => p.monthlyPrice).map(p => p.name).join(', ') }) },
+        { key: 'monthlyCost', label: T('c.costMo'), num: true, render: r => U.fmtMoney(r.monthlyCost) }
+      ], rows: c.disabledHolders, pageSize: 20, exportName: 'disabled-licensed',
+      initialSort: { key: 'monthlyCost', dir: -1 },
+      search: (r, q) => (r.userName + ' ' + r.displayName).toLowerCase().includes(q),
+      onRowClick: a => drawerAccount(a)
+    }))));
+    return f;
+  }
+
+  function costCaseTab(m) {
+    const c = m.cost;
+    const g = el('div', { class: 'grid g2' });
     g.appendChild(card(T('ct.scenario'), null, savingsScenario(m)));
-
-    g.appendChild(card(T('ct.byCategory'), null, C.barList(c.byCategory.map(x => ({
-      label: x.key, value: x.monthly, color: C.slot(4), note: T('ct.groupsN', { n: x.items })
-    })), { format: v => U.fmtMoney(v), valueLabel: T('c.perMonth') })));
-
     g.appendChild(card(T('ct.effortModel'), T('ct.effortNote'), (() => {
       const r = c.remediation;
       const rows = [
@@ -1016,7 +1050,15 @@
       t.appendChild(tb);
       return el('div', { class: 'tbl-wrap' }, t);
     })()));
-    f.appendChild(g);
+    return g;
+  }
+
+  function costSpendTab(m) {
+    const c = m.cost;
+    const f = document.createDocumentFragment();
+    f.appendChild(el('div', { class: 'grid' }, card(T('ct.byCategory'), null, C.barList(c.byCategory.map(x => ({
+      label: x.key, value: x.monthly, color: C.slot(4), note: T('ct.groupsN', { n: x.items })
+    })), { format: v => U.fmtMoney(v), valueLabel: T('c.perMonth') }))));
 
     f.appendChild(el('div', { class: 'grid', style: 'margin-top:14px' }, card(T('ct.pricedGroups'), T('ct.pricedNote', { priced: c.pricedPermissions, unpriced: c.unpricedPermissions }), HR.table.make({
       columns: [
@@ -1033,19 +1075,6 @@
       search: (r, q) => r.name.toLowerCase().includes(q),
       onRowClick: r => { const p = m.permissions.get(r.key); if (p) drawerPermission(p, m); }
     }))));
-
-    f.appendChild(el('div', { class: 'grid', style: 'margin-top:14px' }, card(T('ct.disabledHolding'), T('ct.disabledHoldingNote', { n: c.disabledHolders.length, amount: U.fmtMoney(c.disabledWaste) }), HR.table.make({
-      columns: [
-        { key: 'userName', label: T('c.account') },
-        { key: 'displayName', label: T('c.displayName') },
-        { key: 'perms', label: T('ct.paidGroups'), render: r => el('span', { class: 'trunc', text: r.perms.filter(p => p.monthlyPrice).map(p => p.name).join(', ') }) },
-        { key: 'monthlyCost', label: T('c.costMo'), num: true, render: r => U.fmtMoney(r.monthlyCost) }
-      ], rows: c.disabledHolders, pageSize: 20, exportName: 'disabled-licensed',
-      initialSort: { key: 'monthlyCost', dir: -1 },
-      search: (r, q) => (r.userName + ' ' + r.displayName).toLowerCase().includes(q),
-      onRowClick: a => drawerAccount(a)
-    }))));
-
     return f;
   }
 
