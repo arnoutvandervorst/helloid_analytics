@@ -589,12 +589,15 @@
       const ex = L.exampleTable(spec);
       const body = el('div', { class: 'stack' });
       Object.keys(ex).forEach(fkey => {
-        /* One column per iteration step, so the sequence aligns across the
-           four preference rows instead of drifting with each value's width. */
+        /* One column per iteration step, and a fixed layout with a shared
+           label-column width so the columns line up ACROSS the field tables
+           too — auto layout gave every table its own geometry. */
         const stepCount = Math.max(...ex[fkey].map(r => r.steps.length));
         const t = el('table', { class: 'tbl' });
+        t.style.tableLayout = 'fixed';
+        t.style.width = '100%';
         t.appendChild(el('thead', {}, el('tr', {},
-          [el('th', { class: 'no-sort', text: T('ng.lab.f.' + fkey) })].concat(
+          [el('th', { class: 'no-sort', text: T('ng.lab.f.' + fkey), style: 'width:160px' })].concat(
             Array.from({ length: stepCount }, (_, i) =>
               el('th', { class: 'no-sort', text: i === 0 ? T('ng.lab.first') : T('ng.lab.taken', { n: i }) }))))));
         const tb = el('tbody');
