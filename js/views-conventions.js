@@ -589,15 +589,19 @@
       const ex = L.exampleTable(spec);
       const body = el('div', { class: 'stack' });
       Object.keys(ex).forEach(fkey => {
+        /* One column per iteration step, so the sequence aligns across the
+           four preference rows instead of drifting with each value's width. */
+        const stepCount = Math.max(...ex[fkey].map(r => r.steps.length));
         const t = el('table', { class: 'tbl' });
-        t.appendChild(el('thead', {}, el('tr', {}, [
-          el('th', { class: 'no-sort', text: T('ng.lab.f.' + fkey) }),
-          el('th', { class: 'no-sort', text: T('ng.lab.sequence') })])));
+        t.appendChild(el('thead', {}, el('tr', {},
+          [el('th', { class: 'no-sort', text: T('ng.lab.f.' + fkey) })].concat(
+            Array.from({ length: stepCount }, (_, i) =>
+              el('th', { class: 'no-sort', text: i === 0 ? T('ng.lab.first') : T('ng.lab.taken', { n: i }) }))))));
         const tb = el('tbody');
-        ex[fkey].forEach(row => tb.appendChild(el('tr', {}, [
-          el('td', { text: row.convention }),
-          el('td', { class: 'mono', text: row.steps.join('  →  ') })
-        ])));
+        ex[fkey].forEach(row => tb.appendChild(el('tr', {},
+          [el('td', { text: row.convention })].concat(
+            Array.from({ length: stepCount }, (_, i) =>
+              el('td', { class: 'mono', text: row.steps[i] || '' }))))));
         t.appendChild(tb);
         body.appendChild(el('div', { class: 'tbl-wrap' }, t));
       });
