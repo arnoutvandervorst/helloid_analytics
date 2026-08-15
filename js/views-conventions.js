@@ -654,7 +654,8 @@
           ],
           rows: tableRows, pageSize: 25, exportName: 'namegen-simulation',
           initialSort: { key: 'step', dir: -1 },
-          search: (r, q) => (r.name + ' ' + show.map(k => (r.r.values[k] || {}).value).join(' ')).toLowerCase().includes(q)
+          search: (r, q) => (r.name + ' ' + show.map(k => (r.r.values[k] || {}).value).join(' ')).toLowerCase().includes(q),
+          onRowClick: r => drawerLadder(L, spec, r.r)
         }))));
       results.insertBefore(el('div', { class: 'grid', style: 'margin-top:14px' }, excard), tiles);
     }
@@ -662,6 +663,50 @@
     drawResults();
     wrap.append(el('div', { class: 'grid' }, editor), results);
     return wrap;
+  }
+
+  /* The full iteration ladder for one simulated person: every field down to
+     ×10, with the value the simulation actually landed on marked. What-if for
+     "and if that one is taken too?" without engineering the collision. */
+  function drawerLadder(L, spec, simRow) {
+    const { openDrawer } = HR.viewkit;
+    const ladder = L.ladderFor(spec, simRow.person, 10);
+    const p = simRow.parts;
+    const body = el('div', { class: 'stack' });
+
+    body.appendChild(el('p', { class: 'note', text: [
+      p.nick || p.given, p.initials,
+      L.surname(p, p.convention) ? '· ' + L.surname(p, p.convention) : '',
+      p.convention ? '(' + p.convention + ')' : ''
+    ].filter(Boolean).join(' ') }));
+
+    Object.keys(ladder).forEach(fkey => {
+      const chosen = simRow.values[fkey] ? simRow.values[fkey].step : -2;
+      const t = el('table', { class: 'tbl' });
+      t.style.tableLayout = 'fixed';
+      t.style.width = '100%';
+      t.appendChild(el('thead', {}, el('tr', {}, [
+        el('th', { class: 'no-sort', text: T('ng.lab.f.' + fkey), style: 'width:130px' }),
+        el('th', { class: 'no-sort', text: '' })])));
+      const tb = el('tbody');
+      ladder[fkey].forEach(s => tb.appendChild(el('tr', {}, [
+        el('td', { class: 'note', text: s.step === 0 ? T('ng.lab.first') : T('ng.lab.taken', { n: s.step }) }),
+        el('td', {}, [
+          el('span', { class: 'mono', text: s.value }),
+          s.step === chosen ? el('span', { class: 'pill ok', style: 'margin-left:8px', text: T('ng.lab.chosen') }) : ''
+        ])
+      ])));
+      if (ladder[fkey].length < 10) {
+        tb.appendChild(el('tr', {}, [el('td', {}), el('td', { class: 'note', text: T('ng.lab.ladderEnds') })]));
+      }
+      t.appendChild(tb);
+      body.appendChild(el('div', { class: 'tbl-wrap' }, t));
+    });
+
+    openDrawer(el('div', {}, [
+      el('h2', { text: simRow.person.displayName || simRow.person.externalId }),
+      el('p', { class: 'note', text: T('ng.lab.ladderNote') })
+    ]), body);
   }
 
   /** The filled intake tables, ready to paste into the document. */

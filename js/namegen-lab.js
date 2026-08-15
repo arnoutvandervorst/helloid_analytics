@@ -296,6 +296,32 @@
     return { rows, stats, worst, fields: fields.map(f => f.key) };
   }
 
+  /**
+   * The full iteration ladder for one person: what every field would generate
+   * at step 0..n-1, collisions aside — the drawer's "what if this is taken too"
+   * view. Stops early when a field's variants are exhausted.
+   */
+  function ladderFor(spec, person, n) {
+    const p = parts(person);
+    const domain = spec.domain || '';
+    const upnDomain = spec.upnDomain || domain;
+    const out = {};
+    for (const f of FIELDS) {
+      const fs = spec.fields[f.key];
+      const variants = fs ? (fs.variants || []).filter(v => v.trim()) : [];
+      if (!variants.length) continue;
+      const tv = tokenValues(p, null, f.space === 'upn' ? upnDomain : domain);
+      const steps = [];
+      for (let step = 0; step < n; step++) {
+        const idx = Math.min(step, variants.length - 1);
+        if (step > variants.length - 1 && !/\{i\}/.test(variants[idx])) break;
+        steps.push({ step, value: normalise(render(variants[idx], tv, step - idx + 2).value, f.kind) });
+      }
+      out[f.key] = steps;
+    }
+    return out;
+  }
+
   /** The intake tables: the fixed example person under every name preference. */
   function exampleTable(spec) {
     const p = parts(EXAMPLE_PERSON);
@@ -333,5 +359,5 @@
 
   window.HR = window.HR || {};
   window.HR.namegenLab = { FIELDS, TOKENS, EXAMPLE_PERSON, defaults, parts, surname,
-    render, normalise, simulate, exampleTable, existingFrom, tokenValues };
+    render, normalise, simulate, exampleTable, existingFrom, tokenValues, ladderFor };
 })();
