@@ -141,16 +141,20 @@
    */
   function population(model, vault, granted) {
     const index = HR.correlate.personAccountIndex(model, vault, model.correlation);
+    const ex = HR.mine.exclusion(model);
     const people = [];
 
     for (const person of vault.persons) {
       const entry = index.get(person.personId);
       const accounts = entry ? entry.accounts : [];
       const ents = new Set();
-      for (const account of accounts) account.permKeys.forEach(k => ents.add(k));
+      for (const account of accounts) account.permKeys.forEach(k => { if (!ex.skip(k)) ents.add(k); });
       if (granted && !granted.empty) {
         const rows = granted.byPerson.get(person.displayName) || [];
-        rows.forEach(r => ents.add(HR.model.permissionKey(r.system, r.entitlement)));
+        rows.forEach(r => {
+          const k = HR.model.permissionKey(r.system, r.entitlement);
+          if (!ex.skip(k)) ents.add(k);
+        });
       }
       const contract = primary(person);
       const attrs = {};
@@ -861,9 +865,9 @@
       return perm ? (perm.system + ' - ' + perm.name + (perm.path ? ' (' + perm.path + ')' : '')) : key;
     };
     const rows = condensed.rules.map(rule => ({
-      Name: 'Voorstel - ' + rule.conds.map(c =>
+      Name: HR.mine.ruleName('Voorstel', rule.conds.map(c =>
         (c.labels.length > 1 ? c.labels.slice(0, 3).join(' / ') + (c.labels.length > 3 ? '\u2026' : '')
-          : (c.labels[0] || c.values[0]))).join(' + '),
+          : (c.labels[0] || c.values[0]))).join(' + ')),
       EntitlementCount: rule.grants.length,
       PersonsLatestEvaluation: rule.members.length,
       Categories: rule.conds.some(c => c.values.length > 1) ? 'Condensed' : 'Mined',
@@ -886,7 +890,7 @@
     const rows = result.rules.map(rule => ({
       Name: rule.everyone
         ? 'Basis - Alle medewerkers'
-        : 'Voorstel - ' + rule.conds.map(c => c.label || c.value).join(' + '),
+        : HR.mine.ruleName('Voorstel', rule.conds.map(c => c.label || c.value).join(' + ')),
       EntitlementCount: rule.grants.length,
       PersonsLatestEvaluation: rule.members.length,
       Categories: 'Mined',
@@ -917,7 +921,7 @@
     });
     byNode.forEach((rules, node) => {
       rows.push({
-        Name: 'Piramide - ' + label(node),
+        Name: HR.mine.ruleName('Piramide', label(node)),
         EntitlementCount: rules.length,
         PersonsLatestEvaluation: node.members.length,
         Categories: 'Pyramid',
@@ -931,8 +935,8 @@
       rows.push({
         /* A rule with one condition is not a combination; naming it one in the export
            would carry the mistake into HelloID. */
-        Name: (group.conds.length > 1 ? 'Combinatie - ' : 'Voorstel - ') +
-          group.conds.map(c => c.label || c.value).join(' + '),
+        Name: HR.mine.ruleName(group.conds.length > 1 ? 'Combinatie' : 'Voorstel',
+          group.conds.map(c => c.label || c.value).join(' + ')),
         EntitlementCount: group.rules.length,
         PersonsLatestEvaluation: group.members.length,
         Categories: group.conds.length > 1 ? 'Combination' : 'Single attribute',

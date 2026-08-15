@@ -113,7 +113,7 @@
     mining: ['vault', 'recon|granted'], rules: ['rules'],
     products: ['products|assignments'], activity: ['granted|history'],
     explain: ['recon'], diff: ['recon'], board: ['recon'],
-    conventions: ['recon']
+    conventions: ['recon|vault']
   };
 
   function hasSource(k) {

@@ -1441,6 +1441,47 @@
         : T('py.noSuggestion') })
     ]);
 
+    /* Mining hygiene: what stays out of every engine, and what proposals are
+       called — the exclude/persist/name-template asks from the feedback board. */
+    const hygieneCard = (() => {
+      const cfg = HR.config.get();
+      cfg.mining = cfg.mining || { excluded: [], ruleName: '' };
+      const apply = () => {
+        HR.config.save();
+        delete m._pyramid; delete m._roles;
+        HR.app.render();
+      };
+      const list = el('div', { class: 'stack', style: 'gap:6px' });
+      const draw = () => {
+        list.innerHTML = '';
+        cfg.mining.excluded.forEach((spec, i) => {
+          const sel = el('select', {});
+          ['equals', 'starts', 'ends', 'contains', 'regex'].forEach(op => sel.appendChild(
+            el('option', { value: op, text: T('st.op.' + op), selected: spec.op === op })));
+          sel.onchange = () => { spec.op = sel.value; apply(); };
+          const val = el('input', { type: 'text', value: spec.value || '' });
+          val.style.flex = '1';
+          val.onchange = () => { spec.value = val.value; apply(); };
+          list.appendChild(el('div', { class: 'row', style: 'gap:6px' }, [sel, val,
+            el('button', { class: 'btn sm ghost', text: '×', onclick: () => {
+              cfg.mining.excluded.splice(i, 1); apply();
+            } })]));
+        });
+        if (!cfg.mining.excluded.length) list.appendChild(el('p', { class: 'note', text: T('py.hyNone') }));
+        list.appendChild(el('div', { class: 'row' }, el('button', { class: 'btn sm ghost', text: T('py.hyAdd'),
+          onclick: () => { cfg.mining.excluded.push({ op: 'equals', value: '' }); draw(); } })));
+      };
+      draw();
+      const tpl = el('input', { type: 'text', value: cfg.mining.ruleName || '',
+        placeholder: T('py.hyTplPh') });
+      tpl.style.minWidth = '260px';
+      tpl.onchange = () => { cfg.mining.ruleName = tpl.value.trim(); HR.config.save(); };
+      return card(T('py.hyTitle'), T('py.hyNote'), el('div', { class: 'stack' }, [
+        list,
+        el('label', { class: 'inline' }, [document.createTextNode(T('py.hyTpl')), tpl])
+      ]));
+    })();
+
     /* Sections rather than one long scroll, and only the one on screen is built —
        mining a section is not free. */
     f.appendChild(HR.viewkit.tabbed('mining', [
@@ -1449,6 +1490,7 @@
         wrap.appendChild(levelsCard);
         const bl = baselineCard(m, P);
         if (bl) wrap.appendChild(bl);
+        wrap.appendChild(hygieneCard);
         return wrap;
       } },
       { id: 'rules', label: T('py.tab.rules'), count: P.summary.rules + P.summary.combos,

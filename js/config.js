@@ -278,7 +278,11 @@
     optimise: DEFAULT_OPTIMISE,
     rarityThreshold: 3,             // held by <= N accounts counts as rare
     skipReview: false,              // skip the configuration review on import
-    severityBands: { critical: 70, high: 45, medium: 20 }
+    severityBands: { critical: 70, high: 45, medium: 20 },
+    /* Mining hygiene: matcher specs excluded from role/rule mining, and a
+       naming template for exported rule proposals ({dept}/{title}/{system}/
+       {category} tokens; empty = the modules' built-in names). */
+    mining: { excluded: [], ruleName: '' }
   };
 
   let current = null;
@@ -660,9 +664,20 @@
 
   const looksLikeNedapBook = data => !!data && data.kind === NEDAP_KIND;
 
+  /* --- the name-generation convention ---------------------------------------
+     Plain config (travels with the settings export): seeded lazily from the
+     workbench's intake best-practice defaults, since namegen-lab.js loads
+     after this file. */
+  function getNamegen() {
+    const cfg = load();
+    if (!cfg.namegen || !cfg.namegen.fields) cfg.namegen = HR.namegenLab.defaults();
+    return cfg.namegen;
+  }
+
   HR.config = { get: load, save, reset, DEFAULTS, categoryFor, accountClassFor, priceFor, compileMatch,
     severityOf, clone, labelOf, exportJson, importJson, looksLikeSettings, FILE_KIND,
     getMap, setMapping, exportMap, exportMapCsv, importMap, looksLikeProductMap, MAP_KIND,
     getMatchBook, setMatchDecision, exportMatchBook, importMatchBook, looksLikeMatchBook, MATCH_KIND,
-    getNedapBook, setNedapBook, exportNedapBook, importNedapBook, looksLikeNedapBook, NEDAP_KIND };
+    getNedapBook, setNedapBook, exportNedapBook, importNedapBook, looksLikeNedapBook, NEDAP_KIND,
+    getNamegen };
 })(window.HR);

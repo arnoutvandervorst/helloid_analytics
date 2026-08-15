@@ -367,6 +367,27 @@ become editable names through the lookup lists — IDs the lists do not know are
 there as id-named entries, so a blank start from just the connector CSVs edits and
 round-trips exactly, and picks up readable names the moment somebody fills them in.
 
+## Name-generation workbench
+
+The connector intake's Naamgeneratie section asks customers to specify, per generated
+field (last name, display name, mail, proxyAddresses, UPN, mailNickname), a
+first-choice recipe, fallbacks for when a name is taken, and whether iterations are
+synchronised — and customers cannot picture how a convention plays out. The
+Conventions view's **Design & test** tab makes it a live instrument: author each
+field from tokens (`{roepnaam}.{tv}{geboortenaam}@{domein}`, `{i}` as the counter in
+the last fallback), and every edit re-simulates over the real vault population,
+colliding against the existing directory names when a directory import is loaded.
+The output is the intake's own tables — the fixed test person (Janine, van den
+Boele / de Vries) under all four name preferences — plus the population result:
+who needs a fallback, who exhausts the variants, iteration depths, HR duplicates,
+length violations, and clean diacritics handling. "Export intake answers" produces
+the filled tables as markdown; the mined conventions on the Name generation tab
+offer "Adopt as draft" to seed the editor with what the tenant does today.
+
+Mining hygiene (on the Mining view's model tab): matcher rules that keep noise
+entitlements out of every mining engine, and a naming template for exported rule
+proposals — the exclude/name-template asks from the HelloID feedback board.
+
 ## The models
 
 All three are assumptions, all three are editable in **Settings**, and every change

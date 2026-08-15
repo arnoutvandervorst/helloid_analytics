@@ -68,9 +68,11 @@
         .forEach(r => covered.add(r.perm.key));
     }
 
+    const ex = HR.mine.exclusion(model);
     const eligible = new Set();
     for (const p of model.permissionList) {
       if (covered.has(p.key)) continue;
+      if (ex.skip(p.key)) continue;
       if (p.holderCount < o.minSupport) continue;
       if (p.holderCount / N > o.maxShare) continue;   // held by nearly everyone: no signal
       eligible.add(p.key);
@@ -222,7 +224,7 @@
   /** Proposals in the shape of a HelloID rule export, so they can be reviewed side by side. */
   function toRulesCsv(proposals, systemFallback) {
     const rows = proposals.map(p => ({
-      Name: 'Voorstel - ' + p.suggestedName,
+      Name: HR.mine.ruleName('Voorstel', p.suggestedName),
       EntitlementCount: p.perms.length,
       PersonsLatestEvaluation: 0,
       Categories: '',

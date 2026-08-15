@@ -172,5 +172,38 @@
   /** Sensitivity pre-fill for a proposed token, shared with the conventions viewer. */
   const hintFor = token => SENSITIVITY_HINTS.find(h => h.rx.test(token)) || null;
 
-  HR.mine = { suggest, test, escapeRx, hintFor };
+  /* --- mining hygiene (shared by pyramid, roles and optimise) ---------------
+     Entitlements matching cfg.mining.excluded stay out of every mining engine:
+     legacy groups and known noise otherwise resurface in each proposal round. */
+  function exclusion(model) {
+    const specs = (HR.config.get().mining || {}).excluded || [];
+    /* compileMatch returns the pattern SOURCE; compiling is the caller's job. */
+    const rxs = specs.map(s => {
+      const pat = HR.config.compileMatch(s);
+      if (!pat) return null;
+      try { return new RegExp(pat, 'i'); } catch (e) { return null; }
+    }).filter(Boolean);
+    if (!rxs.length) return { any: false, skip: () => false };
+    const cache = new Map();
+    const skip = key => {
+      let hit = cache.get(key);
+      if (hit === undefined) {
+        const p = model.permissions.get(key);
+        const name = p ? p.name : String(key);
+        hit = rxs.some(rx => rx.test(name));
+        cache.set(key, hit);
+      }
+      return hit;
+    };
+    return { any: true, skip };
+  }
+
+  /** Proposed-rule names honour cfg.mining.ruleName ({kind} and {conditions} tokens). */
+  function ruleName(kind, conditions) {
+    const tpl = (HR.config.get().mining || {}).ruleName;
+    if (!tpl) return kind + ' - ' + conditions;
+    return tpl.replace('{kind}', kind).replace('{conditions}', conditions);
+  }
+
+  HR.mine = { suggest, test, escapeRx, hintFor, exclusion, ruleName };
 })(window.HR);

@@ -195,7 +195,9 @@
   function extensions(model, comparison, pyramid) {
     if (!comparison || !pyramid) return null;
 
-    const unmodelled = new Set(comparison.unmodelled.map(p => p.perm.key));
+    const ex = HR.mine.exclusion(model);
+    const unmodelled = new Set(comparison.unmodelled
+      .filter(p => !ex.skip(p.perm.key)).map(p => p.perm.key));
     const drift = new Map();
     comparison.permissionRows.forEach(row => drift.set(row.perm.key, row.unmanagedRows || 0));
 
@@ -249,7 +251,7 @@
   /** The merged rules, in the export shape, ready to review beside the originals. */
   function toRulesCsv(proposals) {
     const rows = proposals.map(p => ({
-      Name: 'Samengevoegd - ' + p.rules[0].name,
+      Name: HR.mine.ruleName('Samengevoegd', p.rules[0].name),
       EntitlementCount: p.entitlements.length,
       PersonsLatestEvaluation: p.people.length,
       Categories: p.kind === 'lossless' ? 'Condensed' : 'Condensed (trade-off)',

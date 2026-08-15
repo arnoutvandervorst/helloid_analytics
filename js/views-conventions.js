@@ -15,18 +15,20 @@
       el('p', { text: T('cv.lead') })
     ])));
 
-    const res = HR.conventions.build(m);
+    const res = m.hasRecon ? HR.conventions.build(m) : null;
     const dir = HR.app.state.directory;
     const ng = dir ? HR.conventions.namegen(dir.users) : null;
+    const vault = HR.app.state.vault || (dir && dir.vault) || null;
     f.appendChild(tabbed('conventions', [
-      { id: 'accounts', label: T('cv.tab.accounts'),
-        count: res.usernames.summary.mixed || null, build: () => accountsTab(m, res.usernames) },
-      { id: 'entitlements', label: T('cv.tab.entitlements'),
-        count: res.entitlements.summary.strays || null, build: () => entitlementsTab(m, res.entitlements) },
-      res.attributes ? { id: 'attributes', label: T('cv.tab.attributes'),
+      res ? { id: 'accounts', label: T('cv.tab.accounts'),
+        count: res.usernames.summary.mixed || null, build: () => accountsTab(m, res.usernames) } : null,
+      res ? { id: 'entitlements', label: T('cv.tab.entitlements'),
+        count: res.entitlements.summary.strays || null, build: () => entitlementsTab(m, res.entitlements) } : null,
+      (res && res.attributes) ? { id: 'attributes', label: T('cv.tab.attributes'),
         count: res.attributes.summary.candidates || null, build: () => attributesTab(m, res.attributes) } : null,
       (ng || (dir && dir.meta.tenant)) ? { id: 'namegen', label: T('cv.tab.namegen'),
-        build: () => namegenTab(dir, ng) } : null
+        build: () => namegenTab(dir, ng) } : null,
+      { id: 'lab', label: T('ng.lab.tab'), build: () => labTab(vault, dir) }
     ].filter(Boolean), params));
     return f;
   }
@@ -393,6 +395,26 @@
     return id.replace(/first|last|bare|vd|f/g, t => T('cv.ng.tok.' + t)).replace(/\+/g, '·');
   }
 
+  /* Mined recipe -> lab template: the loop from "this is what the tenant does
+     today" to "test it as the convention going forward". */
+  const RECIPE_TOKEN = { first: '{roepnaam}', f: '{voorletter}',
+    last: '{tv}{geboortenaam}', bare: '{geboortenaam}', vd: '{tvi}{geboortenaam}' };
+  const ADOPTABLE = { upn: 'upn', mail: 'mail', mailNickname: 'mailNickname' };
+
+  function adoptRecipe(fieldKey, recipeId) {
+    const sep = (recipeId.match(/[.\-_+]/) || [''])[0];
+    const tokens = (sep ? recipeId.split(sep) : [recipeId]).map(t => RECIPE_TOKEN[t] || t);
+    let tpl = tokens.join(sep === '+' || sep === '' ? '' : sep);
+    const labKey = ADOPTABLE[fieldKey];
+    if (labKey === 'mail' || labKey === 'upn') tpl += '@{domein}';
+    const spec = HR.config.getNamegen();
+    spec.fields[labKey] = spec.fields[labKey] || { variants: [] };
+    spec.fields[labKey].variants[0] = tpl;
+    HR.config.save();
+    U.toast(T('ng.lab.adopted', { tpl }), 5000);
+    HR.app.go('conventions', { tab: 'lab' });
+  }
+
   function namegenTab(dir, ng) {
     const wrap = document.createDocumentFragment();
     const tenant = dir.meta.tenant;
@@ -410,6 +432,7 @@
 
     if (ng) {
       const rows = ng.fields.map(f => ({
+        key: f.key,
         field: T('cv.ng.field.' + f.key),
         best: f.res.best, total: f.res.total, exceptions: f.res.exceptions,
         iterated: f.res.iterated, maxIter: f.res.maxIter,
@@ -443,7 +466,12 @@
           { key: 'exceptions', label: T('cv.ngExc'), num: true,
             render: r => r.exceptions
               ? el('span', { class: 'sev medium', text: U.fmtInt(r.exceptions) })
-              : el('span', { class: 'note', text: '0' }) }
+              : el('span', { class: 'note', text: '0' }) },
+          { key: 'adopt', label: '', sortable: false,
+            render: r => (!r.dn && r.best && ADOPTABLE[r.key])
+              ? el('button', { class: 'btn sm ghost', text: T('ng.lab.adopt'),
+                  onclick: e => { e.stopPropagation(); adoptRecipe(r.key, r.best.id); } })
+              : '' }
         ],
         rows, pageSize: 10, exportName: 'name-generation'
       })));
@@ -471,6 +499,184 @@
       ]));
     }
     return wrap;
+  }
+
+  /* ------------------------------------------------- name-generation lab */
+  /* The intake's Naamgeneratie section as a live instrument: author the
+     per-field convention, watch it play out over the real population, and
+     export the filled intake tables. */
+
+  const LAB = { collideExisting: true };   // survives tab navigation
+
+  function labTab(vault, dir) {
+    const L = HR.namegenLab;
+    const spec = HR.config.getNamegen();
+    const wrap = document.createDocumentFragment();
+    const persons = vault ? vault.persons : [];
+    const results = el('div');
+
+    let timer = null;
+    const resim = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        HR.config.save();
+        drawResults();
+      }, 300);
+    };
+
+    /* --- editor ---------------------------------------------------------- */
+    const fieldCard = fkey => {
+      const fs = spec.fields[fkey] = spec.fields[fkey] || { variants: [''] };
+      const rows = el('div', { class: 'stack', style: 'gap:6px' });
+      const draw = () => {
+        rows.innerHTML = '';
+        fs.variants.forEach((v, i) => {
+          const inp = el('input', { type: 'text', value: v, spellcheck: 'false' });
+          inp.style.flex = '1'; inp.style.fontFamily = 'var(--mono, monospace)';
+          inp.oninput = () => { fs.variants[i] = inp.value; resim(); };
+          rows.appendChild(el('div', { class: 'row', style: 'gap:6px' }, [
+            el('span', { class: 'note', style: 'width:82px',
+              text: i === 0 ? T('ng.lab.first') : T('ng.lab.taken', { n: i }) }),
+            inp,
+            fs.variants.length > 1 ? el('button', { class: 'btn sm ghost', text: '×',
+              onclick: () => { fs.variants.splice(i, 1); draw(); resim(); } }) : ''
+          ]));
+        });
+        rows.appendChild(el('div', { class: 'row' }, el('button', { class: 'btn sm ghost',
+          text: T('ng.lab.addVariant'), onclick: () => { fs.variants.push(''); draw(); } })));
+      };
+      draw();
+      return el('div', {}, [el('h3', { text: T('ng.lab.f.' + fkey) }), rows]);
+    };
+
+    const domain = el('input', { type: 'text', value: spec.domain });
+    domain.oninput = () => { spec.domain = domain.value.trim(); resim(); };
+    const upnDomain = el('input', { type: 'text', value: spec.upnDomain,
+      placeholder: T('ng.lab.sameDomain') });
+    upnDomain.oninput = () => { spec.upnDomain = upnDomain.value.trim(); resim(); };
+    const sync = el('input', { type: 'checkbox' });
+    sync.checked = !!spec.syncIterations;
+    sync.onchange = () => { spec.syncIterations = sync.checked; resim(); };
+    const collide = el('input', { type: 'checkbox' });
+    collide.checked = LAB.collideExisting;
+    collide.onchange = () => { LAB.collideExisting = collide.checked; resim(); };
+
+    const tokenLegend = el('p', { class: 'note mono', text: HR.namegenLab.TOKENS.map(t => '{' + t + '}').join(' ') });
+
+    const editor = card(T('ng.lab.editorTitle'), T('ng.lab.editorNote'), el('div', { class: 'stack' }, [
+      el('div', { class: 'row', style: 'gap:14px;flex-wrap:wrap' }, [
+        el('label', { class: 'inline' }, [document.createTextNode(T('ng.lab.domain')), domain]),
+        el('label', { class: 'inline' }, [document.createTextNode(T('ng.lab.upnDomain')), upnDomain]),
+        el('label', { class: 'inline' }, [sync, document.createTextNode(T('ng.lab.sync'))]),
+        dir ? el('label', { class: 'inline' }, [collide, document.createTextNode(T('ng.lab.collide'))]) : ''
+      ]),
+      tokenLegend,
+      ...HR.namegenLab.FIELDS.map(f => fieldCard(f.key)),
+      el('div', { class: 'row', style: 'margin-top:6px' }, [
+        el('button', { class: 'btn ghost', text: T('ng.lab.reset'), onclick: () => {
+          Object.assign(spec, L.defaults());
+          HR.config.save();
+          HR.app.go('conventions', { tab: 'lab' });
+        } }),
+        el('span', { style: 'flex:1' }),
+        el('button', { class: 'btn primary', text: T('ng.lab.exportIntake'),
+          onclick: () => U.download('naamgeneratie-intake.md', intakeMarkdown(L, spec), 'text/markdown') })
+      ])
+    ]));
+
+    /* --- the intake's fixed example, all four preferences ----------------- */
+    const exampleCard = () => {
+      const ex = L.exampleTable(spec);
+      const body = el('div', { class: 'stack' });
+      Object.keys(ex).forEach(fkey => {
+        const t = el('table', { class: 'tbl' });
+        t.appendChild(el('thead', {}, el('tr', {}, [
+          el('th', { class: 'no-sort', text: T('ng.lab.f.' + fkey) }),
+          el('th', { class: 'no-sort', text: T('ng.lab.sequence') })])));
+        const tb = el('tbody');
+        ex[fkey].forEach(row => tb.appendChild(el('tr', {}, [
+          el('td', { text: row.convention }),
+          el('td', { class: 'mono', text: row.steps.join('  →  ') })
+        ])));
+        t.appendChild(tb);
+        body.appendChild(el('div', { class: 'tbl-wrap' }, t));
+      });
+      return card(T('ng.lab.exampleTitle'), T('ng.lab.exampleNote'), body);
+    };
+
+    /* --- population simulation ------------------------------------------- */
+    function drawResults() {
+      results.innerHTML = '';
+      const excard = exampleCard();
+      if (!persons.length) {
+        results.append(el('div', { class: 'grid g2', style: 'margin-top:14px' }, [excard,
+          card(T('ng.lab.simTitle'), null, el('p', { class: 'note', text: T('ng.lab.noVault') }))]));
+        return;
+      }
+      const existing = (LAB.collideExisting && dir) ? L.existingFrom(dir) : null;
+      const sim = L.simulate(spec, persons, existing);
+
+      const stepOf = r => r.flags.includes('exhausted') ? -1
+        : Math.max(0, ...Object.keys(r.values).map(k => r.values[k].step));
+      const steps = sim.rows.map(stepOf);
+      const tiles = el('div', { class: 'grid g4', style: 'margin-top:14px' });
+      tiles.append(
+        tile(T('ng.lab.clean'), U.fmtInt(steps.filter(s => s === 0).length), T('ng.lab.ofN', { n: persons.length }), { small: true, severity: 'good' }),
+        tile(T('ng.lab.iterated'), U.fmtInt(steps.filter(s => s > 0).length), T('ng.lab.iteratedFoot'), { small: true, severity: steps.some(s => s > 0) ? 'medium' : 'good' }),
+        tile(T('ng.lab.exhausted'), U.fmtInt(sim.stats.flags.exhausted || 0), T('ng.lab.exhaustedFoot'), { small: true, severity: sim.stats.flags.exhausted ? 'critical' : 'good' }),
+        tile(T('ng.lab.problems'), U.fmtInt((sim.stats.flags.emptyPart || 0) + (sim.stats.flags.tooLong || 0) + (sim.stats.flags.hrDuplicate || 0)), T('ng.lab.problemsFoot'), { small: true, severity: (sim.stats.flags.emptyPart || sim.stats.flags.tooLong || sim.stats.flags.hrDuplicate) ? 'high' : 'good' })
+      );
+      results.appendChild(tiles);
+
+      const show = ['mail', 'upn', 'mailNickname', 'displayName'].filter(k => sim.fields.includes(k));
+      const tableRows = sim.rows.map(r => ({
+        name: r.person.displayName || r.person.externalId,
+        step: stepOf(r),
+        flags: r.flags, r
+      }));
+      results.appendChild(el('div', { class: 'grid', style: 'margin-top:14px' },
+        card(T('ng.lab.simTitle'), T('ng.lab.simNote', { n: persons.length }), HR.table.make({
+          columns: [
+            { key: 'name', label: T('c.person') },
+            ...show.map(k => ({ key: k, label: T('ng.lab.f.' + k),
+              render: r => el('span', { class: 'mono trunc', text: (r.r.values[k] || {}).value || '—' }) })),
+            { key: 'step', label: T('ng.lab.iteration'), num: true,
+              render: r => r.step > 0 ? el('span', { class: 'pill warn', text: '+' + r.step }) : '' },
+            { key: 'flags', label: T('no.issues'),
+              render: r => r.flags.length ? el('span', { class: 'pill removed', text: r.flags.map(fl => T('ng.lab.flag.' + fl)).join(', ') }) : '' }
+          ],
+          rows: tableRows, pageSize: 25, exportName: 'namegen-simulation',
+          initialSort: { key: 'step', dir: -1 },
+          search: (r, q) => (r.name + ' ' + show.map(k => (r.r.values[k] || {}).value).join(' ')).toLowerCase().includes(q)
+        }))));
+      results.insertBefore(el('div', { class: 'grid', style: 'margin-top:14px' }, excard), tiles);
+    }
+
+    drawResults();
+    wrap.append(el('div', { class: 'grid' }, editor), results);
+    return wrap;
+  }
+
+  /** The filled intake tables, ready to paste into the document. */
+  function intakeMarkdown(L, spec) {
+    const ex = L.exampleTable(spec);
+    const lines = ['# Naamgeneratie', '',
+      T('ng.lab.mdIntro', { domain: spec.domain, upn: spec.upnDomain || spec.domain,
+        sync: spec.syncIterations ? 'Ja' : 'Nee' }), ''];
+    Object.keys(ex).forEach(fkey => {
+      lines.push('## ' + T('ng.lab.f.' + fkey), '');
+      lines.push('| ' + ['', 'P/B', T('ng.lab.template'), T('ng.lab.example')].join(' | ') + ' |');
+      lines.push('|---|---|---|---|');
+      const variants = spec.fields[fkey].variants.filter(v => v.trim());
+      ex[fkey].forEach(row => {
+        row.steps.forEach((val, i) => {
+          const label = i === 0 ? T('ng.lab.first') : T('ng.lab.taken', { n: i });
+          lines.push('| ' + label + ' | ' + row.convention + ' | `' + variants[i] + '` | ' + val + ' |');
+        });
+      });
+      lines.push('');
+    });
+    return lines.join('\n');
   }
 
   HR.views.conventions = conventionsView;
