@@ -44,12 +44,11 @@
     Title: c => c && ref(c.title),
     Location: c => c && ref(c.location),
     CostCenter: c => c && ref(c.costCenter),
-    ContractType: c => c && ref(c.type),
-    Manager: c => c && (c.manager.externalId || c.manager.displayName
-      ? { value: c.manager.externalId || c.manager.displayName,
-          label: c.manager.displayName || c.manager.externalId,
-          byId: !!c.manager.externalId }
-      : null)
+    ContractType: c => c && ref(c.type)
+    /* Manager is deliberately NOT an attribute: who your manager is derives
+       from department/team rather than describing the person, and a rule
+       conditioned on a manager silently selects nobody the day that manager
+       leaves. Stored level choices naming Manager are filtered out on build. */
   };
 
   /** A HelloID reference: id if there is one, name for the reader. */
