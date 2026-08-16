@@ -1124,6 +1124,24 @@
       rows: row.grants, pageSize: 12, exportName: 'rule-entitlements'
     })));
 
+    /* Who the condition selects: the people this rule would apply to. */
+    const members = row.node ? row.node.members : (row.membersList || []);
+    if (members.length) {
+      body.appendChild(card(T('py.dWhoTitle'), T('py.dWhoNote', { n: members.length }), HR.table.make({
+        columns: [
+          { key: 'person', label: T('py.cPerson'), value: p => p.name,
+            render: p => el('a', { href: '#', text: p.name,
+              onclick: e => { e.preventDefault(); drawerVaultPerson(personRow(m, p.person), m); } }) },
+          { key: 'title', label: T('py.attr.Title'),
+            value: p => p.labels && (p.labels.Title || p.attrs.Title) || '' },
+          { key: 'dept', label: T('py.attr.Department'),
+            value: p => p.labels && (p.labels.Department || p.attrs.Department) || '' }
+        ],
+        rows: members, pageSize: 10, exportName: 'rule-members',
+        search: (p, q) => p.name.toLowerCase().includes(q)
+      })));
+    }
+
     /* Who the rule would change something for, which is the work it implies. */
     const missing = [];
     row.grants.forEach(g => g.missing.forEach(person =>
@@ -1542,6 +1560,7 @@
         value: c.value, label: c.label })),
       level: 99,
       members: group.members.length,
+      membersList: group.members,
       grants: group.rules,
       entitlements: group.rules.length,
       minCoverage: Math.min.apply(null, group.rules.map(g => g.coverage)),
@@ -1552,8 +1571,7 @@
     return card(T('py.rulesTitle'), T('py.rulesNote'), HR.table.make({
       columns: [
         { key: 'name', label: T('py.cRule'), value: r => r.name,
-          render: r => el('a', { href: '#', text: r.name, title: conditionText(r),
-            onclick: e => { e.preventDefault(); drawerPyramidRule(m, P, r); } }) },
+          render: r => el('span', { text: r.name, title: conditionText(r) }) },
         { key: 'level', label: T('py.cLevel'), value: r => r.level,
           render: r => r.level === 99
             ? el('span', { class: 'pill muted', text: T('py.kind.' + r.kind) })
@@ -1569,13 +1587,20 @@
             ? el('span', { class: 'sev medium', text: String(r.missing) })
             : el('span', { class: 'note', text: '0' }) },
         { key: 'list', label: T('py.cGets'), sortable: false,
-          render: r => el('span', { class: 'trunc',
-            title: r.grants.map(g => (m.permissions.get(g.ent) || {}).name || g.ent).join(', '),
-            text: r.grants.map(g => (m.permissions.get(g.ent) || {}).name || g.ent).join(', ') }) }
+          /* Wrapped and clamped instead of one chopped line; the drawer holds
+             the full list. */
+          render: r => {
+            const names = r.grants.map(g => (m.permissions.get(g.ent) || {}).name || g.ent);
+            const s = el('span', { title: names.join(', '), text: names.join(', ') });
+            s.style.cssText = 'display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;' +
+              'overflow:hidden;white-space:normal;word-break:break-word';
+            return s;
+          } }
       ],
       rows: ruleRows, pageSize: 15, exportName: 'pyramid-rules',
       /* By level, so the rules an added level produces are visible rather than buried. */
-      initialSort: { key: 'level', dir: 1 }
+      initialSort: { key: 'level', dir: 1 },
+      onRowClick: r => drawerPyramidRule(m, P, r)
     }));
     }
 
