@@ -266,6 +266,29 @@
      Comparison findings — only produced when a business-rule export is loaded.
      These are the ones that say what to do to the rules themselves. */
   const COMPARISON_RULES = [
+    /* A connector whose permissions no rule touches is a whole system outside
+       the model. Only meaningful when another system IS covered — otherwise the
+       tenant simply has no rules yet, and other findings already say that. */
+    function systemsOutsideModel(m) {
+      if (m.systemList.length < 2) return null;
+      const covered = m.systemList.some(s => s.coverage && s.coverage.modelled > 0);
+      if (!covered) return null;
+      const hits = m.systemList.filter(s =>
+        s.coverage && s.coverage.total > 0 && s.coverage.modelled === 0);
+      if (!hits.length) return null;
+      return Object.assign({
+        id: 'system-unmodelled', severity: 'high', category: T('fi.cat.rules'),
+        entities: hits.map(s => ({
+          type: 'system', key: s.name, label: s.name,
+          detail: T('fi.system-unmodelled.detail', {
+            n: s.coverage.unmodelled, rows: U.fmtInt(s.unmanagedRows) })
+        })),
+        count: hits.length, impactMonthly: U.sum(hits, s => s.monthlySpend)
+      }, prose('system-unmodelled', {
+        n: hits.length, names: hits.map(s => s.name).join(', ')
+      }));
+    },
+
     function staleEntitlements(m) {
       const c = m.comparison;
       const hits = c.staleEntitlements;

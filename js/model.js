@@ -184,6 +184,27 @@
 
     HR.risk.score(model);         // adds risk fields to accounts/permissions + model.risk
     HR.cost.compute(model);       // adds model.cost
+
+    /* The permission suppliers as first-class citizens: per-system spend, risk
+       and hygiene, so a system can be judged rather than read as a name column. */
+    for (const s of model.systemList) {
+      const accs = model.accountList.filter(a => a.system === s.name);
+      const perms = model.permissionList.filter(p => p.system === s.name);
+      s.enabledAccounts = accs.filter(a => a.enabled !== false).length;
+      s.orphanAccounts = accs.filter(a => a.orphan).length;
+      s.orphanEnabled = accs.filter(a => a.orphan && a.enabled !== false).length;
+      s.monthlySpend = U.sum(perms, p => p.monthlyTotal);
+      s.rare = perms.filter(p => p.rare).length;
+      s.privileged = perms.filter(p => p.category === 'privileged' || p.category === 'server').length;
+      s.unmanagedRows = s.issues[ISSUE_PERM_UNMANAGED] || 0;
+      s.unmanagedShare = s.rows ? s.unmanagedRows / s.rows : 0;
+      const r = (model.risk.bySystem || []).find(x => x.key === s.name);
+      s.meanRisk = r ? r.meanRisk : 0;
+      s.maxRisk = r ? r.maxRisk : 0;
+      s.critical = r ? r.critical : 0;
+      s.high = r ? r.high : 0;
+    }
+
     model.findings = HR.findings.run(model);
 
     /* A business-rule export turns "unmanaged" into two different problems, so the
@@ -216,6 +237,18 @@
     if (ruleSet) {
       model.ruleSet = ruleSet;
       model.comparison = HR.compare.compare(model, ruleSet);
+
+      /* Rule coverage per system: a connector whose permissions no rule touches
+         is a whole system outside the model — worth naming as such. */
+      for (const s of model.systemList) {
+        const rows = model.comparison.permissionRows.filter(r => r.perm.system === s.name);
+        s.coverage = {
+          modelled: rows.filter(r => r.state === 'modelled').length,
+          draftOnly: rows.filter(r => r.state === 'draft-only').length,
+          unmodelled: rows.filter(r => r.state === 'unmodelled').length,
+          total: rows.length
+        };
+      }
 
       /* With person data the conditions stop being decoration: rules can be evaluated,
          which turns group-level drift into per-person over- and under-provisioning. */

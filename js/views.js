@@ -722,16 +722,17 @@
 
     f.appendChild(g);
 
-    if (m.systemList.length > 1) {
-      f.appendChild(el('div', { class: 'grid' }, card(T('ov.systems'), null, HR.table.make({
-        columns: [
-          { key: 'name', label: T('c.system') },
-          { key: 'accountCount', label: T('ov.accounts'), num: true },
-          { key: 'permissionCount', label: T('pm.title'), num: true },
-          { key: 'rows', label: T('c.rowsCol'), num: true }
-        ], rows: m.systemList, pageSize: 20, exportName: 'systems'
-      }))));
-    }
+    f.appendChild(el('div', { class: 'grid' }, card(T('ov.systems'), null, HR.table.make({
+      columns: [
+        { key: 'name', label: T('c.system') },
+        { key: 'accountCount', label: T('ov.accounts'), num: true },
+        { key: 'permissionCount', label: T('pm.title'), num: true },
+        { key: 'rows', label: T('c.rowsCol'), num: true },
+        { key: 'monthlySpend', label: T('c.costMo'), num: true, render: s => U.fmtMoney(s.monthlySpend) },
+        { key: 'meanRisk', label: T('sy.meanRisk'), num: true, render: s => scoreBar(Math.round(s.meanRisk)) }
+      ], rows: m.systemList, pageSize: 20, exportName: 'systems',
+      onRowClick: s => drawerSystem(s, m)
+    }))));
     return f;
   }
 
@@ -1145,6 +1146,7 @@
         { key: 'userName', label: T('c.account') },
         { key: 'displayName', label: T('c.displayName') },
         { key: 'personName', label: T('c.person'), render: r => r.personRaw ? el('span', { text: r.personName }) : el('span', { class: 'sev critical', text: T('c.unowned') }) },
+        m.systemList.length > 1 ? { key: 'system', label: T('c.system') } : null,
         { key: 'clsLabel', label: T('c.class') },
         { key: 'ecatLabel', label: T('c.empCategory'), hint: T('ac.ecatHint'),
           render: r => el('span', { title: T('dr.ecatSource.' + (r.ecatSource || 'default')), text: r.ecatLabel }) },
@@ -1155,19 +1157,20 @@
         { key: 'monthlyCost', label: T('c.costMo'), num: true, render: r => U.fmtMoney(r.monthlyCost) },
         { key: 'outlier', label: T('c.outlier'), num: true, render: r => r.outlier == null ? '—' : U.fmtPct(r.outlier, 0), hint: T('ac.outlierHint') },
         { key: 'riskScore', label: T('c.risk'), num: true, render: r => scoreBar(r.riskScore) }
-      ],
+      ].filter(Boolean),
       rows, pageSize: 40, exportName: 'accounts',
       initialSort: { key: 'riskScore', dir: -1 },
       searchPlaceholder: T('ac.searchPh'),
       search: (r, q) => (r.userName + ' ' + r.displayName + ' ' + r.personRaw + ' ' + r.clsLabel + ' ' + r.ecatLabel).toLowerCase().includes(q) ||
         r.perms.some(p => p.name.toLowerCase().includes(q)),
       filters: [
+        m.systemList.length > 1 ? { key: 'sys', label: T('c.system'), options: m.systemList.map(s => ({ value: s.name, label: s.name })), match: (r, v) => r.system === v } : null,
         { key: 'state', label: T('c.state'), options: [{ value: 'enabled', label: T('c.enabled') }, { value: 'disabled', label: T('c.disabled') }], match: (r, v) => (v === 'disabled') === (r.enabled === false) },
         { key: 'owner', label: T('c.owner'), options: [{ value: 'owned', label: T('c.linked') }, { value: 'orphan', label: T('c.unowned') }], match: (r, v) => (v === 'orphan') === !!r.orphan },
         { key: 'cls', label: T('c.class'), options: U.uniq(m.accountList.map(a => a.clsLabel)).map(v => ({ value: v, label: v })), match: (r, v) => r.clsLabel === v },
         { key: 'ecat', label: T('c.empCategory'), options: U.uniq(m.accountList.map(a => a.ecatLabel)).filter(Boolean).map(v => ({ value: v, label: v })), match: (r, v) => r.ecatLabel === v },
         { key: 'band', label: T('c.risk'), options: ['critical', 'high', 'medium', 'low'].map(v => ({ value: v, label: T('c.' + v) })), match: (r, v) => r.riskBand === v }
-      ],
+      ].filter(Boolean),
       onRowClick: a => drawerAccount(a)
     })));
     return f;
@@ -1246,9 +1249,32 @@
         card(T('pm.structTitle'), T('pm.structNote'), body)));
     }
 
+    /* The suppliers, judged side by side — only worth a card when there is
+       more than one of them. */
+    const multi = m.systemList.length > 1;
+    if (multi) {
+      f.appendChild(el('div', { style: 'margin-top:14px' }, card(T('sy.byTitle'), T('sy.byNote'), HR.table.make({
+        columns: [
+          { key: 'name', label: T('c.system') },
+          { key: 'permissionCount', label: T('pm.title'), num: true },
+          { key: 'monthlySpend', label: T('c.costMo'), num: true, render: s => U.fmtMoney(s.monthlySpend) },
+          { key: 'unmanagedShare', label: T('sy.unmanagedShare'), num: true, render: s => U.fmtPct(s.unmanagedShare, 0) },
+          m.comparison ? { key: 'cov', label: T('sy.coverage'), num: true,
+            value: s => s.coverage && s.coverage.total ? s.coverage.modelled / s.coverage.total : 0,
+            render: s => s.coverage && s.coverage.total
+              ? scoreBar(Math.round(100 * s.coverage.modelled / s.coverage.total))
+              : el('span', { class: 'note', text: '—' }) } : null,
+          { key: 'meanRisk', label: T('sy.meanRisk'), num: true, render: s => scoreBar(Math.round(s.meanRisk)) }
+        ].filter(Boolean),
+        rows: m.systemList, pageSize: 10, exportName: 'permissions-by-system',
+        onRowClick: s => drawerSystem(s, m)
+      }))));
+    }
+
     f.appendChild(el('div', { style: 'margin-top:14px' }, card(null, null, HR.table.make({
       columns: [
         { key: 'name', label: T('c.permission') },
+        multi ? { key: 'system', label: T('c.system') } : null,
         { key: 'categoryLabel', label: T('c.category') },
         { key: 'sensitivity', label: T('c.sensitivity'), num: true, render: r => U.fmtNum(r.sensitivity, 1) },
         { key: 'holderCount', label: T('c.holders'), num: true },
@@ -1258,16 +1284,17 @@
         { key: 'monthlyPrice', label: T('c.unitMo'), num: true, render: r => r.monthlyPrice ? U.fmtMoney(r.monthlyPrice) : '—' },
         { key: 'monthlyTotal', label: T('c.totalMo'), num: true, render: r => r.monthlyTotal ? U.fmtMoney(r.monthlyTotal) : '—' },
         { key: 'riskScore', label: T('c.risk'), num: true, render: r => scoreBar(r.riskScore) }
-      ],
+      ].filter(Boolean),
       rows: m.permissionList, pageSize: 40, exportName: 'permissions',
       initialSort: { key: 'riskScore', dir: -1 },
       searchPlaceholder: T('pm.searchPh'),
-      search: (r, q) => (r.name + ' ' + r.path + ' ' + r.categoryLabel).toLowerCase().includes(q),
+      search: (r, q) => (r.name + ' ' + r.path + ' ' + r.categoryLabel + ' ' + r.system).toLowerCase().includes(q),
       filters: [
+        multi ? { key: 'sys', label: T('c.system'), options: m.systemList.map(s => ({ value: s.name, label: s.name })), match: (r, v) => r.system === v } : null,
         { key: 'cat', label: T('c.category'), options: U.uniq(m.permissionList.map(p => p.categoryLabel)).map(v => ({ value: v, label: v })), match: (r, v) => r.categoryLabel === v },
         { key: 'rare', label: T('c.rarity'), options: [{ value: 'rare', label: T('c.rare') }, { value: 'common', label: T('c.common') }], match: (r, v) => (v === 'rare') === !!r.rare },
         { key: 'priced', label: T('c.priced'), options: [{ value: 'yes', label: T('c.yes') }, { value: 'no', label: T('c.no') }], match: (r, v) => (v === 'yes') === (r.monthlyPrice > 0) }
-      ],
+      ].filter(Boolean),
       onRowClick: p => drawerPermission(p, m)
     }))));
     return f;
@@ -3209,7 +3236,7 @@
 
     const body = el('div', { class: 'stack' });
     body.appendChild(dl([
-      [T('c.system'), a.system],
+      [T('c.system'), el('a', { href: '#', text: a.system, onclick: e => { e.preventDefault(); const sys = m.systemList.find(x => x.name === a.system); if (sys) drawerSystem(sys, m); } })],
       [T('c.displayName'), a.displayName],
       [T('c.person'), a.personRaw || T('dr.notLinked')],
       [T('c.empCategory'), a.ecatLabel ? a.ecatLabel + ' · ' + T('dr.ecatSource.' + (a.ecatSource || 'default')) : '—'],
@@ -3266,6 +3293,65 @@
     openDrawer(head, body);
   }
 
+  /* One target system, judged: what it holds, what it costs, how risky it is
+     and how much of it the rule model covers. */
+  function drawerSystem(s, m) {
+    m = m || HR.app.state.model;
+    const head = el('div', {}, [
+      el('h2', { text: s.name }),
+      el('div', { class: 'row' }, [
+        el('span', { class: 'pill', text: T('sy.accountsN', { n: s.accountCount }) }),
+        el('span', { class: 'pill', text: T('sy.permsN', { n: s.permissionCount }) }),
+        s.monthlySpend ? el('span', { class: 'pill', text: U.fmtMoney(s.monthlySpend) + '/mo' }) : null,
+        el('span', { class: 'sev ' + HR.config.severityOf(s.meanRisk), text: T('app.riskShort') + ' ' + Math.round(s.meanRisk) })
+      ])
+    ]);
+    const body = el('div', { class: 'stack' });
+    body.appendChild(dl([
+      [T('c.rowsCol'), U.fmtInt(s.rows)],
+      [T('ov.accounts'), T('sy.accountsDetail', { n: s.accountCount, e: s.enabledAccounts, o: s.orphanAccounts, oe: s.orphanEnabled })],
+      [T('pm.title'), T('sy.permsDetail', { n: s.permissionCount, rare: s.rare, priv: s.privileged })],
+      [T('sy.unmanagedShare'), U.fmtInt(s.unmanagedRows) + ' (' + U.fmtPct(s.unmanagedShare, 0) + ')'],
+      [T('dr.monthlyTotal'), U.fmtMoney(s.monthlySpend)],
+      [T('dr.annualTotal'), U.fmtMoney(s.monthlySpend * 12)],
+      [T('sy.meanRisk'), U.fmtNum(s.meanRisk, 0) + ' · ' + T('sy.maxRisk') + ' ' + U.fmtNum(s.maxRisk, 0)]
+    ]));
+
+    if (s.coverage && s.coverage.total) {
+      const c = s.coverage;
+      body.appendChild(card(T('sy.coverage'), T('sy.coverageNote'), [
+        el('div', { class: 'row' }, [
+          el('span', { class: 'pill ok', text: T('sy.covModelled', { n: c.modelled }) }),
+          c.draftOnly ? el('span', { class: 'pill muted', text: T('sy.covDraft', { n: c.draftOnly }) }) : null,
+          el('span', { class: 'pill ' + (c.unmodelled ? 'removed' : 'muted'), text: T('sy.covUnmodelled', { n: c.unmodelled }) })
+        ]),
+        scoreBar(Math.round(100 * c.modelled / c.total)),
+        c.modelled === 0
+          ? el('p', { class: 'note', text: T('sy.covNone') }) : null
+      ]));
+    }
+
+    const top = m.permissionList.filter(p => p.system === s.name)
+      .sort((a, b) => b.riskScore - a.riskScore || b.monthlyTotal - a.monthlyTotal);
+    body.appendChild(card(T('sy.topPerms'), null, HR.table.make({
+      columns: [
+        { key: 'name', label: T('c.permission') },
+        { key: 'categoryLabel', label: T('c.category') },
+        { key: 'holderCount', label: T('c.holders'), num: true },
+        { key: 'monthlyTotal', label: T('c.costMo'), num: true, render: p => U.fmtMoney(p.monthlyTotal) },
+        { key: 'riskScore', label: T('c.risk'), num: true, render: p => scoreBar(p.riskScore) }
+      ], rows: top, pageSize: 10, exportName: 'system-' + s.name + '-permissions',
+      search: (p, q) => p.name.toLowerCase().includes(q),
+      onRowClick: p => drawerPermission(p, m)
+    })));
+
+    const issueRows = Object.keys(s.issues).sort((a, b) => s.issues[b] - s.issues[a])
+      .map(k => [k, U.fmtInt(s.issues[k])]);
+    if (issueRows.length) body.appendChild(card(T('sy.issues'), null, dl(issueRows)));
+
+    openDrawer(head, body);
+  }
+
   function drawerPermission(p, m) {
     m = m || HR.app.state.model;
     const holders = Array.from(p.holders).map(k => m.accounts.get(k)).filter(Boolean);
@@ -3291,7 +3377,7 @@
     ]);
     const body = el('div', { class: 'stack' });
     body.appendChild(dl([
-      [T('c.system'), p.system],
+      [T('c.system'), el('a', { href: '#', text: p.system, onclick: e => { e.preventDefault(); const sys = m.systemList.find(x => x.name === p.system); if (sys) drawerSystem(sys, m); } })],
       [T('dr.dn'), el('span', { class: 'mono', text: p.path || '—' })],
       [T('dr.holders'), T('dr.holdersDetail', { n: p.holderCount, e: p.holdersEnabled, d: p.holdersDisabled })],
       [T('dr.heldByUnowned'), p.holdersOrphan + ' (' + U.fmtPct(p.orphanShare, 0) + ')'],
@@ -3364,7 +3450,7 @@
     overview, risk: riskView, cost: costView, accounts: accountsView,
     permissions: permissionsView, people: peopleView, diff: diffView,
     snapshots: snapshotsView, settings: settingsView, sources: sourcesView,
-    openDrawer, closeDrawer, drawerAccount, drawerPermission, drawerPerson, card, tile,
+    openDrawer, closeDrawer, drawerAccount, drawerPermission, drawerPerson, drawerSystem, card, tile,
     missingFor, gatePage
   };
 
@@ -3372,7 +3458,7 @@
      this file; naming it makes the seam explicit rather than accidental. */
   HR.viewkit = {
     card, tile, scoreBar, dl, partialNotice, syntheticVaultNotice, personRow, peopleIndex, entitlementTable,
-    openDrawer, closeDrawer, drawerAccount, drawerPermission, drawerVaultPerson,
+    openDrawer, closeDrawer, drawerAccount, drawerPermission, drawerVaultPerson, drawerSystem,
     STATE_SEV, stateLabel, offsetText, sourcesCard, tabbed
   };
 })(window.HR);

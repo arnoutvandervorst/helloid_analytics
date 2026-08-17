@@ -314,6 +314,19 @@ value distribution, and the value → group pairs strong enough (≥5 people, �
 clearly above baseline) to become HelloID business-rule conditions or connector mappings.
 `make-directory.py` generates a fictional envelope to try it without a tenant.
 
+## Systems as a dimension
+
+Permissions come from every target system the reconciliation covers, and the
+suppliers are judged as first-class citizens: per system the model rolls up
+spend, mean/max risk, unmanaged share, rare and privileged counts, and — when
+rules are loaded — how much of the system the rule model covers. The Permissions
+view gains a by-system comparison and a system filter/column (multi-system
+tenants only), every system name in a drawer links through to a system drawer
+(stats, coverage, its permissions, issue breakdown), and a finding names systems
+that sit wholly outside the rule model while others are covered. The AD/Entra
+collector enrichment (nesting, query-based groups) stays a bonus on top — the
+system dimension itself is generic over any connector.
+
 ## Directory group structure
 
 Directories run RBAC of their own: Entra query-based (dynamic) groups whose
