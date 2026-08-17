@@ -1710,7 +1710,7 @@
     t.appendChild(el('thead', {}, el('tr', {}, [
       el('th', { class: 'no-sort', text: T('c.permission') }),
       el('th', { class: 'no-sort', text: T('cl.relevance'), style: 'width:150px' }),
-      el('th', { class: 'no-sort', text: T('cl.lift'), style: 'width:70px' }),
+      el('th', { class: 'no-sort', text: T('cl.lift'), style: 'width:70px', title: T('cl.liftHint') }),
       el('th', { class: 'no-sort num', text: T('cl.count'), style: 'width:80px' }),
       el('th', { class: 'no-sort', text: T('cl.exceptions'), style: 'width:230px' })
     ])));
