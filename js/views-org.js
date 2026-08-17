@@ -144,6 +144,18 @@
 
     /* ---- job titles across the whole organisation ---- */
     const quality = el('div', {});
+    /* The cleanup sheet for HR: rows that stall or mis-correlate a HelloID
+       source import, each with its reason. */
+    if (q.importBlockers && q.importBlockers.length) {
+      quality.appendChild(card(T('oq.blockersTitle'), T('oq.blockersNote'), HR.table.make({
+        columns: [
+          { key: 'name', label: T('c.person') },
+          { key: 'reason', label: T('oq.blkReason'), value: b => T('oq.blk.' + b.reason) },
+          { key: 'detail', label: T('oq.blkDetail'), render: b => el('span', { class: 'note', text: b.detail || '—' }) }
+        ], rows: q.importBlockers, pageSize: 15, exportName: 'import-blockers',
+        search: (b, x) => (b.name + ' ' + b.reason + ' ' + b.detail).toLowerCase().includes(x)
+      })));
+    }
     quality.appendChild(card(T('org.titlesTitle'), T('org.titlesNote'), HR.table.make({
         columns: [
           { key: 'name', label: T('org.cTitleName'), value: t => t.name },

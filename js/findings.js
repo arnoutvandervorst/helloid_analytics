@@ -870,6 +870,21 @@
 
   /* ------------------------------------------------------- the vault as data */
   const VAULT_QUALITY_RULES = [
+    /* The rows that stall or mis-correlate a HelloID source import, named —
+       the feedback board's "show who blocks the import", answered pre-flight. */
+    function importBlockers(m) {
+      const hits = m.orgQuality.importBlockers;
+      if (!hits || !hits.length) return null;
+      return Object.assign({
+        id: 'vault-import-blockers', severity: 'high', category: T('fi.cat.dataQuality'),
+        entities: hits.slice(0, 80).map(b => ({
+          type: 'person', key: (b.person.personId || b.name) + ':' + b.reason, label: b.name,
+          detail: T('oq.blk.' + b.reason) + (b.detail ? ' · ' + b.detail : '')
+        })),
+        count: hits.length, impactMonthly: 0
+      }, prose('vault-import-blockers', { n: hits.length }));
+    },
+
     /* An attribute nearly everyone has and a few do not: not a policy, a gap. */
     function attributeGaps(m) {
       const facets = m.orgQuality.anomalousFacets;

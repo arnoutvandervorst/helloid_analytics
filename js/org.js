@@ -267,6 +267,27 @@
     const ended = persons.filter(p => contractsOf(p).length &&
       contractsOf(p).every(c => isEnded(c, now)));
 
+    /* ---- import blockers ------------------------------------------------
+       The rows that stall or mis-correlate a HelloID source import, named:
+       hard identity collisions block outright, the rest corrupts correlation
+       silently. One list, one reason each — the cleanup sheet for HR. */
+    const label = p => p.displayName || p.externalId || p.personId || '(no identity)';
+    const importBlockers = [];
+    duplicateIds.forEach(d => d.persons.forEach(person =>
+      importBlockers.push({ person, name: label(person), reason: 'duplicate-id',
+        detail: d.externalId + ' × ' + d.persons.length })));
+    noExternalId.forEach(person => {
+      if (person.displayName || person.personId) {
+        importBlockers.push({ person, name: label(person), reason: 'no-external-id', detail: '' });
+      }
+    });
+    persons.filter(p => !p.displayName && !p.externalId && !p.personId).forEach(person =>
+      importBlockers.push({ person, name: label(person), reason: 'no-identity', detail: '' }));
+    backwards.forEach(x => importBlockers.push({ person: x.person, name: label(x.person),
+      reason: 'backwards-contract',
+      detail: (x.contract.startDate ? x.contract.startDate.toISOString().slice(0, 10) : '?') + ' > ' +
+        (x.contract.endDate ? x.contract.endDate.toISOString().slice(0, 10) : '?') }));
+
     return {
       facets,
       anomalousFacets: facets.filter(f => f.anomalous),
@@ -277,7 +298,7 @@
       danglingParents,
       undeclared,
       noContract, backwards, openEnded, farFuture,
-      duplicateIds, noExternalId, ended,
+      duplicateIds, noExternalId, ended, importBlockers,
       endingSoon, startingSoon, flagged, multiContract,
       summary: {
         persons: persons.length,
@@ -289,6 +310,7 @@
         missingValues: U.sum(facets.filter(f => f.anomalous), f => f.missing.length),
         noContract: noContract.length,
         duplicateIds: duplicateIds.length,
+        importBlockers: importBlockers.length,
         ended: ended.length,
         endingSoon: endingSoon.length,
         startingSoon: startingSoon.length,

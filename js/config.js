@@ -667,6 +667,24 @@
 
   const looksLikeNedapBook = data => !!data && data.kind === NEDAP_KIND;
 
+  /* --- entitlement descriptions ---------------------------------------------
+     Free-text notes per permission name (the feedback board's "descriptions on
+     imported entitlements"). Plain config: travels with the settings export.
+     Keyed by lowercased name so a note survives the same group arriving via
+     reconciliation and directory import alike. */
+  function getPermNote(name) {
+    return (load().permNotes || {})[String(name || '').toLowerCase()] || '';
+  }
+
+  function setPermNote(name, text) {
+    const cfg = load();
+    cfg.permNotes = cfg.permNotes || {};
+    const k = String(name || '').toLowerCase();
+    const v = String(text || '').trim();
+    if (v) cfg.permNotes[k] = v; else delete cfg.permNotes[k];
+    save();
+  }
+
   /* --- the name-generation convention ---------------------------------------
      Plain config (travels with the settings export): seeded lazily from the
      workbench's intake best-practice defaults, since namegen-lab.js loads
@@ -682,5 +700,5 @@
     getMap, setMapping, exportMap, exportMapCsv, importMap, looksLikeProductMap, MAP_KIND,
     getMatchBook, setMatchDecision, exportMatchBook, importMatchBook, looksLikeMatchBook, MATCH_KIND,
     getNedapBook, setNedapBook, exportNedapBook, importNedapBook, looksLikeNedapBook, NEDAP_KIND,
-    getNamegen };
+    getNamegen, getPermNote, setPermNote };
 })(window.HR);

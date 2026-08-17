@@ -1273,7 +1273,11 @@
 
     f.appendChild(el('div', { style: 'margin-top:14px' }, card(null, null, HR.table.make({
       columns: [
-        { key: 'name', label: T('c.permission') },
+        { key: 'name', label: T('c.permission'),
+          render: r => {
+            const n = HR.config.getPermNote(r.name);
+            return el('span', n ? { text: r.name, title: n } : { text: r.name });
+          } },
         multi ? { key: 'system', label: T('c.system') } : null,
         { key: 'categoryLabel', label: T('c.category') },
         { key: 'sensitivity', label: T('c.sensitivity'), num: true, render: r => U.fmtNum(r.sensitivity, 1) },
@@ -2750,8 +2754,10 @@
         { key: 'scope', label: T('ru.cScope'),
           value: r => r.rule.scopingConditions.map(x => x.facet).join(', '),
           render: r => el('span', { class: 'trunc', title: r.rule.scopingConditions.map(x => x.raw).join(' · '),
-            text: r.rule.scopingConditions.map(x => x.facet).join(', ') || '—' }) }
-      ],
+            text: r.rule.scopingConditions.map(x => x.facet).join(', ') || '—' }) },
+        m.evaluation ? { key: 'people', label: T('ru.cSelected'), num: true,
+          value: r => (m.evaluation.perRule.get(r.rule.name) || { matched: [] }).matched.length } : null
+      ].filter(Boolean),
       rows: c.perRule, pageSize: 25, exportName: 'business-rules',
       initialSort: { key: 'unmanaged', dir: -1 },
       search: (r, q) => (r.rule.name + ' ' + r.rule.raw.conditions).toLowerCase().includes(q),
@@ -3031,6 +3037,41 @@
     if (row.accountEntitlements.length) {
       body.appendChild(card(T('ru.accountEnt'), null,
         el('ul', { class: 'clean' }, row.accountEntitlements.map(e => el('li', { text: e.raw })))));
+    }
+
+    /* Who this rule actually selects — the export-users-per-rule ask from the
+       feedback board. Evaluation needs the vault; without it, say so. */
+    if (m.evaluation) {
+      const bucket = m.evaluation.perRule.get(r.name);
+      if (bucket) {
+        const contract = p => p.primaryContract || p.activeContracts[0] || p.contracts[0] || null;
+        const refName = ref => (ref && ref.name) || '';
+        const rows = bucket.matched.map(p => {
+          const c = contract(p);
+          return { name: p.displayName || p.externalId, externalId: p.externalId,
+            department: c ? refName(c.department) : '', title: c ? refName(c.title) : '' };
+        });
+        body.appendChild(card(T('ru.peopleTitle'), T('ru.peopleNote', { n: rows.length }), HR.table.make({
+          columns: [
+            { key: 'name', label: T('c.person') },
+            { key: 'externalId', label: T('pp.employeeId') },
+            { key: 'department', label: T('no.dept') },
+            { key: 'title', label: T('no.func') }
+          ], rows, pageSize: 12, exportName: 'rule-' + r.name + '-people',
+          search: (x, q) => (x.name + ' ' + x.externalId + ' ' + x.department + ' ' + x.title).toLowerCase().includes(q)
+        })));
+        if (bucket.indeterminate.length) {
+          const d = el('details', {});
+          d.appendChild(el('summary', { class: 'note',
+            text: T('ru.peopleUnknown', { n: bucket.indeterminate.length }) }));
+          d.appendChild(el('p', { class: 'note',
+            text: bucket.indeterminate.slice(0, 150).map(p => p.displayName || p.externalId).join(', ') +
+              (bucket.indeterminate.length > 150 ? ' …' : '') }));
+          body.appendChild(d);
+        }
+      }
+    } else if (!m.vault) {
+      body.appendChild(el('p', { class: 'note', text: T('ru.peopleNeedsVault') }));
     }
     openDrawer(head, body);
   }
@@ -3408,6 +3449,8 @@
       ])
     ]);
     const body = el('div', { class: 'stack' });
+    const note = HR.config.getPermNote(p.name);
+    if (note) body.appendChild(el('p', { class: 'note', text: note }));
     body.appendChild(dl([
       [T('c.system'), el('a', { href: '#', text: p.system, onclick: e => { e.preventDefault(); const sys = m.systemList.find(x => x.name === p.system); if (sys) drawerSystem(sys, m); } })],
       [T('dr.dn'), el('span', { class: 'mono', text: p.path || '—' })],
@@ -3446,6 +3489,17 @@
     })));
     const clCard = classicRolesCard(p, m);
     if (clCard) body.appendChild(clCard);
+
+    /* The description the import never carried: free text per entitlement,
+       kept in the settings, shown here and as the name's tooltip in tables. */
+    const ta = el('textarea', { rows: 2, placeholder: T('pm.notePh') });
+    ta.style.width = '100%';
+    ta.value = note;
+    ta.onchange = () => {
+      HR.config.setPermNote(p.name, ta.value);
+      U.toast(T('pm.noteSaved'), 2500);
+    };
+    body.appendChild(card(T('pm.noteTitle'), T('pm.noteNote'), ta));
     openDrawer(head, body);
   }
 
