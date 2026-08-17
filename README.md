@@ -314,6 +314,21 @@ value distribution, and the value → group pairs strong enough (≥5 people, �
 clearly above baseline) to become HelloID business-rule conditions or connector mappings.
 `make-directory.py` generates a fictional envelope to try it without a tenant.
 
+## Directory group structure
+
+Directories run RBAC of their own: Entra query-based (dynamic) groups whose
+membership is a rule, and AD group nesting used as abstraction — role groups made
+members of the groups that actually sit on resources. The directory import reads
+both: every group is classified as a **nesting terminal** (contains other groups,
+member of none — the group that actually grants), an **abstraction layer** (member
+of other groups; its access is expressed by the terminals it feeds), or plain, with
+the nesting depth per group. Query-based groups carry their membership rule. The
+Permissions view shows the structure (dynamic groups with their rules, abstraction
+layers with what they feed), permission drawers carry the badges, and mining
+prefers the terminals: with "prefer the deepest groups" on (default, Mining →
+hygiene), query-based groups and abstraction layers stay out of rule proposals —
+the mined roles grant the real permissions, not the layers above them.
+
 ## Matching workbench
 
 Account↔person matching is scored evidence (vault correlation, employee ids, name

@@ -282,7 +282,7 @@
     /* Mining hygiene: matcher specs excluded from role/rule mining, and a
        naming template for exported rule proposals ({dept}/{title}/{system}/
        {category} tokens; empty = the modules' built-in names). */
-    mining: { excluded: [], ruleName: '' }
+    mining: { excluded: [], ruleName: '', deepestOnly: true }
   };
 
   let current = null;

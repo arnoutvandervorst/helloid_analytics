@@ -67,20 +67,24 @@ def main():
         if c['id'] not in p['memberGroups']:
             p['memberGroups'].append(c['id'])
 
-    # The nesting story: baseline hangs under one umbrella, department access under
-    # department groups, and users only ever join role groups — everything above
-    # arrives inherited, which is exactly what the flattener has to prove.
+    # The nesting story, AGDLP-style: users only ever join role groups; role
+    # groups are members of the groups that actually grant (the FS/APP resource
+    # groups and the department umbrella), the umbrella is a member of the
+    # company-wide group, and that in turn is a member of the SEC baselines.
+    # Everything above the role group arrives inherited — which is exactly what
+    # the flattener has to prove — and the chain terminals (FS/APP/SEC) are the
+    # real permissions the structure classifier should point at.
     group('G-Alle-Medewerkers', description='Iedereen in dienst')
     for sec in ['SEC-MFA-Enrolled', 'SEC-Antivirus', 'SEC-DiskEncryption']:
-        nest('G-Alle-Medewerkers', sec)
+        nest(sec, 'G-Alle-Medewerkers')   # everyone inherits the baselines
     for dept, d in DEPARTMENTS.items():
         dg = f'G-Afdeling-{dept}'
-        nest(dg, f'FS-{dept}-RW')
-        nest(dg, f'APP-Rooster-{dept}')
+        nest('G-Alle-Medewerkers', dg)
         for title in d['titles']:
             rg = f'ROLE-{title.replace(" ", "-")}'
-            nest(dg, rg)          # role membership carries the department groups
-            nest('G-Alle-Medewerkers', dg)
+            nest(f'FS-{dept}-RW', rg)     # the share the role actually grants
+            nest(f'APP-Rooster-{dept}', rg)
+            nest(dg, rg)                  # and the department umbrella
 
     users = []
     seen = set()

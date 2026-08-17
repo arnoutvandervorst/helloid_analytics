@@ -1494,8 +1494,17 @@
         placeholder: T('py.hyTplPh') });
       tpl.style.minWidth = '260px';
       tpl.onchange = () => { cfg.mining.ruleName = tpl.value.trim(); HR.config.save(); };
+      const deep = el('input', { type: 'checkbox' });
+      deep.checked = cfg.mining.deepestOnly !== false;
+      deep.onchange = () => { cfg.mining.deepestOnly = deep.checked; apply(); };
+      const dir = HR.app.state.directory;
+      const deepNote = dir
+        ? T('py.hyDeepCounts', { dyn: dir.meta.dynamicGroups || 0, role: dir.meta.roleGroups || 0 })
+        : T('py.hyDeepNoDir');
       return card(T('py.hyTitle'), T('py.hyNote'), el('div', { class: 'stack' }, [
         list,
+        el('label', { class: 'inline' }, [deep, document.createTextNode(T('py.hyDeep'))]),
+        el('p', { class: 'note', text: deepNote }),
         el('label', { class: 'inline' }, [document.createTextNode(T('py.hyTpl')), tpl])
       ]));
     })();

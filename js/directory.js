@@ -140,8 +140,52 @@
 
     const dynamicGroups = groups.filter(g => g.dynamic).length;
 
+    /* ---- what each group IS, structurally ----------------------------------
+       Nesting is how directories build their own RBAC: role groups are made
+       members of the groups that actually sit on resources (AGDLP), and Entra
+       adds query-based (dynamic) groups whose membership is a rule, not an
+       assignment. For role modelling that means:
+         resource — contains other groups, is member of none: the chain
+                    terminal, the group that actually grants — assign THESE
+         role     — member of other groups: an abstraction layer; its access
+                    is expressed by the terminals it feeds
+         plain    — no nesting either way
+       dynamic is orthogonal: membership is query-managed in the directory, so
+       HelloID cannot grant it — it competes with the rules being mined. */
+    const groupMeta = new Map();
+    const depthMemo = new Map();
+    const childDepth = (gid, seen) => {
+      if (depthMemo.has(gid)) return depthMemo.get(gid);
+      if (seen.has(gid)) return 0;                  // containment cycle: stop
+      seen.add(gid);
+      const g = groupsById.get(gid);
+      let deepest = 0;
+      for (const cid of (g && g.memberGroups || [])) {
+        if (groupsById.has(cid)) deepest = Math.max(deepest, 1 + childDepth(cid, seen));
+      }
+      seen.delete(gid);
+      depthMemo.set(gid, deepest);
+      return deepest;
+    };
+    let resourceGroups = 0, roleGroups = 0;
+    for (const g of groups) {
+      const parents = (parentsOf.get(g.id) || []).length;
+      const children = (g.memberGroups || []).filter(cid => groupsById.has(cid)).length;
+      const kind = parents ? 'role' : (children ? 'resource' : 'plain');
+      if (kind === 'resource') resourceGroups++;
+      if (kind === 'role') roleGroups++;
+      groupMeta.set(g.name.toLowerCase(), {
+        name: g.name, kind, parents, children,
+        depth: childDepth(g.id, new Set()),
+        dynamic: !!g.dynamic,
+        membershipRule: str(g.membershipRule),
+        parentNames: (parentsOf.get(g.id) || []).map(pid => (groupsById.get(pid) || {}).name).filter(Boolean),
+        directUsers: (g.memberUsers || []).length
+      });
+    }
+
     return {
-      source, system, users, groups, records, vault,
+      source, system, users, groups, records, vault, groupMeta,
       warnings: warnings.concat(vault.warnings || []),
       meta: {
         fileName: fileName || 'directory.json',
@@ -152,7 +196,7 @@
         userCount: users.length,
         groupCount: groups.length,
         rowCount: records.length,
-        nestedEdges, inheritedRows, dynamicGroups,
+        nestedEdges, inheritedRows, dynamicGroups, resourceGroups, roleGroups,
         health: {},
         fingerprint: U.hash(text.length + '|' + users.length + '|' + text.slice(0, 4096))
       }

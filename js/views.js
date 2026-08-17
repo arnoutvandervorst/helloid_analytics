@@ -1192,6 +1192,53 @@
     );
     f.appendChild(k);
 
+    /* What the directory's own structure says about these groups: query-based
+       (dynamic) groups are in-directory RBAC, nesting terminals are the groups
+       that actually grant. Only speaks when a directory import is loaded. */
+    const dir = HR.app.state.directory;
+    if (dir && dir.groupMeta && (dir.meta.nestedEdges || dir.meta.dynamicGroups)) {
+      const metas = Array.from(dir.groupMeta.values());
+      const dynamics = metas.filter(g => g.dynamic);
+      const roles = metas.filter(g => g.kind === 'role');
+      const resources = metas.filter(g => g.kind === 'resource');
+      const body = el('div', { class: 'stack' });
+      body.appendChild(el('p', { class: 'note', text: T('pm.structCounts', {
+        res: resources.length, role: roles.length, dyn: dynamics.length }) }));
+      if (dynamics.length) {
+        body.appendChild(card(T('pm.structDynTitle'), T('pm.structDynNote'), HR.table.make({
+          columns: [
+            { key: 'name', label: T('c.permission'), render: g => {
+              const perm = m.permissionList.find(p => p.name === g.name);
+              return perm
+                ? el('a', { href: '#', text: g.name,
+                    onclick: e => { e.preventDefault(); drawerPermission(perm, m); } })
+                : el('span', { text: g.name });
+            } },
+            { key: 'rule', label: T('pm.structRule'), sortable: false,
+              render: g => el('span', { class: 'mono trunc', title: g.membershipRule,
+                text: g.membershipRule || '—' }) }
+          ],
+          rows: dynamics, pageSize: 8, exportName: 'dynamic-groups',
+          search: (g, q) => (g.name + ' ' + g.membershipRule).toLowerCase().includes(q)
+        })));
+      }
+      if (roles.length) {
+        body.appendChild(card(T('pm.structRoleTitle'), T('pm.structRoleNote'), HR.table.make({
+          columns: [
+            { key: 'name', label: T('c.permission') },
+            { key: 'feeds', label: T('pm.structFeeds'), sortable: false,
+              render: g => el('span', { class: 'trunc', title: g.parentNames.join(', '),
+                text: g.parentNames.join(', ') }) },
+            { key: 'directUsers', label: T('pm.structMembers'), num: true }
+          ],
+          rows: roles, pageSize: 8, exportName: 'abstraction-groups',
+          search: (g, q) => (g.name + ' ' + g.parentNames.join(' ')).toLowerCase().includes(q)
+        })));
+      }
+      f.appendChild(el('div', { style: 'margin-top:14px' },
+        card(T('pm.structTitle'), T('pm.structNote'), body)));
+    }
+
     f.appendChild(el('div', { style: 'margin-top:14px' }, card(null, null, HR.table.make({
       columns: [
         { key: 'name', label: T('c.permission') },
@@ -3215,13 +3262,24 @@
   function drawerPermission(p, m) {
     m = m || HR.app.state.model;
     const holders = Array.from(p.holders).map(k => m.accounts.get(k)).filter(Boolean);
+    const dirMeta = (() => {
+      const d = HR.app.state.directory;
+      return d && d.groupMeta ? d.groupMeta.get(p.name.toLowerCase()) : null;
+    })();
     const head = el('div', {}, [
       el('h2', { text: p.name }),
       el('div', { class: 'row' }, [
         el('span', { class: 'sev ' + p.riskBand, text: T('app.riskShort') + ' ' + p.riskScore }),
         el('span', { class: 'pill', text: p.categoryLabel }),
         p.rare ? el('span', { class: 'pill removed', text: T('c.rare') }) : null,
-        p.monthlyPrice ? el('span', { class: 'pill', text: U.fmtMoney(p.monthlyPrice) + '/holder/mo' }) : null
+        p.monthlyPrice ? el('span', { class: 'pill', text: U.fmtMoney(p.monthlyPrice) + '/holder/mo' }) : null,
+        dirMeta && dirMeta.dynamic ? el('span', { class: 'pill warn', title: dirMeta.membershipRule,
+          text: T('pm.badgeDynamic') }) : null,
+        dirMeta && dirMeta.kind === 'resource' ? el('span', { class: 'pill ok',
+          text: T('pm.badgeResource', { n: dirMeta.depth }) }) : null,
+        dirMeta && dirMeta.kind === 'role' ? el('span', { class: 'pill muted',
+          title: dirMeta.parentNames.join(', '),
+          text: T('pm.badgeRole') }) : null
       ])
     ]);
     const body = el('div', { class: 'stack' });

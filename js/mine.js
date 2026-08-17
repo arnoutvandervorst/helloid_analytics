@@ -176,14 +176,21 @@
      Entitlements matching cfg.mining.excluded stay out of every mining engine:
      legacy groups and known noise otherwise resurface in each proposal round. */
   function exclusion(model) {
-    const specs = (HR.config.get().mining || {}).excluded || [];
+    const cfg = HR.config.get().mining || {};
+    const specs = cfg.excluded || [];
     /* compileMatch returns the pattern SOURCE; compiling is the caller's job. */
     const rxs = specs.map(s => {
       const pat = HR.config.compileMatch(s);
       if (!pat) return null;
       try { return new RegExp(pat, 'i'); } catch (e) { return null; }
     }).filter(Boolean);
-    if (!rxs.length) return { any: false, skip: () => false };
+    /* Deepest-only: with a directory loaded, the nesting itself says which
+       groups are the real permissions. Abstraction layers (members of other
+       groups) are expressed by the terminals they feed, and dynamic groups
+       are query-managed — neither belongs in a mined rule proposal. */
+    const meta = (cfg.deepestOnly !== false && HR.app && HR.app.state.directory)
+      ? HR.app.state.directory.groupMeta : null;
+    if (!rxs.length && !meta) return { any: false, skip: () => false };
     const cache = new Map();
     const skip = key => {
       let hit = cache.get(key);
@@ -191,6 +198,10 @@
         const p = model.permissions.get(key);
         const name = p ? p.name : String(key);
         hit = rxs.some(rx => rx.test(name));
+        if (!hit && meta) {
+          const g = meta.get(name.toLowerCase());
+          if (g && (g.dynamic || g.kind === 'role')) hit = true;
+        }
         cache.set(key, hit);
       }
       return hit;

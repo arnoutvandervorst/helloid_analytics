@@ -113,8 +113,16 @@
     busyDepth++;
     if (busyDepth === 1) busyLabel.textContent = label;   // a nested phase keeps the first label
     v.hidden = false;
-    await new Promise(resolve => requestAnimationFrame(() =>
-      requestAnimationFrame(() => setTimeout(resolve, 0))));
+    /* Double-rAF paints the veil before the synchronous work — but rAF is
+       suspended in hidden tabs, which used to hang every import and snapshot
+       restore started in the background. The timeout fallback lets those
+       proceed unpainted. */
+    await new Promise(resolve => {
+      let done = false;
+      const go = () => { if (!done) { done = true; resolve(); } };
+      requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(go, 0)));
+      setTimeout(go, 150);
+    });
     try { return await fn(); }
     finally { busyDepth--; if (!busyDepth) v.hidden = true; }
   }
