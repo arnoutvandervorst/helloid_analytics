@@ -314,6 +314,23 @@ value distribution, and the value → group pairs strong enough (≥5 people, �
 clearly above baseline) to become HelloID business-rule conditions or connector mappings.
 `make-directory.py` generates a fictional envelope to try it without a tenant.
 
+## Classic role model
+
+The old role-mining report's presentation, ported and fed live: attribute roles
+(Everyone / department / job title / department+title) over the correlated
+population, each permission scored with **relevance** (share of the role holding
+it) and **lift** (relevance against the org-wide baseline — 90% relevance means
+nothing for a group 90% of the organisation holds), the two exception lists a
+rule would create ("who misses it" / "outside the role"), globals folded away,
+cumulative coverage per card, and role-to-role similarity. Mining → Classic;
+Mining → Clusters adds the de-facto roles: account populations whose access
+clusters together regardless of HR attributes, with a **discovered** flag when
+no dominant department/title explains them — access the org chart does not
+predict. Permission drawers gain the inverse view: which classic roles a
+permission's holders sit in. Mining-hygiene exclusions apply here like in every
+other engine; knobs (relevance floor, occupants, cluster thresholds) live in the
+settings under `classic`.
+
 ## Systems as a dimension
 
 Permissions come from every target system the reconciliation covers, and the

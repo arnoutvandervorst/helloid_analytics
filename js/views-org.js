@@ -1531,8 +1531,10 @@
       { id: 'journey', label: T('py.tab.journey'), build: () => pyramidJourney(m, P) },
       { id: 'coverage', label: T('py.tab.coverage'), build: () => coverageCard(m, P) || el('div', {}) },
       { id: 'gaps', label: T('py.tab.gaps'), count: P.summary.under + P.summary.isolated,
-        build: () => gapsCard() }
-    ], params));
+        build: () => gapsCard() },
+      m.vault ? { id: 'classic', label: T('cl.tab'), build: () => classicTab(m) } : null,
+      m.vault ? { id: 'clusters', label: T('cl.tabClusters'), build: () => clustersTab(m) } : null
+    ].filter(Boolean), params));
     return f;
 
     /* ---- the sections ---- */
@@ -1660,6 +1662,206 @@
     }
   }
   HR.views.org = orgView;
+  /* ================================================== classic role model */
+  /* The old report's presentation, ported: collapsible role cards with
+     relevance + lift badges and the two exception lists per permission.
+     Controls persist across re-renders and tab switches (the original lost
+     its type filter on re-render and its query on tab switch — not here). */
+
+  const CL = { q: '', type: '', minRel: null, sort: 'size', open: new Set() };
+  const CL_TYPES = ['global', 'department', 'title', 'combo'];
+
+  function clRelBadge(perm, minRel, inGlobalRole) {
+    if (perm.global && !inGlobalRole) return el('span', { class: 'pill muted', text: T('cl.global') });
+    const pct = U.fmtNum(perm.relevance, 0) + '%';
+    if (perm.relevance >= 100) return el('span', { class: 'pill ok', text: pct });
+    if (perm.relevance >= minRel) return el('span', { class: 'pill warn', text: pct });
+    return el('span', { class: 'pill', text: pct });
+  }
+
+  function clLiftBadge(perm) {
+    const txt = '×' + U.fmtNum(perm.lift, 1);
+    const title = T('cl.liftTip', { rel: U.fmtNum(perm.relevance, 0), base: U.fmtNum(perm.baseline, 1) });
+    const cls = perm.lift >= 5 ? 'pill ok' : perm.lift >= 2 ? 'pill warn' : 'pill muted';
+    return el('span', { class: cls, title, text: txt });
+  }
+
+  function clNameList(names) {
+    const d = el('details', {});
+    d.appendChild(el('summary', { class: 'note', text: String(names.length) }));
+    d.appendChild(el('div', { class: 'note', style: 'max-height:180px;overflow:auto',
+      text: names.slice(0, 200).join(', ') + (names.length > 200 ? ' …' : '') }));
+    return d;
+  }
+
+  function clRoleBody(m, role) {
+    const body = el('div', { style: 'margin-top:8px' });
+    /* Inside the Everyone role its permissions ARE the content; in every other
+       role the global ones fold away as noise. */
+    const perms = role.type === 'global'
+      ? role.permissions.filter(p => p.relevance >= CL.minRel)
+      : role.permissions.filter(p => !p.global && p.relevance >= CL.minRel);
+    const globals = role.type === 'global' ? [] : role.permissions.filter(p => p.global);
+
+    if (role.similarTo.length) {
+      body.appendChild(el('p', { class: 'note', text: T('cl.similar') + ' ' +
+        role.similarTo.slice(0, 3).map(s => s.pct + '%: ' + s.name).join(' · ') }));
+    }
+
+    const t = el('table', { class: 'tbl' });
+    t.appendChild(el('thead', {}, el('tr', {}, [
+      el('th', { class: 'no-sort', text: T('cl.relevance') }),
+      el('th', { class: 'no-sort', text: T('cl.lift') }),
+      el('th', { class: 'no-sort num', text: T('cl.count') }),
+      el('th', { class: 'no-sort', text: T('c.permission') }),
+      el('th', { class: 'no-sort', text: T('cl.missing') }),
+      el('th', { class: 'no-sort', text: T('cl.outside') })
+    ])));
+    const tb = el('tbody');
+    for (const perm of perms) {
+      const p = m.permissions.get(perm.key);
+      tb.appendChild(el('tr', {}, [
+        el('td', {}, clRelBadge(perm, CL.minRel, role.type === 'global')),
+        el('td', {}, clLiftBadge(perm)),
+        el('td', { class: 'num', text: perm.count + '/' + role.count }),
+        el('td', {}, p
+          ? el('a', { href: '#', text: perm.name,
+              onclick: e => { e.preventDefault(); drawerPermission(p, m); } })
+          : el('span', { text: perm.name })),
+        el('td', {}, perm.missing.length ? clNameList(perm.missing) : el('span', { class: 'note', text: '0' })),
+        el('td', {}, perm.outside.length ? clNameList(perm.outside) : el('span', { class: 'note', text: '0' }))
+      ]));
+    }
+    t.appendChild(tb);
+    if (perms.length) body.appendChild(el('div', { class: 'tbl-wrap' }, t));
+    else body.appendChild(el('p', { class: 'note', text: T('cl.noPerms') }));
+
+    if (globals.length && role.type !== 'global') {
+      const d = el('details', {});
+      d.appendChild(el('summary', { class: 'note', text: T('cl.globalsFold', { n: globals.length }) }));
+      d.appendChild(el('p', { class: 'note', text: globals.map(g => g.name).join(', ') }));
+      body.appendChild(d);
+    }
+    return body;
+  }
+
+  function classicTab(m) {
+    const C = HR.classic.build(m);
+    if (!C || C.unavailable) return el('p', { class: 'note', text: T('cl.none') });
+    if (CL.minRel == null) CL.minRel = C.cfg.minRelevance;
+    const wrap = el('div', {});
+    const list = el('div', { class: 'stack', style: 'margin-top:12px;gap:10px' });
+
+    const roleKey = r => r.type + ':' + r.name;
+    const draw = () => {
+      list.innerHTML = '';
+      let roles = C.roles.filter(r =>
+        (!CL.type || r.type === CL.type) &&
+        (!CL.q || r.name.toLowerCase().includes(CL.q)));
+      if (CL.sort === 'lift') {
+        roles = roles.slice().sort((a, b) =>
+          Math.max(0, ...b.permissions.filter(p => !p.global).map(p => p.lift)) -
+          Math.max(0, ...a.permissions.filter(p => !p.global).map(p => p.lift)));
+      }
+      for (const role of roles) {
+        const key = roleKey(role);
+        const cardEl = el('div', { class: 'card' });
+        const shown = role.type === 'global'
+          ? role.permissions.filter(p => p.relevance >= CL.minRel).length
+          : role.permissions.filter(p => !p.global && p.relevance >= CL.minRel).length;
+        const head = el('div', { class: 'row', style: 'cursor:pointer;align-items:center;gap:8px' }, [
+          el('strong', { text: role.type === 'global' ? T('cl.everyone') : role.name }),
+          el('span', { class: 'pill muted', text: T('cl.type.' + role.type) }),
+          el('span', { class: 'pill', text: T('cl.members', { n: role.count, a: role.accounts }) }),
+          el('span', { class: 'pill', text: T('cl.permsN', { n: shown }) }),
+          el('span', { style: 'flex:1' }),
+          el('span', { class: 'note', text: T('cl.cumulative', { pct: U.fmtNum(role.cumulative, 0) }) })
+        ]);
+        const holder = el('div', {});
+        const toggle = () => {
+          if (CL.open.has(key)) { CL.open.delete(key); holder.innerHTML = ''; }
+          else { CL.open.add(key); holder.appendChild(clRoleBody(m, role)); }
+        };
+        head.onclick = toggle;
+        if (CL.open.has(key)) holder.appendChild(clRoleBody(m, role));
+        cardEl.append(head, holder);
+        list.appendChild(cardEl);
+      }
+      if (!roles.length) list.appendChild(el('p', { class: 'note', text: T('cl.noMatch') }));
+    };
+
+    const q = el('input', { type: 'text', value: CL.q, placeholder: T('cl.searchPh') });
+    q.oninput = () => { CL.q = q.value.trim().toLowerCase(); draw(); };
+    const type = el('select', {}, [el('option', { value: '', text: T('cl.allTypes') })]
+      .concat(CL_TYPES.map(t2 => el('option', { value: t2, text: T('cl.type.' + t2), selected: CL.type === t2 }))));
+    type.onchange = () => { CL.type = type.value; draw(); };
+    const out = el('span', { class: 'mono', text: CL.minRel + '%' });
+    const slider = el('input', { type: 'range', min: C.cfg.minRelevance, max: 100, step: 5, value: CL.minRel });
+    slider.oninput = () => { CL.minRel = +slider.value; out.textContent = CL.minRel + '%'; draw(); };
+    const sort = el('select', {}, [
+      el('option', { value: 'size', text: T('cl.sortSize'), selected: CL.sort === 'size' }),
+      el('option', { value: 'lift', text: T('cl.sortLift'), selected: CL.sort === 'lift' })]);
+    sort.onchange = () => { CL.sort = sort.value; draw(); };
+
+    wrap.appendChild(card(T('cl.title'), T('cl.note'), [
+      el('div', { class: 'slot-actions' }, [
+        q, type,
+        el('label', { class: 'inline' }, [document.createTextNode(T('cl.minRel')), slider, out]),
+        sort
+      ]),
+      list
+    ]));
+    draw();
+    return wrap;
+  }
+
+  /* ---- de-facto clusters ---- */
+  function clustersTab(m) {
+    const C = HR.classic.build(m);
+    if (!C || C.unavailable) return el('p', { class: 'note', text: T('cl.none') });
+    const wrap = el('div', { class: 'stack', style: 'gap:10px' });
+    wrap.appendChild(el('p', { class: 'note', text: T('cl.clustersNote') }));
+    if (!C.clusters.length) {
+      wrap.appendChild(el('p', { class: 'note', text: T('cl.noClusters') }));
+      return wrap;
+    }
+    for (const cl of C.clusters) {
+      const cardEl = el('div', { class: 'card' });
+      cardEl.appendChild(el('div', { class: 'row', style: 'align-items:center;gap:8px' }, [
+        el('strong', { text: T('cl.clusterOf', { n: cl.size }) }),
+        cl.discovered
+          ? el('span', { class: 'pill removed', text: T('cl.discovered') })
+          : el('span', { class: 'pill ok', text: (cl.dominantDepartment || '—') + ' / ' +
+              (cl.dominantTitle || '—') + ' (' + cl.purity + '%)' }),
+        el('span', { class: 'pill', text: T('cl.sharedN', { n: cl.common.length }) })
+      ]));
+      const t = el('table', { class: 'tbl' });
+      t.appendChild(el('thead', {}, el('tr', {}, [
+        el('th', { class: 'no-sort', text: T('c.permission') }),
+        el('th', { class: 'no-sort num', text: T('cl.share') })])));
+      const tb = el('tbody');
+      cl.common.forEach(cm => {
+        const p = m.permissions.get(cm.key);
+        tb.appendChild(el('tr', {}, [
+          el('td', {}, p
+            ? el('a', { href: '#', text: cm.name,
+                onclick: e => { e.preventDefault(); drawerPermission(p, m); } })
+            : el('span', { text: cm.name })),
+          el('td', { class: 'num', text: cm.share + '%' })
+        ]));
+      });
+      t.appendChild(tb);
+      cardEl.appendChild(el('div', { class: 'tbl-wrap' }, t));
+      const d = el('details', {});
+      d.appendChild(el('summary', { class: 'note', text: T('cl.membersFold', { n: cl.size }) }));
+      d.appendChild(el('p', { class: 'note', text: cl.members.slice(0, 100).join(', ') +
+        (cl.members.length > 100 ? ' …' : '') }));
+      cardEl.appendChild(d);
+      wrap.appendChild(cardEl);
+    }
+    return wrap;
+  }
+
   HR.views.mining = pyramidView;
   /* The view was called the role pyramid before it was one of two miners; old hashes
      and pinned favourites still point at that name. */

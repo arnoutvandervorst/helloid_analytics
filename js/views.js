@@ -3352,6 +3352,38 @@
     openDrawer(head, body);
   }
 
+  /* The classic role model's inverse view, in the permission drawer: which
+     attribute roles this permission's holders sit in — the round-trip the old
+     report solved with cross-tab navigation. */
+  function classicRolesCard(p, m) {
+    if (!m.vault || !HR.classic) return null;
+    let C = null;
+    try { C = HR.classic.build(m); } catch (e) { return null; }
+    if (!C || C.unavailable) return null;
+    const hits = HR.classic.rolesHolding(C, m, p.key).slice(0, 15);
+    if (!hits.length) return null;
+    const t = el('table', { class: 'tbl' });
+    t.appendChild(el('thead', {}, el('tr', {}, [
+      el('th', { class: 'no-sort', text: T('cl.role') }),
+      el('th', { class: 'no-sort num', text: T('cl.holdersOfRole') }),
+      el('th', { class: 'no-sort', text: T('c.person') })])));
+    const tb = el('tbody');
+    hits.forEach(h => {
+      const d = el('details', {});
+      d.appendChild(el('summary', { class: 'note', text: String(h.count) }));
+      d.appendChild(el('p', { class: 'note', text: h.names.slice(0, 100).join(', ') +
+        (h.names.length > 100 ? ' …' : '') }));
+      tb.appendChild(el('tr', {}, [
+        el('td', {}, [el('span', { text: h.role + ' ' }),
+          el('span', { class: 'pill muted', text: T('cl.type.' + h.type) })]),
+        el('td', { class: 'num', text: h.count + '/' + h.size }),
+        el('td', {}, d)
+      ]));
+    });
+    t.appendChild(tb);
+    return card(T('cl.drawerTitle'), T('cl.drawerNote'), el('div', { class: 'tbl-wrap' }, t));
+  }
+
   function drawerPermission(p, m) {
     m = m || HR.app.state.model;
     const holders = Array.from(p.holders).map(k => m.accounts.get(k)).filter(Boolean);
@@ -3412,6 +3444,8 @@
       search: (r, q) => (r.userName + ' ' + r.personRaw).toLowerCase().includes(q),
       onRowClick: a => drawerAccount(a)
     })));
+    const clCard = classicRolesCard(p, m);
+    if (clCard) body.appendChild(clCard);
     openDrawer(head, body);
   }
 

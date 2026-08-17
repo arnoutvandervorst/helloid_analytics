@@ -282,7 +282,10 @@
     /* Mining hygiene: matcher specs excluded from role/rule mining, and a
        naming template for exported rule proposals ({dept}/{title}/{system}/
        {category} tokens; empty = the modules' built-in names). */
-    mining: { excluded: [], ruleName: '', deepestOnly: true }
+    mining: { excluded: [], ruleName: '', deepestOnly: true },
+    /* The classic role model's knobs (ported defaults from the old report). */
+    classic: { minRoleMembers: 3, minRelevance: 50, globalPct: 90,
+      similarityPct: 90, maxRoles: 100, clusterSim: 0.6, clusterMin: 5 }
   };
 
   let current = null;
