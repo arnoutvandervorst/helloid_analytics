@@ -1196,6 +1196,13 @@
        (dynamic) groups are in-directory RBAC, nesting terminals are the groups
        that actually grant. Only speaks when a directory import is loaded. */
     const dir = HR.app.state.directory;
+    if (!dir) {
+      /* The recon flattens memberships — nesting and Entra group types only
+         exist in the collector's envelope. Say so instead of silently having
+         no structure to show. */
+      f.appendChild(el('div', { style: 'margin-top:14px' },
+        el('p', { class: 'note', text: T('pm.structHint') })));
+    }
     if (dir && dir.groupMeta && (dir.meta.nestedEdges || dir.meta.dynamicGroups)) {
       const metas = Array.from(dir.groupMeta.values());
       const dynamics = metas.filter(g => g.dynamic);

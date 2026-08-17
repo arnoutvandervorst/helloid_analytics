@@ -1571,6 +1571,7 @@ window.HR = window.HR || {};
     'ac.fHolders': 'holders of a permission',
 
     /* ---- permissions ---- */
+    'pm.structHint': 'Group nesting and Entra query-based groups are invisible to the HelloID exports — the reconciliation flattens memberships. Run collect-ad.ps1 or collect-entra.ps1 (Imports → Directory) alongside these exports and the structure joins on by group name: nesting terminals, abstraction layers and membership rules appear here and steer mining.',
     'pm.structTitle': 'What the directory structure says',
     'pm.structNote': 'Read from the directory import: query-based groups are RBAC the directory runs itself, and nesting terminals are the groups that actually grant. Mining prefers the terminals (Mining → hygiene).',
     'pm.structCounts': '{res} nesting terminal(s) (the real permissions) · {role} abstraction group(s) feeding them · {dyn} query-based group(s).',
@@ -3957,6 +3958,7 @@ window.HR = window.HR || {};
     'ac.fRisk': 'risico {a}–{b}',
     'ac.fHolders': 'leden van een recht',
 
+    'pm.structHint': 'Groepsnesting en Entra query-gebaseerde groepen zijn onzichtbaar voor de HelloID-exports — de reconciliatie vlakt lidmaatschappen af. Draai collect-ad.ps1 of collect-entra.ps1 (Imports → Directory) naast deze exports en de structuur haakt aan op groepsnaam: nestingterminals, abstractielagen en lidmaatschapsregels verschijnen hier en sturen de mining.',
     'pm.structTitle': 'Wat de directorystructuur zegt',
     'pm.structNote': 'Gelezen uit de directory-import: query-gebaseerde groepen zijn RBAC die de directory zelf draait, en nestingterminals zijn de groepen die daadwerkelijk rechten geven. Mining verkiest de terminals (Mining → hygiëne).',
     'pm.structCounts': '{res} nestingterminal(s) (de echte rechten) · {role} abstractiegroep(en) die ze voeden · {dyn} query-gebaseerde groep(en).',
