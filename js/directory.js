@@ -140,6 +140,24 @@
 
     const dynamicGroups = groups.filter(g => g.dynamic).length;
 
+    /* Direct or inherited? The recon cannot say — memberships arrive
+       flattened — but this envelope can: the same walk that synthesized the
+       rows answers per user/group whether the holding is a direct membership
+       or arrives via nesting, chain included. Memoized per user on demand. */
+    const userByName = new Map(users.map(u => [u.userName.toLowerCase(), u]));
+    const groupIdByName = new Map(groups.map(g => [g.name.toLowerCase(), g.id]));
+    const effMemo = new Map();
+    function membership(userName, groupName) {
+      const u = userByName.get(String(userName || '').toLowerCase());
+      if (!u) return null;
+      let eff = effMemo.get(u.id);
+      if (!eff) { eff = effectiveGroups(u.id); effMemo.set(u.id, eff); }
+      const gid = groupIdByName.get(String(groupName || '').toLowerCase());
+      if (!gid || !eff.has(gid)) return null;
+      const via = eff.get(gid);
+      return via.length ? { via } : { direct: true };
+    }
+
     /* ---- what each group IS, structurally ----------------------------------
        Nesting is how directories build their own RBAC: role groups are made
        members of the groups that actually sit on resources (AGDLP), and Entra
@@ -185,7 +203,7 @@
     }
 
     return {
-      source, system, users, groups, records, vault, groupMeta,
+      source, system, users, groups, records, vault, groupMeta, membership,
       warnings: warnings.concat(vault.warnings || []),
       meta: {
         fileName: fileName || 'directory.json',

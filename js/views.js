@@ -3308,9 +3308,20 @@
         { key: 'userName', label: T('c.account') },
         { key: 'personName', label: T('c.person'), render: r => r.personRaw ? el('span', { text: r.personName }) : el('span', { class: 'sev critical', text: T('c.unowned') }) },
         { key: 'enabled', label: T('c.state'), value: r => T(r.enabled === false ? 'c.disabled' : 'c.enabled') },
+        /* Direct member or inherited via nesting — answerable only from the
+           collector envelope, so the column appears only when one is loaded. */
+        HR.app.state.directory ? { key: 'how', label: T('pm.howHeld'), sortable: false,
+          render: r => {
+            const hm = HR.app.state.directory.membership(r.userName, p.name);
+            if (!hm) return el('span', { class: 'note', text: '—' });
+            return hm.direct
+              ? el('span', { class: 'pill ok', text: T('pm.howDirect') })
+              : el('span', { class: 'note trunc', title: T('pm.howVia') + ' ' + hm.via.join(' > '),
+                  text: T('pm.howVia') + ' ' + hm.via.join(' > ') });
+          } } : null,
         { key: 'permCount', label: T('c.perms'), num: true },
         { key: 'riskScore', label: T('c.risk'), num: true, render: r => scoreBar(r.riskScore) }
-      ], rows: holders, pageSize: 20, exportName: 'permission-' + p.name + '-holders',
+      ].filter(Boolean), rows: holders, pageSize: 20, exportName: 'permission-' + p.name + '-holders',
       initialSort: { key: 'riskScore', dir: -1 },
       search: (r, q) => (r.userName + ' ' + r.personRaw).toLowerCase().includes(q),
       onRowClick: a => drawerAccount(a)
