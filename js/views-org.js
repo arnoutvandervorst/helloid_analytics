@@ -1671,14 +1671,6 @@
   const CL = { q: '', type: '', minRel: null, sort: 'size', open: new Set() };
   const CL_TYPES = ['global', 'department', 'title', 'combo'];
 
-  function clRelBadge(perm, minRel, inGlobalRole) {
-    if (perm.global && !inGlobalRole) return el('span', { class: 'pill muted', text: T('cl.global') });
-    const pct = U.fmtNum(perm.relevance, 0) + '%';
-    if (perm.relevance >= 100) return el('span', { class: 'pill ok', text: pct });
-    if (perm.relevance >= minRel) return el('span', { class: 'pill warn', text: pct });
-    return el('span', { class: 'pill', text: pct });
-  }
-
   function clLiftBadge(perm) {
     const txt = '×' + U.fmtNum(perm.lift, 1);
     const title = T('cl.liftTip', { rel: U.fmtNum(perm.relevance, 0), base: U.fmtNum(perm.baseline, 1) });
@@ -1686,16 +1678,17 @@
     return el('span', { class: cls, title, text: txt });
   }
 
-  function clNameList(names) {
+  function clNameList(label, names) {
+    if (!names.length) return null;
     const d = el('details', {});
-    d.appendChild(el('summary', { class: 'note', text: String(names.length) }));
-    d.appendChild(el('div', { class: 'note', style: 'max-height:180px;overflow:auto',
+    d.appendChild(el('summary', { class: 'note', text: label }));
+    d.appendChild(el('div', { class: 'note', style: 'max-height:180px;overflow:auto;padding:4px 0',
       text: names.slice(0, 200).join(', ') + (names.length > 200 ? ' …' : '') }));
     return d;
   }
 
   function clRoleBody(m, role) {
-    const body = el('div', { style: 'margin-top:8px' });
+    const body = el('div', { style: 'margin-top:10px' });
     /* Inside the Everyone role its permissions ARE the content; in every other
        role the global ones fold away as noise. */
     const perms = role.type === 'global'
@@ -1704,32 +1697,43 @@
     const globals = role.type === 'global' ? [] : role.permissions.filter(p => p.global);
 
     if (role.similarTo.length) {
-      body.appendChild(el('p', { class: 'note', text: T('cl.similar') + ' ' +
+      body.appendChild(el('p', { class: 'note', style: 'margin-bottom:8px', text: T('cl.similar') + ' ' +
         role.similarTo.slice(0, 3).map(s => s.pct + '%: ' + s.name).join(' · ') }));
     }
 
+    /* Fixed geometry so every role's table lines up with its neighbours;
+       permission first (the primary fact), score/lift compact, both exception
+       populations in one column instead of two half-empty ones. */
     const t = el('table', { class: 'tbl' });
+    t.style.tableLayout = 'fixed';
+    t.style.width = '100%';
     t.appendChild(el('thead', {}, el('tr', {}, [
-      el('th', { class: 'no-sort', text: T('cl.relevance') }),
-      el('th', { class: 'no-sort', text: T('cl.lift') }),
-      el('th', { class: 'no-sort num', text: T('cl.count') }),
       el('th', { class: 'no-sort', text: T('c.permission') }),
-      el('th', { class: 'no-sort', text: T('cl.missing') }),
-      el('th', { class: 'no-sort', text: T('cl.outside') })
+      el('th', { class: 'no-sort', text: T('cl.relevance'), style: 'width:150px' }),
+      el('th', { class: 'no-sort', text: T('cl.lift'), style: 'width:70px' }),
+      el('th', { class: 'no-sort num', text: T('cl.count'), style: 'width:80px' }),
+      el('th', { class: 'no-sort', text: T('cl.exceptions'), style: 'width:230px' })
     ])));
     const tb = el('tbody');
     for (const perm of perms) {
       const p = m.permissions.get(perm.key);
+      const exceptions = el('div', { class: 'stack', style: 'gap:2px' }, [
+        clNameList(T('cl.missingN', { n: perm.missing.length }), perm.missing),
+        clNameList(T('cl.outsideN', { n: perm.outside.length }), perm.outside)
+      ].filter(Boolean));
       tb.appendChild(el('tr', {}, [
-        el('td', {}, clRelBadge(perm, CL.minRel, role.type === 'global')),
-        el('td', {}, clLiftBadge(perm)),
-        el('td', { class: 'num', text: perm.count + '/' + role.count }),
-        el('td', {}, p
-          ? el('a', { href: '#', text: perm.name,
+        el('td', { class: 'trunc' }, p
+          ? el('a', { href: '#', text: perm.name, title: perm.name,
               onclick: e => { e.preventDefault(); drawerPermission(p, m); } })
-          : el('span', { text: perm.name })),
-        el('td', {}, perm.missing.length ? clNameList(perm.missing) : el('span', { class: 'note', text: '0' })),
-        el('td', {}, perm.outside.length ? clNameList(perm.outside) : el('span', { class: 'note', text: '0' }))
+          : el('span', { text: perm.name, title: perm.name })),
+        el('td', {}, el('div', { class: 'row', style: 'align-items:center;gap:6px' }, [
+          scoreBar(Math.round(perm.relevance)),
+          (perm.global && role.type !== 'global')
+            ? el('span', { class: 'pill muted', text: T('cl.global') }) : null
+        ].filter(Boolean))),
+        el('td', {}, clLiftBadge(perm)),
+        el('td', { class: 'num note', text: perm.count + '/' + role.count }),
+        el('td', {}, exceptions.childNodes.length ? exceptions : el('span', { class: 'note', text: '—' }))
       ]));
     }
     t.appendChild(tb);
@@ -1737,7 +1741,7 @@
     else body.appendChild(el('p', { class: 'note', text: T('cl.noPerms') }));
 
     if (globals.length && role.type !== 'global') {
-      const d = el('details', {});
+      const d = el('details', { style: 'margin-top:8px' });
       d.appendChild(el('summary', { class: 'note', text: T('cl.globalsFold', { n: globals.length }) }));
       d.appendChild(el('p', { class: 'note', text: globals.map(g => g.name).join(', ') }));
       body.appendChild(d);
@@ -1769,18 +1773,23 @@
         const shown = role.type === 'global'
           ? role.permissions.filter(p => p.relevance >= CL.minRel).length
           : role.permissions.filter(p => !p.global && p.relevance >= CL.minRel).length;
-        const head = el('div', { class: 'row', style: 'cursor:pointer;align-items:center;gap:8px' }, [
+        /* One quiet line per role: chevron, name, type, then the numbers as a
+           single note instead of a pill parade. */
+        const chevron = el('span', { class: 'note', style: 'width:14px;display:inline-block',
+          text: CL.open.has(key) ? '▾' : '▸' });
+        const head = el('div', { class: 'row', style: 'cursor:pointer;align-items:baseline;gap:10px' }, [
+          chevron,
           el('strong', { text: role.type === 'global' ? T('cl.everyone') : role.name }),
           el('span', { class: 'pill muted', text: T('cl.type.' + role.type) }),
-          el('span', { class: 'pill', text: T('cl.members', { n: role.count, a: role.accounts }) }),
-          el('span', { class: 'pill', text: T('cl.permsN', { n: shown }) }),
+          el('span', { class: 'note', text: T('cl.headMeta', { n: role.count, a: role.accounts, p: shown }) }),
           el('span', { style: 'flex:1' }),
-          el('span', { class: 'note', text: T('cl.cumulative', { pct: U.fmtNum(role.cumulative, 0) }) })
+          el('span', { class: 'note', title: T('cl.cumulativeTip'),
+            text: T('cl.cumulative', { pct: U.fmtNum(role.cumulative, 0) }) })
         ]);
         const holder = el('div', {});
         const toggle = () => {
-          if (CL.open.has(key)) { CL.open.delete(key); holder.innerHTML = ''; }
-          else { CL.open.add(key); holder.appendChild(clRoleBody(m, role)); }
+          if (CL.open.has(key)) { CL.open.delete(key); holder.innerHTML = ''; chevron.textContent = '▸'; }
+          else { CL.open.add(key); holder.appendChild(clRoleBody(m, role)); chevron.textContent = '▾'; }
         };
         head.onclick = toggle;
         if (CL.open.has(key)) holder.appendChild(clRoleBody(m, role));
