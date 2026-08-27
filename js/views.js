@@ -366,7 +366,8 @@
     { kind: 'granted',   accept: '.csv' },
     { kind: 'history',   accept: '.csv' },
     { kind: 'products', accept: '.json' },
-    { kind: 'assignments', accept: '.csv' }
+    { kind: 'assignments', accept: '.csv' },
+    { kind: 'fieldmapping', accept: '.json' }
   ];
 
   function slotState(kind) {
@@ -419,6 +420,11 @@
           detail: T('src.assignmentsDetail', { n: U.fmtInt(st.assignments.meta.rowCount),
             open: U.fmtInt(st.assignments.meta.openCount) }),
           health: st.assignments.meta.health };
+      case 'fieldmapping':
+        return st.fieldMapping && { file: st.fieldMapping.fileName, loaded: st.importedAt.fieldMapping,
+          detail: T('src.fieldmappingDetail', { n: st.fieldMapping.counts.fields,
+            c: st.fieldMapping.counts.complex, u: st.fieldMapping.counts.updateScoped }),
+          health: null };
       default: return null;
     }
   }

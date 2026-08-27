@@ -351,7 +351,7 @@
       if (u.mail) smtp.add(low(u.mail));
       (u.proxyAddresses || []).forEach(a =>
         smtp.add(low(String(a).replace(/^smtp:/i, ''))));
-      if (u.userPrincipalName) upn.add(low(u.userPrincipalName));
+      if (u.upn) upn.add(low(u.upn));   // collectors emit `upn`, not userPrincipalName
       if (u.mailNickname) nickname.add(low(u.mailNickname));
     }
     return { smtp, upn, nickname };

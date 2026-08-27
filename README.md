@@ -314,6 +314,25 @@ value distribution, and the value → group pairs strong enough (≥5 people, �
 clearly above baseline) to become HelloID business-rule conditions or connector mappings.
 `make-directory.py` generates a fictional envelope to try it without a tenant.
 
+## Field-mapping simulation
+
+Import the target connector's field mapping — the HelloID UI's mapping export or
+a connector repo's `fieldMapping.json` (Version v1) — and see it as data: per
+field the mode per provisioning action (Fixed / Field / Complex / None),
+uniqueness, standard-vs-customized, with the decoded value or JavaScript in a
+drawer. Then the payoff: the **Simulation** tab evaluates every in-scope field
+for every person against the mapping — Complex mappings run faithfully, with the
+Person object, `Iteration` and `deleteDiacriticalMarks` exactly as HelloID
+provides them, each field against a fresh Person copy — and diffs the result
+against the attribute the collected AD/Entra directory holds today. The output
+is the answer no HelloID screen gives up front: which attributes an update run
+would rewrite, per field and per person, current → would-become, exportable.
+`None` on Update is honoured as out-of-scope, a real vault gives full-fidelity
+Person objects (the raw export is replayed), and without one the simulator
+reconstructs Persons from the collected directory and says so. Source mappings
+(HR → person model) are recognised and refused with a pointer to the right
+export.
+
 ## Classic role model
 
 The old role-mining report's presentation, ported and fed live: attribute roles

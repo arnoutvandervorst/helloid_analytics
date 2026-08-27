@@ -35,7 +35,7 @@
     const root = document.getElementById('view-root');
     root.innerHTML = '';
     const worksEmpty = state.view === 'settings' || state.view === 'snapshots' || state.view === 'sources' ||
-      state.view === 'nedap';
+      state.view === 'nedap' || state.view === 'fieldmap';
     if (!state.model && !worksEmpty) { emptyState(root); return; }
     const fn = HR.views[state.view] || HR.views.overview;
     const missing = HR.views.missingFor ? HR.views.missingFor(state.view) : [];
@@ -210,6 +210,8 @@
       if (peek.kind === 'helloid-recon-snapshots' || Array.isArray(peek.snapshots)) return 'snapshots';
       if (HR.directory.looksLikeDirectory(peek)) return 'directory';
       if (HR.products.looksLikeProducts(peek)) return 'products';
+      if (HR.fieldmap.looksLikeFieldMapping(peek)) return 'fieldmapping';
+      if (HR.fieldmap.looksLikeSourceMapping(peek)) return 'sourcemapping';
       return 'vault';
     }
     const header = headerOf(text);
@@ -245,7 +247,8 @@
 
   /** Drop a companion source without clearing the rest — each one stands on its own. */
   function clearSource(kind) {
-    if (!['rules', 'vault', 'granted', 'history', 'products', 'assignments', 'directory'].includes(kind)) return;
+    if (kind === 'fieldmapping') kind = 'fieldMapping';   // slot id vs state key
+    if (!['rules', 'vault', 'granted', 'history', 'products', 'assignments', 'directory', 'fieldMapping'].includes(kind)) return;
     state[kind] = null;
     if (kind === 'rules') state.ruleSet = null;
     delete state.raw[kind];
@@ -412,6 +415,11 @@
     }
     if (peek && HR.directory.looksLikeDirectory(peek)) return importDirectory(text, fileName);
     if (peek && HR.products.looksLikeProducts(peek)) return importProducts(text, fileName);
+    if (peek && HR.fieldmap.looksLikeFieldMapping(peek)) return importFieldMapping(text, fileName);
+    if (peek && HR.fieldmap.looksLikeSourceMapping(peek)) {
+      U.toast(T('toast.sourceMapping'), 9000);
+      return;
+    }
     if (peek && (peek.kind === 'helloid-recon-snapshots' || Array.isArray(peek.snapshots))) {
       try {
         const n = await HR.store.importJSON(text);
@@ -504,6 +512,34 @@
     HR.usage.imported('directory', dir.meta.rowCount);
     rebuild();
     go('overview');
+  }
+
+  /**
+   * A target connector's field mapping (the v1 MappingFields JSON, whether a
+   * connector repo's fieldMapping.json or a HelloID UI export). Companion
+   * source: it attaches to whatever population is loaded, and unlocks the
+   * update simulation once a collected directory is present.
+   */
+  async function importFieldMapping(text, fileName) {
+    let mapping;
+    try { mapping = HR.fieldmap.parse(text, fileName); }
+    catch (err) {
+      U.toast(err.message === 'SOURCE_MAPPING' ? T('toast.sourceMapping') : err.message, 8000);
+      return;
+    }
+    if (mapping.warnings.length) U.toast(mapping.warnings[0], 5000);
+
+    state.fieldMapping = mapping;
+    state.raw.fieldMapping = text;
+    state.importedAt.fieldMapping = Date.now();
+    state.fileNames.fieldMapping = fileName;
+    HR.store.saveContext({ fieldMapping: text, importedAt: state.importedAt, fileNames: state.fileNames });
+    HR.usage.imported('field-mapping', mapping.counts.fields);
+    U.toast(T('toast.fieldMappingLoaded', {
+      n: mapping.counts.fields, c: mapping.counts.complex, u: mapping.counts.updateScoped
+    }), 7000);
+    render();
+    go('fieldmap');
   }
 
   /** The vault attaches to whatever else is loaded; it is what makes conditions evaluable. */
@@ -823,7 +859,8 @@
     const restoreContext = HR.store.loadContext().then(ctx => {
       if (!ctx) return;
       state.raw = { rules: ctx.rules, vault: ctx.vault, granted: ctx.granted, history: ctx.history,
-        products: ctx.products, assignments: ctx.assignments, directory: ctx.directory };
+        products: ctx.products, assignments: ctx.assignments, directory: ctx.directory,
+        fieldMapping: ctx.fieldMapping };
       /* Context saved before import times were tracked still has one useful timestamp:
          when it was written. Better than showing nothing for every restored file. */
       state.importedAt = ctx.importedAt || {};
@@ -835,6 +872,7 @@
         if (ctx[k] && !state.importedAt[k]) state.importedAt[k] = ctx.savedAt || null;
       });
       try { if (ctx.directory) state.directory = HR.directory.parse(ctx.directory, named('directory', 'directory.json')); } catch (e) { /* stale */ }
+      try { if (ctx.fieldMapping) state.fieldMapping = HR.fieldmap.parse(ctx.fieldMapping, named('fieldMapping', 'fieldMapping.json')); } catch (e) { /* stale */ }
       try { if (ctx.rules) state.ruleSet = HR.rules.parse(ctx.rules, named('rules', 'rules.csv')); } catch (e) { /* stale */ }
       try { if (ctx.vault) state.vault = HR.vault.parse(ctx.vault, named('vault', 'vault.json')); } catch (e) { /* stale */ }
       try { if (ctx.granted) state.granted = HR.activity.parse(ctx.granted, named('granted', 'entitlements.csv')); } catch (e) { /* stale */ }
