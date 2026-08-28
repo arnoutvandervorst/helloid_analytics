@@ -20,7 +20,10 @@
 
   /* ------------------------------------------------------------- decisions */
 
-  function decide(account, person, decision) {
+  /* `after` runs once the model is rebuilt — the account drawer uses it to
+     reopen itself on the fresh account object instead of leaving the user
+     staring at the view behind a closed drawer. */
+  function decide(account, person, decision, after) {
     HR.config.setMatchDecision(account.key, {
       decision,
       personExternalId: person ? (person.externalId || '') : '',
@@ -28,19 +31,47 @@
       personName: person ? person.displayName : ''
     });
     closeDrawer();
-    HR.app.rebuildBusy().then(() => U.toast(T('mt.toastDecided'), 3000));
+    HR.app.rebuildBusy().then(() => { U.toast(T('mt.toastDecided'), 3000); if (after) after(); });
   }
 
-  function reject(account, person) {
+  function reject(account, person, after) {
     HR.config.setMatchDecision(account.key, { reject: person.externalId || person.personId });
     closeDrawer();
-    HR.app.rebuildBusy().then(() => U.toast(T('mt.toastRejected'), 3000));
+    HR.app.rebuildBusy().then(() => { U.toast(T('mt.toastRejected'), 3000); if (after) after(); });
   }
 
-  function undoDecision(account) {
+  function undoDecision(account, after) {
     HR.config.setMatchDecision(account.key, null);
     closeDrawer();
-    HR.app.rebuildBusy().then(() => U.toast(T('mt.toastUndone'), 3000));
+    HR.app.rebuildBusy().then(() => { U.toast(T('mt.toastUndone'), 3000); if (after) after(); });
+  }
+
+  /** Search box that assigns someone the scorer never proposed. */
+  function assignSearch(m, account, after) {
+    const results = el('ul', { class: 'clean' });
+    const search = el('input', {
+      type: 'search', placeholder: T('mt.searchPh'),
+      oninput: e => {
+        const q = e.target.value.trim().toLowerCase();
+        results.innerHTML = '';
+        if (q.length < 2) return;
+        const hits = m.vault.persons
+          .filter(p => (p.displayName + ' ' + (p.externalId || '')).toLowerCase().includes(q))
+          .slice(0, 10);
+        hits.forEach(p => {
+          const li = el('li', { class: 'row' });
+          li.append(
+            el('span', { text: personLabel(p) }),
+            el('span', { style: 'flex:1' }),
+            el('button', { class: 'btn sm', text: T('mt.assign'),
+              onclick: () => decide(account, p, 'assigned', after) })
+          );
+          results.appendChild(li);
+        });
+        if (!hits.length) results.appendChild(el('li', {}, el('span', { class: 'note', text: T('mt.noHits') })));
+      }
+    });
+    return [search, results];
   }
 
   /* ---------------------------------------------------------------- drawer */
@@ -97,30 +128,7 @@
     }
 
     /* Assign someone the scorer never proposed. */
-    const results = el('ul', { class: 'clean' });
-    const search = el('input', {
-      type: 'search', placeholder: T('mt.searchPh'),
-      oninput: e => {
-        const q = e.target.value.trim().toLowerCase();
-        results.innerHTML = '';
-        if (q.length < 2) return;
-        const hits = m.vault.persons
-          .filter(p => (p.displayName + ' ' + (p.externalId || '')).toLowerCase().includes(q))
-          .slice(0, 10);
-        hits.forEach(p => {
-          const li = el('li', { class: 'row' });
-          li.append(
-            el('span', { text: personLabel(p) }),
-            el('span', { style: 'flex:1' }),
-            el('button', { class: 'btn sm', text: T('mt.assign'),
-              onclick: () => decide(a, p, 'assigned') })
-          );
-          results.appendChild(li);
-        });
-        if (!hits.length) results.appendChild(el('li', {}, el('span', { class: 'note', text: T('mt.noHits') })));
-      }
-    });
-    body.appendChild(card(T('mt.assignTitle'), T('mt.assignNote'), [search, results]));
+    body.appendChild(card(T('mt.assignTitle'), T('mt.assignNote'), assignSearch(m, a)));
 
     body.appendChild(el('div', { class: 'row' }, [
       !a.ownerless ? el('button', { class: 'btn', text: T('mt.markOwnerless'),
@@ -130,6 +138,77 @@
     ].filter(Boolean)));
 
     openDrawer(head, body);
+  }
+
+  /* -------------------------------------------- account-drawer link card */
+
+  /* Decisions made from the account drawer land the user back in it, on the
+     rebuilt account — not in the view behind a closed drawer. */
+  const reopenAccount = key => () => {
+    const a = HR.app.state.model.accounts.get(key);
+    if (a) HR.viewkit.drawerAccount(a);
+  };
+
+  /**
+   * The matching workbench folded into one card for the account drawer:
+   * linked → the attribution and the means to override it; unlinked → the
+   * top candidates with the same decisions the workbench offers.
+   */
+  function personLinkCard(m, a) {
+    const row = HR.correlate.accountRow(m, m.vault, m.correlation, a);
+    const after = reopenAccount(a.key);
+    const body = el('div', { class: 'stack' });
+
+    if (row.layer === 'ownerless') {
+      body.appendChild(el('div', { class: 'row' }, [
+        el('span', { class: 'pill muted', text: T('mt.dOwnerless') }),
+        el('span', { style: 'flex:1' }),
+        el('button', { class: 'btn sm ghost', text: T('mt.undo'), onclick: () => undoDecision(a, after) })
+      ]));
+      return card(T('mt.linkTitle'), null, body);
+    }
+
+    if (row.person) {
+      body.appendChild(el('div', { class: 'row' }, [
+        el('span', { class: 'pill ok', text: personLabel(row.person) }),
+        el('span', { class: 'pill', text: T('mt.layer.' + row.layer) }),
+        row.evidence && row.evidence.length
+          ? el('span', { class: 'note trunc', text: row.evidence.join(', ') }) : null
+      ].filter(Boolean)));
+    }
+
+    /* Candidates minus whoever is already linked: the switch options. */
+    const others = row.candidates.filter(c => !row.person || c.person.personId !== row.person.personId);
+    if (others.length) {
+      body.appendChild(el('ul', { class: 'clean' }, others.map(c => {
+        const li = el('li', { class: 'row' });
+        li.append(
+          el('strong', { text: personLabel(c.person) }),
+          scoreBar(Math.min(100, c.points)),
+          el('span', { class: 'note trunc', text: c.evidence.join(', ') }),
+          el('span', { style: 'flex:1' }),
+          el('button', { class: 'btn sm primary', text: T(row.person ? 'mt.relink' : 'mt.confirm'),
+            onclick: () => decide(a, c.person, 'confirmed', after) }),
+          el('button', { class: 'btn sm', text: T('mt.reject'),
+            onclick: () => reject(a, c.person, after) })
+        );
+        return li;
+      })));
+    } else if (!row.person) {
+      body.appendChild(el('p', { class: 'note', text: T('mt.noCandidates') }));
+    }
+
+    assignSearch(m, a, after).forEach(n => body.appendChild(n));
+
+    body.appendChild(el('div', { class: 'row' }, [
+      el('button', { class: 'btn sm', text: T('mt.markOwnerless'),
+        onclick: () => decide(a, null, 'ownerless', after) }),
+      row.decision ? el('button', { class: 'btn sm ghost', text: T('mt.undo'),
+        onclick: () => undoDecision(a, after) }) : null
+    ].filter(Boolean)));
+
+    return card(T('mt.linkTitle'),
+      row.person ? T('mt.linkedNote') : T('mt.notLinkedNote'), body);
   }
 
   /* ----------------------------------------------------------------- batch */
@@ -581,4 +660,5 @@
   }
 
   HR.views.matching = matchingView;
+  HR.matching = { personLinkCard };
 })(window.HR);

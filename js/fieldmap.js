@@ -28,8 +28,13 @@
 
   const HELPER_URL = 'github.com/Tools4everBV/HelloID-Lib-Prov-HelperFunctions';
 
-  const looksLikeFieldMapping = data => !!data && data.Version === 'v1' &&
-    Array.isArray(data.MappingFields);
+  /* Two generations of the same export: v1 (MappingFields, per-action sets,
+     double-encoded values) and the pre-v1 "accountMappings" shape still all
+     over the HelloID-Provisioning repo (flat entries, lowercase mode, plain
+     value, one boolean `update` for scope). Both import here. */
+  const looksLikeFieldMapping = data => !!data &&
+    ((data.Version === 'v1' && Array.isArray(data.MappingFields)) ||
+      Array.isArray(data.accountMappings));
   const looksLikeSourceMapping = data => !!data &&
     (Array.isArray(data.personMappings) || Array.isArray(data.contractMappings));
 
@@ -46,6 +51,7 @@
     try { data = JSON.parse(text); }
     catch (e) { throw new Error('Field mapping is not valid JSON: ' + e.message); }
     if (looksLikeSourceMapping(data)) throw new Error('SOURCE_MAPPING');
+    if (Array.isArray(data.accountMappings)) return parseLegacy(data, fileName);
     if (!looksLikeFieldMapping(data)) {
       throw new Error('Not a HelloID field mapping (expected Version "v1" with MappingFields).');
     }
@@ -82,6 +88,47 @@
           return s && s.mode !== 'None';
         }).length,
         unique: unique.size
+      }
+    };
+  }
+
+  /* The pre-v1 shape. Create is always in scope; `update: false` keeps the
+     field out of Update drift exactly like None-on-Update does in v1; Enable/
+     Disable/Delete were not expressible then, so they stay undeclared. Values
+     are plain strings — no second JSON layer to peel. */
+  function parseLegacy(data, fileName) {
+    const warnings = [];
+    const fields = data.accountMappings.map(f => {
+      const mode = { complex: 'Complex', field: 'Field', fixed: 'Fixed' }[String(f.mode || '').toLowerCase()] || 'None';
+      return {
+        name: String(f.name || ''),
+        description: '',
+        type: 'Text',
+        unique: !!f.unique,
+        standard: mode === 'Complex' && String(f.value || '').includes(HELPER_URL),
+        actions: [{
+          actions: ['Create'].concat(f.update ? ['Update'] : []),
+          mode,
+          value: mode === 'None' ? null : f.value,
+          store: !!f.storeInAccountData
+        }]
+      };
+    }).filter(f => f.name);
+    if (!fields.length) warnings.push('Mapping contains no fields.');
+    return {
+      fileName: fileName || 'fieldMapping.json',
+      legacy: true,
+      fields,
+      uniqueFieldNames: fields.filter(f => f.unique).map(f => f.name),
+      warnings,
+      counts: {
+        fields: fields.length,
+        complex: fields.filter(f => f.actions.some(a => a.mode === 'Complex')).length,
+        updateScoped: fields.filter(f => {
+          const s = actionFor(f, 'Update');
+          return s && s.mode !== 'None';
+        }).length,
+        unique: fields.filter(f => f.unique).length
       }
     };
   }

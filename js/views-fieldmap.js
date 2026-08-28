@@ -68,6 +68,9 @@
       tile(T('fm.tUnique'), U.fmtInt(fm.counts.unique), fm.uniqueFieldNames.join(', ') || '—', { small: true })
     );
     wrap.appendChild(tiles);
+    if (fm.legacy) {
+      wrap.appendChild(el('p', { class: 'note', style: 'margin-top:10px', text: T('fm.legacyNote') }));
+    }
 
     wrap.appendChild(el('div', { style: 'margin-top:14px' }, card(null, null, HR.table.make({
       columns: [

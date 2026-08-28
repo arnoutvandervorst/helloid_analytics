@@ -94,6 +94,7 @@
        fuzzy correlation still happens later and does not feed the multiplier. */
     const vaultLookup = (opts && opts.vault) ? buildVaultLookup(opts.vault) : null;
     const matchDecisions = HR.config.getMatchBook().decisions;
+    const ecatOverrides = HR.config.getEcatOverrides();
     for (const a of accounts.values()) {
       a.orphan = !a.personRaw;
       /* A human decision in the match book outranks what the export says: a
@@ -141,6 +142,15 @@
       a.ecatLabel = ec.row ? HR.config.labelOf(ec.row) : '';
       a.ecatMult = ec.row && ec.row.multiplier > 0 ? ec.row.multiplier : 1;
       a.ecatSource = ec.source;
+      /* A human's per-account correction outranks every detection layer. */
+      const ov = ecatOverrides[a.key];
+      const ovRow = ov ? (cfg.employeeCategories || []).find(r => r.id === ov) : null;
+      if (ovRow) {
+        a.ecat = ovRow.id;
+        a.ecatLabel = HR.config.labelOf(ovRow);
+        a.ecatMult = ovRow.multiplier > 0 ? ovRow.multiplier : 1;
+        a.ecatSource = 'manual';
+      }
     }
 
     /* ---- permission holder stats ---- */

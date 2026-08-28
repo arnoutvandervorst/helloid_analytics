@@ -3267,6 +3267,31 @@
     document.getElementById('drawer-scrim').hidden = true;
   }
 
+  /* The classification detection is a guess; this select is the human's
+     answer. An override is stored per account; "detected" clears it back to
+     the layered engine's verdict. */
+  function ecatControl(a) {
+    const cats = HR.config.get().employeeCategories || [];
+    const hasOverride = a.ecatSource === 'manual';
+    const sel = el('select', {
+      onchange: e => {
+        HR.config.setEcatOverride(a.key, e.target.value || null);
+        HR.app.rebuildBusy().then(() => {
+          const na = HR.app.state.model.accounts.get(a.key);
+          if (na) drawerAccount(na);
+        });
+      }
+    }, [el('option', { value: '', text: T('dr.ecatAuto'), selected: !hasOverride })]
+      .concat(cats.map(c => el('option', {
+        value: c.id, text: HR.config.labelOf(c), selected: hasOverride && a.ecat === c.id }))));
+    return el('span', { class: 'row' }, [
+      sel,
+      el('span', { class: 'note', text: T('dr.ecatSource.' + (a.ecatSource || 'default')) }),
+      el('a', { href: '#', text: T('dr.ecatSettings'),
+        onclick: e => { e.preventDefault(); closeDrawer(); HR.app.go('settings', { tab: 'classification' }); } })
+    ]);
+  }
+
   function drawerAccount(a, change) {
     const m = HR.app.state.model;
     const head = el('div', {}, [
@@ -3282,18 +3307,24 @@
     ]);
 
     const body = el('div', { class: 'stack' });
+    const peerAcc = a.peerKey ? m.accounts.get(a.peerKey) : null;
     body.appendChild(dl([
       [T('c.system'), el('a', { href: '#', text: a.system, onclick: e => { e.preventDefault(); const sys = m.systemList.find(x => x.name === a.system); if (sys) drawerSystem(sys, m); } })],
       [T('c.displayName'), a.displayName],
       [T('c.person'), a.personRaw || T('dr.notLinked')],
-      [T('c.empCategory'), a.ecatLabel ? a.ecatLabel + ' · ' + T('dr.ecatSource.' + (a.ecatSource || 'default')) : '—'],
+      [T('c.empCategory'), ecatControl(a)],
       [T('dr.permsHeld'), String(a.permCount)],
       [T('dr.unmanagedAssign'), String(a.unmanagedPermCount)],
       [T('dr.missingEnt'), String(a.missingCount)],
       [T('dr.monthlyCost'), U.fmtMoney(a.monthlyCost)],
-      [T('dr.closestPeer'), a.peerKey ? (m.accounts.get(a.peerKey) ? m.accounts.get(a.peerKey).userName : a.peerKey) + ' · ' + T('dr.overlap', { p: U.fmtPct(a.peerBest || 0, 0) }) : T('dr.noPeer')],
-      [T('dr.uniqueEnt'), a.uniquePerms && a.uniquePerms.length ? a.uniquePerms.map(p => p.name).join(', ') : '—']
+      [T('dr.closestPeer'), peerAcc
+        ? el('a', { href: '#', text: peerAcc.userName + ' · ' + T('dr.overlap', { p: U.fmtPct(a.peerBest || 0, 0) }),
+            onclick: e => { e.preventDefault(); drawerAccount(peerAcc); } })
+        : (a.peerKey ? a.peerKey + ' · ' + T('dr.overlap', { p: U.fmtPct(a.peerBest || 0, 0) }) : T('dr.noPeer'))]
     ]));
+
+    /* The person link, decidable in place: the matching workbench's card. */
+    if (HR.matching && m.vault) body.appendChild(HR.matching.personLinkCard(m, a));
 
     body.appendChild(card(T('dr.whyScore'), T('dr.componentsSum', { n: a.riskScore }) + (a.riskRaw > a.riskScore ? ' · ' + T('dr.cappedFrom', { n: Math.round(a.riskRaw) }) : '')
       + (a.ecatMult && a.ecatMult !== 1 ? ' · ' + T('dr.ecatApplied', { m: a.ecatMult, cat: a.ecatLabel }) : ''),
@@ -3309,6 +3340,9 @@
     }
 
     if (a.perms.length) {
+      /* "Unique" = not held by the closest peer; the flag lives in the table
+         instead of a second, redundant list of the same names above it. */
+      const uniqueKeys = new Set((a.uniquePerms || []).map(p => p.key));
       body.appendChild(card(T('dr.entitlements'), T('dr.groupsN', { n: a.perms.length }), HR.table.make({
         columns: [
           { key: 'name', label: T('ct.group') },
@@ -3316,8 +3350,12 @@
           { key: 'sensitivity', label: T('c.sensitivity'), num: true, render: r => U.fmtNum(r.sensitivity, 1) },
           { key: 'holderCount', label: T('c.holders'), num: true },
           { key: 'monthlyPrice', label: T('c.unitMo'), num: true, render: r => r.monthlyPrice ? U.fmtMoney(r.monthlyPrice) : '—' },
-          { key: 'riskScore', label: T('c.risk'), num: true }
-        ], rows: a.perms, pageSize: 15, exportName: 'account-' + a.userName + '-permissions',
+          { key: 'riskScore', label: T('c.risk'), num: true },
+          uniqueKeys.size ? { key: 'unique', label: T('dr.uniqueCol'),
+            value: r => uniqueKeys.has(r.key) ? 1 : 0,
+            render: r => uniqueKeys.has(r.key)
+              ? el('span', { class: 'pill', text: '✓' }) : document.createTextNode('') } : null
+        ].filter(Boolean), rows: a.perms, pageSize: 15, exportName: 'account-' + a.userName + '-permissions',
         initialSort: { key: 'riskScore', dir: -1 },
         search: (r, q) => r.name.toLowerCase().includes(q),
         onRowClick: p => drawerPermission(p, m)

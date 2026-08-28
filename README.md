@@ -316,8 +316,10 @@ clearly above baseline) to become HelloID business-rule conditions or connector 
 
 ## Field-mapping simulation
 
-Import the target connector's field mapping — the HelloID UI's mapping export or
-a connector repo's `fieldMapping.json` (Version v1) — and see it as data: per
+Import the target connector's field mapping — the HelloID UI's mapping export,
+a connector repo's `fieldMapping.json` (Version v1), or the older
+`accountMappings` shape still common in the HelloID-Provisioning repo — and see
+it as data: per
 field the mode per provisioning action (Fixed / Field / Complex / None),
 uniqueness, standard-vs-customized, with the decoded value or JavaScript in a
 drawer. Then the payoff: the **Simulation** tab evaluates every in-scope field
@@ -395,7 +397,10 @@ a time, easiest first, each row preselected to its best candidate with the alter
 in a dropdown and the checkbox as veto — glance, switch the odd one, approve the page,
 move on. Every page is one undoable batch in the match book; zero-candidate classes
 offer mark-all-ownerless. A vault `Accounts[]` reference is treated as recorded truth
-and never asks for approval.
+and never asks for approval. The same card lives in the account drawer as **Person
+link**: an unlinked account shows its top candidates right there, a linked one shows
+the attribution and the means to override it, and every decision reopens the drawer on
+the rebuilt account.
 
 ## Nedap ONS workbench
 

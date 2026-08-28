@@ -585,6 +585,20 @@
     return book;
   }
 
+  /* Per-account employee-category overrides: a human's answer to a detection
+     that guessed wrong, keyed by account. Only the corrected accounts live here. */
+  function getEcatOverrides() {
+    const cfg = load();
+    if (!cfg.ecatOverrides) cfg.ecatOverrides = {};
+    return cfg.ecatOverrides;
+  }
+
+  function setEcatOverride(key, id) {
+    const overrides = getEcatOverrides();
+    if (id) overrides[key] = id; else delete overrides[key];
+    save();
+  }
+
   function exportMatchBook() {
     return JSON.stringify({
       kind: MATCH_KIND, version: 1, exportedAt: new Date().toISOString(),
@@ -699,6 +713,7 @@
     severityOf, clone, labelOf, exportJson, importJson, looksLikeSettings, FILE_KIND,
     getMap, setMapping, exportMap, exportMapCsv, importMap, looksLikeProductMap, MAP_KIND,
     getMatchBook, setMatchDecision, exportMatchBook, importMatchBook, looksLikeMatchBook, MATCH_KIND,
+    getEcatOverrides, setEcatOverride,
     getNedapBook, setNedapBook, exportNedapBook, importNedapBook, looksLikeNedapBook, NEDAP_KIND,
     getNamegen, getPermNote, setPermNote };
 })(window.HR);
