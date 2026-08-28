@@ -168,30 +168,36 @@
       return card(T('mt.linkTitle'), null, body);
     }
 
-    if (row.person) {
+    /* A name-layer attribution is a proposal, not a settled link: it stays in
+       the candidate list below (marked, with Confirm), so it does not read as
+       decided. Manual, vault and recon attributions are recorded truth. */
+    const settled = !!row.person && row.layer !== 'name';
+    if (settled) {
       body.appendChild(el('div', { class: 'row' }, [
-        el('span', { class: 'pill ok', text: personLabel(row.person) }),
-        el('span', { class: 'pill', text: T('mt.layer.' + row.layer) }),
+        el('strong', { text: personLabel(row.person) }),
+        el('span', { class: 'pill ok', text: T('mt.layer.' + row.layer) }),
         row.evidence && row.evidence.length
           ? el('span', { class: 'note trunc', text: row.evidence.join(', ') }) : null
       ].filter(Boolean)));
     }
 
-    /* Candidates minus whoever is already linked: the switch options. */
-    const others = row.candidates.filter(c => !row.person || c.person.personId !== row.person.personId);
+    /* Candidates minus whoever is already settled: the switch options. */
+    const others = row.candidates.filter(c => !settled || c.person.personId !== row.person.personId);
     if (others.length) {
       body.appendChild(el('ul', { class: 'clean' }, others.map(c => {
+        const proposed = !settled && row.person && c.person.personId === row.person.personId;
         const li = el('li', { class: 'row' });
-        li.append(
+        li.append(...[
           el('strong', { text: personLabel(c.person) }),
+          proposed ? el('span', { class: 'pill ok', text: T('mt.proposed') }) : null,
           scoreBar(Math.min(100, c.points)),
           el('span', { class: 'note trunc', text: c.evidence.join(', ') }),
           el('span', { style: 'flex:1' }),
-          el('button', { class: 'btn sm primary', text: T(row.person ? 'mt.relink' : 'mt.confirm'),
+          el('button', { class: 'btn sm primary', text: T(settled ? 'mt.relink' : 'mt.confirm'),
             onclick: () => decide(a, c.person, 'confirmed', after) }),
           el('button', { class: 'btn sm', text: T('mt.reject'),
             onclick: () => reject(a, c.person, after) })
-        );
+        ].filter(Boolean));
         return li;
       })));
     } else if (!row.person) {
@@ -208,7 +214,8 @@
     ].filter(Boolean)));
 
     return card(T('mt.linkTitle'),
-      row.person ? T('mt.linkedNote') : T('mt.notLinkedNote'), body);
+      settled ? T('mt.linkedNote')
+        : row.person ? T('mt.proposalNote') : T('mt.notLinkedNote'), body);
   }
 
   /* ----------------------------------------------------------------- batch */
