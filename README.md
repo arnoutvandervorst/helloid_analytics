@@ -109,6 +109,14 @@ entry at the top of `js/changelog.js`, then regenerate the markdown with
 node make-changelog.js
 ```
 
+Each release is also tagged and published on GitHub:
+
+```bash
+git tag -a v<version> -m "<version>"
+git push origin --tags
+gh release create v<version> --title "<version>" --notes "<the entry's bullets>" --latest
+```
+
 ## Languages
 
 Everything — interface, findings, board report and the Markdown export — is available in
