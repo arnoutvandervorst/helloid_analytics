@@ -3,6 +3,12 @@
 Versions are CalVer (`YYYY.M.N` — Nth release of that month). This file is
 generated from `js/changelog.js` by `make-changelog.js`; edit there, not here.
 
+## [2026.8.14] — 2026-08-28
+
+- Brand accent color: one picker drives buttons, links, active tabs, the first chart color, the gradient marks and the printed report — in both themes.
+- Per-brand default theme (a visitor’s own toggle still wins) and a custom welcome line on the empty start page.
+- Board report extras: a contact row on the cover and a footer line printed on every sheet.
+
 ## [2026.8.13] — 2026-08-28
 
 - Storage transparency: a Settings › Storage tab lists everything the app keeps in the browser — settings and decisions, branding, UI preferences, the snapshot archive and the raw imported files — with live sizes, per-store clear buttons and clear-everything.

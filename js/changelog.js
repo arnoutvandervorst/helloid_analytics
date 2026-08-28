@@ -18,6 +18,14 @@
 
   const ENTRIES = [
     {
+      version: '2026.8.14', date: '2026-08-28',
+      changes: [
+        'Brand accent color: one picker drives buttons, links, active tabs, the first chart color, the gradient marks and the printed report — in both themes.',
+        'Per-brand default theme (a visitor’s own toggle still wins) and a custom welcome line on the empty start page.',
+        'Board report extras: a contact row on the cover and a footer line printed on every sheet.'
+      ]
+    },
+    {
       version: '2026.8.13', date: '2026-08-28',
       changes: [
         'Storage transparency: a Settings › Storage tab lists everything the app keeps in the browser — settings and decisions, branding, UI preferences, the snapshot archive and the raw imported files — with live sizes, per-store clear buttons and clear-everything.',

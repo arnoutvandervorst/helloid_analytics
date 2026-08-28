@@ -2309,8 +2309,9 @@
             clear: async () => { if (!confirm(T('st.resetConfirm'))) return; settingsDraft = null; HR.config.reset(); await HR.app.rebuildBusy(); HR.app.go('settings', { tab: 'storage' }); } },
           { name: T('st.storeBrand'), what: T('st.storeBrandWhat'), size: fmtSize(lsSize('hr.brand')),
             clear: () => { try { localStorage.removeItem('hr.brand'); } catch (e) { /* ignore */ }
-              Object.assign(HR.brand.state, { icon: null, logo: null, logoLight: null, productName: '', org: '', preparedBy: '', date: '' });
-              HR.brand.detectAuto().then(() => { HR.app.applyChrome(); HR.app.go('settings', { tab: 'storage' }); }); } },
+              Object.assign(HR.brand.state, { icon: null, logo: null, logoLight: null, productName: '', org: '', preparedBy: '', date: '',
+                accent: '', defaultTheme: '', welcome: '', footerText: '', contact: '' });
+              HR.brand.detectAuto().then(() => { HR.brand.apply(); HR.app.applyChrome(); HR.app.go('settings', { tab: 'storage' }); }); } },
           { name: T('st.storePrefs'), what: T('st.storePrefsWhat'),
             size: fmtSize(lsSize('hr.nav.v1') + lsSize('hr.theme') + lsSize('hr.lang')),
             clear: () => { ['hr.nav.v1', 'hr.theme', 'hr.lang'].forEach(k => { try { localStorage.removeItem(k); } catch (e) { /* ignore */ } });
@@ -2377,9 +2378,35 @@
             oninput: e => { HR.brand.set({ productName: e.target.value }); HR.app.applyChrome(); } });
           i.style.minWidth = '220px';
           return el('label', { class: 'inline' }, [document.createTextNode(T('st.productName')), i]);
+        })(),
+        (() => {
+          /* The accent: one color input; clearing returns to the app palette. */
+          const c = el('input', { type: 'color', value: /^#[0-9a-fA-F]{6}$/.test(B.accent) ? B.accent : '#2a78d6' });
+          c.addEventListener('input', () => { HR.brand.set({ accent: c.value }); HR.brand.apply(); });
+          const clr = el('button', { class: 'btn sm ghost', text: T('st.accentClear'),
+            onclick: () => { HR.brand.set({ accent: '' }); HR.brand.apply(); HR.app.go('settings', { tab: 'branding' }); } });
+          return el('label', { class: 'inline' }, [document.createTextNode(T('st.accent')), c, clr]);
+        })(),
+        (() => {
+          const s = el('select', {}, [
+            el('option', { value: '', text: T('st.defaultTheme.app'), selected: !B.defaultTheme }),
+            el('option', { value: 'light', text: T('st.defaultTheme.light'), selected: B.defaultTheme === 'light' }),
+            el('option', { value: 'dark', text: T('st.defaultTheme.dark'), selected: B.defaultTheme === 'dark' })
+          ]);
+          s.addEventListener('change', () => HR.brand.set({ defaultTheme: s.value }));
+          return el('label', { class: 'inline' }, [document.createTextNode(T('st.defaultTheme')), s]);
         })()
       ]),
-      el('p', { class: 'note', text: T('st.logoHint') })
+      el('div', { class: 'row', style: 'margin-top:10px' }, [
+        (() => {
+          const i = el('input', { type: 'text', value: B.welcome || '', placeholder: T('st.welcomePh'),
+            oninput: e => HR.brand.set({ welcome: e.target.value }) });
+          i.style.minWidth = '420px';
+          return el('label', { class: 'inline' }, [document.createTextNode(T('st.welcome')), i]);
+        })()
+      ]),
+      el('p', { class: 'note', text: T('st.logoHint') }),
+      el('p', { class: 'note', text: T('st.brandExtrasNote') })
     ]), aboutCard()]);
 
     f.appendChild(tabbed('settings', [

@@ -148,7 +148,11 @@ Files dropped in `assets/` are detected automatically and inlined into the singl
 bundle by `build.py`. Anything uploaded under **Settings → Report branding** is stored in
 the browser as a data URI, which is what makes it survive into the printed PDF. Each slot
 falls back to the next; with none at all the app shows a neutral gradient tile. The same
-panel sets the product name shown in the title bar.
+panel sets the product name shown in the title bar, the **accent color** (buttons, links,
+active tabs, the first chart color, the report — both themes), the **default theme** a
+fresh visitor gets (their own toggle wins afterwards) and a **welcome line** for the empty
+start page. The Board report page adds a **contact** row on the cover and a **footer
+line** printed on every sheet. All of it rides the settings export.
 
 ## Hosting it
 

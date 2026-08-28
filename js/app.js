@@ -75,6 +75,7 @@
   function emptyState(root) {
     root.appendChild(el('section', { class: 'empty-state' }, [
       el('h1', { text: T('empty.title') }),
+      HR.brand.state.welcome ? el('p', { text: HR.brand.state.welcome }) : null,
       el('p', { text: T('empty.body') }),
       el('p', {}, [
         el('button', { class: 'btn primary', text: T('empty.sources'), onclick: () => go('sources') }),
@@ -849,6 +850,10 @@
     try {
       const t = localStorage.getItem('hr.theme');
       if (t) document.documentElement.setAttribute('data-theme', t);
+      else if (HR.brand.state.defaultTheme) {
+        /* The brand's default; a visitor's own toggle, once made, wins. */
+        document.documentElement.setAttribute('data-theme', HR.brand.state.defaultTheme);
+      }
     } catch (e) { /* ignore */ }
 
     HR.nav.init();

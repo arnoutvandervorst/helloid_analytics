@@ -23,7 +23,12 @@
     productName: '',     // overrides the app title when set
     org: '',
     preparedBy: '',
-    date: ''             // empty = today, formatted in the active language
+    date: '',            // empty = today, formatted in the active language
+    accent: '',          // #rrggbb; drives --series-1/--series-7 in both themes
+    defaultTheme: '',    // ''|'light'|'dark' — the theme a fresh visitor gets
+    welcome: '',         // custom line on the empty landing state
+    footerText: '',      // printed on every board-report sheet
+    contact: ''          // contact line on the report cover
   };
 
   if (window.HR_BUNDLED_ICON) state.icon = window.HR_BUNDLED_ICON;
@@ -99,7 +104,14 @@
 
   const has = slot => !!FALLBACK[slot].map(s => state[s]).find(Boolean);
 
-  /** Repaint the top-bar mark and the favicon after a branding change. */
+  /** A darker companion for the gradient's far stop: the accent scaled in RGB. */
+  function shade(hex, factor) {
+    const n = parseInt(hex.slice(1), 16);
+    const ch = shift => Math.round(((n >> shift) & 255) * factor);
+    return '#' + [16, 8, 0].map(ch).map(v => v.toString(16).padStart(2, '0')).join('');
+  }
+
+  /** Repaint the top-bar mark, the favicon and the accent after a branding change. */
   function apply() {
     const host = document.querySelector('.brand .mark-host');
     if (host) { host.innerHTML = ''; host.appendChild(mark('icon', 'mark')); }
@@ -108,6 +120,16 @@
       let link = document.querySelector('link[rel="icon"]');
       if (!link) { link = HR.util.el('link', { rel: 'icon' }); document.head.appendChild(link); }
       link.href = src;
+    }
+    /* Inline on the root, so it outranks both theme blocks; --series-1 is the
+       one accent token everything reads (buttons, links, tabs, chart slot 1). */
+    const root = document.documentElement.style;
+    if (/^#[0-9a-fA-F]{6}$/.test(state.accent)) {
+      root.setProperty('--series-1', state.accent);
+      root.setProperty('--series-7', shade(state.accent, 0.62));
+    } else {
+      root.removeProperty('--series-1');
+      root.removeProperty('--series-7');
     }
   }
 

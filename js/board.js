@@ -120,8 +120,12 @@
 
   /* --------------------------------------------------------------- render */
 
+  /* Every sheet ends with the brand footer when one is set: a printed pack
+     gets split, and a single forwarded page should still carry the line. */
   const page = (children, cls) => el('section', { class: 'sheet ' + (cls || '') },
-    (HR.demo.isOn() ? [demoStrip()] : []).concat(children));
+    (HR.demo.isOn() ? [demoStrip()] : []).concat(children)
+      .concat(HR.brand.state.footerText
+        ? [el('div', { class: 'brand-foot', text: HR.brand.state.footerText })] : []));
 
   /* On every page rather than the cover alone: a board pack gets split, and a single
      forwarded page must still say the figures on it describe nobody. */
@@ -163,6 +167,8 @@
       field('bd.org', 'org', 'bd.orgPh'),
       field('bd.prepared', 'preparedBy', 'bd.preparedPh'),
       field('bd.date', 'date'),
+      field('bd.contact', 'contact', 'bd.contactPh'),
+      field('bd.footer', 'footerText', 'bd.footerPh'),
       el('span', { class: 'spacer' }),
       el('button', { class: 'btn primary', text: T('bd.exportPdf'), onclick: () => { HR.usage.exported('pdf-print'); window.print(); } }),
       el('span', { class: 'note', text: T('bd.printHint') })
@@ -190,6 +196,8 @@
           el('dt', { text: T('bd.org') }), el('dd', { text: B.org || '—' }),
           el('dt', { text: T('bd.date') }), el('dd', { text: HR.brand.reportDate() }),
           el('dt', { text: T('bd.prepared') }), el('dd', { text: B.preparedBy || '—' }),
+          B.contact ? el('dt', { text: T('bd.contact') }) : null,
+          B.contact ? el('dd', { text: B.contact }) : null,
           el('dt', { text: T('bd.source') }), el('dd', {
             text: ((st.snapshots.find(x => x.id === st.currentSnapshotId) || {}).name || '—') +
               ' · ' + T('bd.records', { n: U.fmtInt(s.rows) }) + ' · ' + m.systemList.map(x => x.name).join(', ')
