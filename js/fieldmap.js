@@ -283,18 +283,54 @@
     postalcode: 'postalCode', c: 'country', country: 'country',
     info: 'notes', description: 'description', initials: 'initials',
     usagelocation: 'usageLocation', accountenabled: 'enabled',
-    employeetype: 'employeeType'
+    employeetype: 'employeeType',
+    cn: 'cn', commonname: 'cn',
+    homedirectory: 'homeDirectory', homedrive: 'homeDrive',
+    scriptpath: 'scriptPath', profilepath: 'profilePath',
+    wwwhomepage: 'webPage', preferredlanguage: 'preferredLanguage',
+    othermails: 'otherMails'
   };
 
-  function currentValueOf(user, fieldName) {
-    const lower = fieldName.toLowerCase();
+  /* Never a directory attribute — a mapping writes it, but there is nothing
+     to diff against and nothing a collector could fetch. */
+  const NON_ATTRS = new Set(['password']);
+
+  /* Fields the source's API simply does not have: the collector emits '' for
+     them, which must read as a gap, not as "currently empty". */
+  const SOURCE_MISSING = {
+    entra: new Set(['initials', 'notes', 'description', 'homePhone', 'pager', 'ipPhone', 'poBox']),
+    ad: new Set(['usageLocation'])
+  };
+
+  /** The attribute a mapping field targets: the legacy "AdditionalFields." wrapper stripped, lowercased. */
+  const targetAttr = fieldName => String(fieldName || '').toLowerCase().replace(/^additionalfields\./, '');
+
+  /**
+   * @param {Object} [opts] { source: 'ad'|'entra', extras: Set<string> } — the
+   *   directory's origin and its collected -ExtraAttributes (lowercased). An
+   *   attribute in `extras` is known even when this user carries no value.
+   */
+  function currentValueOf(user, fieldName, opts) {
+    const lower = targetAttr(fieldName);
     const extM = /^extensionattribute(\d{1,2})$/.exec(lower);
     if (extM) {
       return { known: true, value: (user.extensionAttributes || {})['extensionAttribute' + extM[1]] };
     }
     const alias = ATTR_ALIASES[lower];
-    if (!alias) return { known: false };
-    return { known: true, value: user[alias] };
+    if (alias) {
+      const src = opts && opts.source;
+      if (src && SOURCE_MISSING[src] && SOURCE_MISSING[src].has(alias)) return { known: false };
+      /* The key must actually exist on the collected user: an export made
+         before the collector learned this field is a gap, not an empty value. */
+      if (alias in user) return { known: true, value: user[alias] };
+      return { known: false };
+    }
+    /* A re-collect with -ExtraAttributes lands here, under the raw name. */
+    const extra = user.extra || {};
+    const hit = Object.keys(extra).find(k => k.toLowerCase() === lower);
+    if (hit !== undefined) return { known: true, value: extra[hit] };
+    if (opts && opts.extras && opts.extras.has(lower)) return { known: true, value: undefined };
+    return { known: false };
   }
 
   const normStr = v => String(v === undefined || v === null ? '' : v).trim();
@@ -312,6 +348,41 @@
       return normStr(current).toLowerCase() === normStr(desired).toLowerCase();
     }
     return c === d;
+  }
+
+  /**
+   * The collection-gap report: which of the mapping's target attributes the
+   * loaded directory cannot answer for, and what a re-collect would need.
+   * @returns {{gaps: Array<{attr, fields, fixable}>, extras: string[]}}
+   *   `extras` is the -ExtraAttributes list for the collector; `fixable:false`
+   *   marks attributes the source's API simply does not have.
+   */
+  function coverage(mapping, dir) {
+    if (!mapping || !dir) return { gaps: [], extras: [] };
+    const cvOpts = {
+      source: dir.source,
+      extras: new Set(((dir.meta && dir.meta.extraAttributes) || []).map(s => String(s).toLowerCase()))
+    };
+    const probe = dir.users[0] || {};
+    const byAttr = new Map();
+    for (const f of mapping.fields) {
+      const lower = targetAttr(f.name);
+      if (NON_ATTRS.has(lower)) continue;
+      if (currentValueOf(probe, f.name, cvOpts).known) continue;
+      const alias = ATTR_ALIASES[lower];
+      const fixable = !(alias && SOURCE_MISSING[dir.source] && SOURCE_MISSING[dir.source].has(alias));
+      /* An aliased gap means the export predates the current collector — the
+         stock script already covers it. Only unaliased attrs need -ExtraAttributes.
+         Keep the mapping's own casing for display and for that list. */
+      if (!byAttr.has(lower)) {
+        byAttr.set(lower, { attr: f.name.replace(/^AdditionalFields\./i, ''), fields: [], fixable,
+          needsExtra: fixable && !alias && !/^extensionattribute\d{1,2}$/.test(lower) });
+      }
+      byAttr.get(lower).fields.push(f.name);
+    }
+    const gaps = [...byAttr.values()];
+    return { gaps, extras: gaps.filter(g => g.needsExtra).map(g => g.attr),
+      fixableCount: gaps.filter(g => g.fixable).length };
   }
 
   function simulate(mapping, state, opts) {
@@ -333,10 +404,14 @@
       .map(f => ({ field: f, set: actionFor(f, action) }))
       .filter(x => x.set && x.set.mode !== 'None');
 
+    const cvOpts = {
+      source: dir.source,
+      extras: new Set(((dir.meta && dir.meta.extraAttributes) || []).map(s => String(s).toLowerCase()))
+    };
     const rows = [];
     const perField = new Map(inScope.map(x => [x.field.name,
       { name: x.field.name, mode: x.set.mode, evaluated: 0, changed: 0, errors: 0,
-        noCounterpart: !currentValueOf(dir.users[0] || {}, x.field.name).known }]));
+        noCounterpart: !currentValueOf(dir.users[0] || {}, x.field.name, cvOpts).known }]));
     let joined = 0;
 
     for (const raw of persons) {
@@ -374,7 +449,7 @@
           values[field.name] = { error: res.error };
           continue;
         }
-        const cur = currentValueOf(user, field.name);
+        const cur = currentValueOf(user, field.name, cvOpts);
         const changed = cur.known ? !sameValue(cur.value, res.value) : false;
         if (changed) { agg.changed++; anyChange = true; }
         values[field.name] = {
@@ -401,5 +476,5 @@
 
   HR.fieldmap = { looksLikeFieldMapping, looksLikeSourceMapping, parse, actionFor,
     evaluateField, personObjects, accountsFor, simulate, wrapComplex,
-    deleteDiacriticalMarks, ATTR_ALIASES };
+    deleteDiacriticalMarks, ATTR_ALIASES, targetAttr, coverage, currentValueOf };
 })(window.HR);

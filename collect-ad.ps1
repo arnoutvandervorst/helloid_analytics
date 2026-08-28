@@ -19,16 +19,24 @@
   Optional OU to limit the export, e.g. "OU=Employees,DC=corp,DC=local".
   Disabled accounts are always included — they are half the analysis.
 
+.PARAMETER ExtraAttributes
+  Additional LDAP attribute names to collect verbatim, e.g. when a HelloID
+  field mapping writes attributes outside the built-in set. They land under
+  "extra" on each user; the analytics page's field-mapping view names the
+  attributes it needs and can generate this list.
+
 .EXAMPLE
   .\collect-ad.ps1
   .\collect-ad.ps1 -SearchBase "OU=Employees,DC=corp,DC=local" -OutFile corp.json
+  .\collect-ad.ps1 -ExtraAttributes carLicense,departmentNumber
 #>
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '',
   Justification = 'Interactive console script; progress and the PII warning belong on the host, never in the pipeline.')]
 [CmdletBinding()]
 param(
   [string]$OutFile = "directory-ad.json",
-  [string]$SearchBase = ""
+  [string]$SearchBase = "",
+  [string[]]$ExtraAttributes = @()
 )
 
 $ErrorActionPreference = 'Stop'
@@ -51,8 +59,12 @@ $userProps = @(
   # Telephones tab, incl. the Notes field ("info")
   'telephoneNumber','homePhone','mobile','facsimileTelephoneNumber','pager','ipPhone','info',
   # Address tab
-  'streetAddress','postOfficeBox','l','st','postalCode','c','co'
+  'streetAddress','postOfficeBox','l','st','postalCode','c','co',
+  # Common provisioning-mapping targets (Profile tab and the object name)
+  'cn','homeDirectory','homeDrive','scriptPath','profilePath','wWWHomePage'
 ) + $extAttrs
+$ExtraAttributes = @($ExtraAttributes | Where-Object { $_ -and $userProps -notcontains $_ } | Select-Object -Unique)
+$userProps += $ExtraAttributes
 $groupProps = @(
   'name','sAMAccountName','description','groupCategory','groupScope',
   'managedBy','member','distinguishedName','whenCreated','mail'
@@ -109,6 +121,13 @@ $users = foreach ($u in $adUsers) {
   if ($shaped % 500 -eq 0) { Write-Step "  $shaped / $($adUsers.Count) users" }
   $ext = [ordered]@{}
   foreach ($ea in $extAttrs) { if ($u.$ea) { $ext[$ea] = [string]$u.$ea } }
+  $extra = [ordered]@{}
+  foreach ($name in $ExtraAttributes) {
+    $v = $u.$name
+    if ($null -ne $v -and "$v" -ne '') {
+      $extra[$name] = if ($v -is [System.Collections.IEnumerable] -and $v -isnot [string]) { @(@($v) | ForEach-Object { [string]$_ }) } else { [string]$v }
+    }
+  }
   $mgr = if ($u.manager -and $userDns.ContainsKey($u.manager)) { $userDns[$u.manager] } else { $null }
   $expires = ConvertFrom-FileTime $u.accountExpires
   [ordered]@{
@@ -151,7 +170,14 @@ $users = foreach ($u in $adUsers) {
     ou          = ParentOu $u.DistinguishedName
     managerId   = [string]$u.manager
     managerName = if ($mgr) { [string]$mgr.displayName } else { '' }
+    cn          = [string]$u.cn
+    homeDirectory = [string]$u.homeDirectory
+    homeDrive   = [string]$u.homeDrive
+    scriptPath  = [string]$u.scriptPath
+    profilePath = [string]$u.profilePath
+    webPage     = [string]$u.wWWHomePage
     extensionAttributes = $ext
+    extra       = $extra
   }
 }
 
@@ -191,6 +217,7 @@ $envelope = [ordered]@{
   collectedAt = (Get-Date).ToUniversalTime().ToString('o')
   domain      = (Get-ADDomain).DNSRoot
   searchBase  = $SearchBase
+  extraAttributes = @($ExtraAttributes)
   users       = @($users)
   groups      = @($groups)
 }

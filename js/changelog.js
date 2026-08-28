@@ -18,6 +18,14 @@
 
   const ENTRIES = [
     {
+      version: '2026.8.15', date: '2026-08-28',
+      changes: [
+        'The field-mapping simulation names its gaps: a collection-gap card lists every mapped attribute the loaded directory never collected, separating what a re-collect fixes from what the source API does not have — with the exact command line and a pre-filled collector download.',
+        'Both collectors take -ExtraAttributes for attributes outside their built-in set, and the built-in set widened (AD: cn, homeDirectory, homeDrive, scriptPath, profilePath, wWWHomePage; Entra: preferredLanguage, otherMails).',
+        'Fixed: legacy accountMappings field names (AdditionalFields.*) never matched the attribute aliases, so every such field wrongly read as having no counterpart.'
+      ]
+    },
+    {
       version: '2026.8.14', date: '2026-08-28',
       changes: [
         'Brand accent color: one picker drives buttons, links, active tabs, the first chart color, the gradient marks and the printed report — in both themes.',

@@ -211,6 +211,7 @@
         tenant: data.tenant || null,
         collectedAt: data.collectedAt ? Date.parse(data.collectedAt) || null : null,
         domain: str(data.domain),
+        extraAttributes: Array.isArray(data.extraAttributes) ? data.extraAttributes.map(String) : [],
         userCount: users.length,
         groupCount: groups.length,
         rowCount: records.length,

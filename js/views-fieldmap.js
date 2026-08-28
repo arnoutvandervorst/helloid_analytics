@@ -71,6 +71,8 @@
     if (fm.legacy) {
       wrap.appendChild(el('p', { class: 'note', style: 'margin-top:10px', text: T('fm.legacyNote') }));
     }
+    const gap = gapCard(fm);
+    if (gap) { gap.style.marginTop = '14px'; wrap.appendChild(gap); }
 
     wrap.appendChild(el('div', { style: 'margin-top:14px' }, card(null, null, HR.table.make({
       columns: [
@@ -145,6 +147,56 @@
     }))));
   }
 
+  /* The collection gap, made loud: which mapped attributes the loaded
+     directory cannot answer for — and the re-collect that closes the hole. */
+  function gapCard(fm) {
+    const dir = HR.app.state.directory;
+    if (!dir) return null;
+    const cov = HR.fieldmap.coverage(fm, dir);
+    if (!cov.gaps.length) return null;
+    const script = dir.source === 'entra' ? 'collect-entra.ps1' : 'collect-ad.ps1';
+    const body = el('div', { class: 'stack' });
+    body.appendChild(el('ul', { class: 'clean' }, cov.gaps.map(g => {
+      const li = el('li', { class: 'row' });
+      li.append(
+        el('strong', { class: 'mono', text: g.attr }),
+        el('span', { class: 'note trunc', text: g.fields.join(', ') }),
+        el('span', { style: 'flex:1' }),
+        g.fixable
+          ? el('span', { class: 'pill warn', text: T('fm.gapFixable') })
+          : el('span', { class: 'pill muted', text: T('fm.gapNotInSource', { source: dir.system }) })
+      );
+      return li;
+    })));
+    if (cov.fixableCount) {
+      const pre = el('pre', { class: 'mono' });
+      pre.style.cssText = 'white-space:pre-wrap;word-break:break-all;font-size:12px;margin:6px 0';
+      pre.textContent = '.\\' + script +
+        (cov.extras.length ? ' -ExtraAttributes ' + cov.extras.join(',') : '');
+      body.appendChild(el('p', { class: 'note', text: T('fm.gapRecollect') }));
+      body.appendChild(pre);
+      body.appendChild(el('div', { class: 'row' },
+        el('button', { class: 'btn sm primary', text: T('fm.gapDownload', { script }),
+          onclick: async () => {
+            try {
+              const res = await fetch(script);
+              if (!res.ok || (res.headers.get('content-type') || '').includes('html')) throw new Error('not served');
+              const text = await res.text();
+              let out = text;
+              if (cov.extras.length) {
+                const stock = '[string[]]$ExtraAttributes = @()';
+                if (!text.includes(stock)) throw new Error('unexpected script');
+                out = text.replace(stock,
+                  '[string[]]$ExtraAttributes = @(' + cov.extras.map(a => "'" + a.replace(/'/g, '') + "'").join(',') + ')');
+              }
+              HR.usage.exported('collector-mapping-script');
+              U.download(script.replace('.ps1', '-mapping.ps1'), out, 'text/plain;charset=utf-8');
+            } catch (e) { U.toast(T('fm.gapFetchFail'), 6000); }
+          } })));
+    }
+    return card(T('fm.gapTitle', { n: cov.gaps.length }), T('fm.gapNote'), body);
+  }
+
   function simulationTab(fm) {
     const st = HR.app.state;
     const wrap = el('div', {});
@@ -152,6 +204,8 @@
       wrap.appendChild(el('p', { class: 'note', text: T('fm.needsDirectory') }));
       return wrap;
     }
+    const gap = gapCard(fm);
+    if (gap) wrap.appendChild(gap);
 
     const stamp = [st.importedAt.fieldMapping, st.importedAt.directory, st.importedAt.vault].join('|');
     const results = el('div', { style: 'margin-top:14px' });

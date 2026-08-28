@@ -381,6 +381,14 @@ reconstructs Persons from the collected directory and says so. Source mappings
 (HR → person model) are recognised and refused with a pointer to the right
 export.
 
+The simulation also audits its own footing: a **collection gap** card names every
+mapped attribute the loaded directory never collected — their current value is
+unknown and the diff has a hole there — and distinguishes what a re-collect fixes
+from what the source's API simply does not have (Entra has no `initials`, `info`
+or `description`). Both collectors take `-ExtraAttributes` for attributes outside
+their built-in set (they land under `extra` on each user), and the gap card
+offers the exact command line plus a pre-filled script download.
+
 ## Classic role model
 
 The old role-mining report's presentation, ported and fed live: attribute roles

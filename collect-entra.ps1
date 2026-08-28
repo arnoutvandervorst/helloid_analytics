@@ -36,16 +36,24 @@
 .PARAMETER IncludeSignInActivity
   Also read each user's last sign-in (adds AuditLog.Read.All; needs Entra ID P1).
 
+.PARAMETER ExtraAttributes
+  Additional Graph user property names to collect verbatim, e.g. when a HelloID
+  field mapping writes attributes outside the built-in set. They land under
+  "extra" on each user; the analytics page's field-mapping view names the
+  attributes it needs and can generate this list.
+
 .EXAMPLE
   .\collect-entra.ps1
   .\collect-entra.ps1 -IncludeSignInActivity
+  .\collect-entra.ps1 -ExtraAttributes ageGroup,employeeOrgData
 #>
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '',
   Justification = 'Interactive console script; the scope listing, progress and the PII warning belong on the host, never in the pipeline.')]
 [CmdletBinding()]
 param(
   [string]$OutFile = "directory-entra.json",
-  [switch]$IncludeSignInActivity
+  [switch]$IncludeSignInActivity,
+  [string[]]$ExtraAttributes = @()
 )
 
 $ErrorActionPreference = 'Stop'
@@ -77,9 +85,13 @@ $userProps = @(
   'usageLocation','onPremisesSamAccountName','onPremisesSyncEnabled',
   'onPremisesDistinguishedName','onPremisesExtensionAttributes','assignedLicenses',
   'businessPhones','mobilePhone','faxNumber','streetAddress','city','state',
-  'postalCode','country'
+  'postalCode','country',
+  # Common provisioning-mapping targets
+  'preferredLanguage','otherMails'
 )
 if ($IncludeSignInActivity) { $userProps += 'signInActivity' }
+$ExtraAttributes = @($ExtraAttributes | Where-Object { $_ -and $userProps -notcontains $_ } | Select-Object -Unique)
+$userProps += $ExtraAttributes
 
 Write-Step "Reading users (paged; large tenants take a while)..."
 $mgUsers = Get-MgUser -All -Property ($userProps -join ',') -ExpandProperty 'manager($select=id,displayName)' -ConsistencyLevel eventual -CountVariable c
@@ -117,6 +129,19 @@ $users = foreach ($u in $mgUsers) {
   $lastSignIn = $null
   if ($IncludeSignInActivity -and $u.SignInActivity -and $u.SignInActivity.LastSignInDateTime) {
     $lastSignIn = $u.SignInActivity.LastSignInDateTime.ToUniversalTime().ToString('o')
+  }
+  $extra = [ordered]@{}
+  foreach ($name in $ExtraAttributes) {
+    # Typed SDK property first; anything Graph returned outside the typed model
+    # lands in AdditionalProperties under its camelCase name.
+    $v = $u.$name
+    if ($null -eq $v -and $u.AdditionalProperties) {
+      $k = @($u.AdditionalProperties.Keys) | Where-Object { $_ -ieq $name } | Select-Object -First 1
+      if ($k) { $v = $u.AdditionalProperties[$k] }
+    }
+    if ($null -ne $v -and "$v" -ne '') {
+      $extra[$name] = if ($v -is [System.Collections.IEnumerable] -and $v -isnot [string]) { @(@($v) | ForEach-Object { [string]$_ }) } else { [string]$v }
+    }
   }
   [ordered]@{
     id          = $u.Id
@@ -160,7 +185,10 @@ $users = foreach ($u in $mgUsers) {
     managerId   = if ($u.Manager) { [string]$u.Manager.Id } else { '' }
     managerName = if ($u.Manager -and $u.Manager.AdditionalProperties) { [string]$u.Manager.AdditionalProperties['displayName'] } else { '' }
     licenses    = $licenses
+    preferredLanguage = [string]$u.PreferredLanguage
+    otherMails  = @(@($u.OtherMails) | Where-Object { $_ })
     extensionAttributes = $ext
+    extra       = $extra
   }
 }
 
@@ -204,6 +232,7 @@ $envelope = [ordered]@{
   collectedAt = (Get-Date).ToUniversalTime().ToString('o')
   domain      = [string]$org.DisplayName
   searchBase  = ''
+  extraAttributes = @($ExtraAttributes)
   # The connector intake's connection facts, straight from the tenant.
   tenant      = [ordered]@{
     tenantId        = [string]$org.Id
