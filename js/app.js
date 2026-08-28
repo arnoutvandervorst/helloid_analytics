@@ -775,7 +775,16 @@
   function applyChrome() {
     document.documentElement.lang = HR.i18n.lang;
     document.title = (HR.brand.state.productName || T('app.title'));
-    document.getElementById('topbar-title').textContent = HR.brand.state.productName || T('app.title');
+    const titleEl = document.getElementById('topbar-title');
+    titleEl.textContent = HR.brand.state.productName || T('app.title');
+    /* The version rides on the title, rebuilt here because the line above
+       wipes it on every chrome refresh. Clicking it opens the changelog. */
+    const ver = document.createElement('span');
+    ver.id = 'topbar-ver';
+    ver.textContent = 'v' + HR.changelog.VERSION;
+    ver.title = T('app.versionTitle');
+    ver.onclick = () => HR.viewkit.drawerChangelog();
+    titleEl.append(' ', ver);
     document.getElementById('btn-import-label').textContent = T('app.import');
     document.getElementById('btn-theme').title = T('app.theme');
     const repo = document.getElementById('link-repo');

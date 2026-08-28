@@ -2260,6 +2260,15 @@
         ])
       ]);
     };
+    const aboutCard = () => card(T('st.about'), null, [
+      dl([
+        [T('st.productName'), HR.brand.state.productName || T('app.title')],
+        [T('st.aboutVersion'), 'v' + HR.changelog.VERSION]
+      ]),
+      el('div', { class: 'row', style: 'margin-top:10px' },
+        el('button', { class: 'btn sm', text: T('st.viewChangelog'), onclick: () => drawerChangelog() }))
+    ]);
+
     const brandingTab = () => grid([card(T('st.branding'), T('st.brandingNote'), [
       el('div', { class: 'brand-slots' }, [
         slotRow('icon', 'st.slotIcon', 'logo-sample'),
@@ -2275,7 +2284,7 @@
         })()
       ]),
       el('p', { class: 'note', text: T('st.logoHint') })
-    ])]);
+    ]), aboutCard()]);
 
     f.appendChild(tabbed('settings', [
       { id: 'classification', label: T('st.tab.classification'), build: classificationTab },
@@ -3267,6 +3276,21 @@
     document.getElementById('drawer-scrim').hidden = true;
   }
 
+  /* Release history straight from js/changelog.js — the same data the
+     generated CHANGELOG.md is written from. */
+  function drawerChangelog() {
+    const head = el('div', {}, [
+      el('h2', { text: T('app.changelog') }),
+      el('div', { class: 'row' }, el('span', { class: 'pill', text: 'v' + HR.changelog.VERSION }))
+    ]);
+    const body = el('div', { class: 'stack' });
+    HR.changelog.ENTRIES.forEach(entry => {
+      body.appendChild(card(entry.version, entry.date,
+        el('ul', { class: 'clean' }, entry.changes.map(c => el('li', { text: c })))));
+    });
+    openDrawer(head, body);
+  }
+
   /* The classification detection is a guess; this select is the human's
      answer. An override is stored per account; "detected" clears it back to
      the layered engine's verdict. */
@@ -3591,6 +3615,6 @@
   HR.viewkit = {
     card, tile, scoreBar, dl, partialNotice, syntheticVaultNotice, personRow, peopleIndex, entitlementTable,
     openDrawer, closeDrawer, drawerAccount, drawerPermission, drawerVaultPerson, drawerSystem,
-    STATE_SEV, stateLabel, offsetText, sourcesCard, tabbed
+    drawerChangelog, STATE_SEV, stateLabel, offsetText, sourcesCard, tabbed
   };
 })(window.HR);

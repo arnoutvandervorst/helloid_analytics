@@ -17,7 +17,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 DIST = ROOT / 'dist'
-VERSION = '1.0.0'
+# The product version lives in js/changelog.js (newest entry); read it from
+# there so the zip name and generator meta never drift from what the app shows.
+VERSION = re.search(r"version:\s*'([^']+)'",
+                    (Path(__file__).resolve().parent / 'js' / 'changelog.js').read_text()).group(1)
 NAME = 'helloid-analytics'
 
 FOLDER_FILES = [

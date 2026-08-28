@@ -91,11 +91,23 @@ produces two things in `dist/`:
 | Artefact | What it is | Use it when |
 | --- | --- | --- |
 | `reconciliation-analytics.html` | ~270 KB single file, every script, stylesheet and the logo inlined | mailing it, dropping it on a share, handing it to a customer. Double-click opens it; drag the CSV on. Snapshots stay in the tab unless it is served over http. |
-| `reconciliation-analytics-1.0.0.zip` | the folder form, plus `serve.sh` | the customer wants diffing across sessions, or you want to keep editing it |
+| `helloid-analytics-<version>.zip` | the folder form, plus `serve.sh` | the customer wants diffing across sessions, or you want to keep editing it |
 
 Both are static: no install, no runtime, no network access. If you want it permanently
 available for a team, the folder can also be dropped on any static host (an internal IIS
 vdir, S3, a share served over http) — there is no back end to deploy.
+
+## Versioning
+
+Versions are CalVer: `YYYY.M.N` — the Nth release of that month. The source of
+truth is `js/changelog.js` (newest entry on top); the topbar version, the About
+card in Settings, the in-app "What's changed" drawer, `build.py`'s zip name and
+[CHANGELOG.md](CHANGELOG.md) all read from it. When a change set ships: add an
+entry at the top of `js/changelog.js`, then regenerate the markdown with
+
+```bash
+node make-changelog.js
+```
 
 ## Languages
 
