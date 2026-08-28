@@ -28,3 +28,7 @@ DEPLOY-NUC.md
 # Session state and OS noise
 .remember/
 .DS_Store
+
+# Python bytecode.
+__pycache__/
+*.pyc
