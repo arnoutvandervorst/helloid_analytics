@@ -2260,6 +2260,102 @@
         ])
       ]);
     };
+    /* ---- storage: what this app keeps in the browser, and the off switch */
+    const lsSize = key => {
+      try { const v = localStorage.getItem(key); return v ? v.length : 0; } catch (e) { return 0; }
+    };
+    const fmtSize = n => n >= 1024 ? (n / 1024).toFixed(1) + ' KB' : (n ? n + ' B' : '—');
+
+    const storageTab = () => {
+      const wrap = el('div', { class: 'stack' });
+      const on = !HR.storageMode || HR.storageMode.enabled();
+
+      /* Master switch. Off = wipe + every save path becomes a no-op. */
+      const toggle = el('input', { type: 'checkbox' });
+      toggle.checked = on;
+      toggle.addEventListener('change', () => {
+        if (!toggle.checked) {
+          if (!confirm(T('st.storageOffConfirm'))) { toggle.checked = true; return; }
+          HR.storageMode.set(false);
+          U.toast(T('st.storageOffDone'), 6000);
+        } else {
+          HR.storageMode.set(true);
+          U.toast(T('st.storageOnDone'), 4000);
+        }
+        HR.app.go('settings', { tab: 'storage' });
+      });
+      const usage = el('input', { type: 'checkbox' });
+      usage.checked = !HR.storageMode || HR.storageMode.usageAllowed();
+      usage.addEventListener('change', () => HR.storageMode.setUsage(usage.checked));
+
+      wrap.appendChild(card(T('st.storageTitle'), T('st.storageNote'), [
+        el('label', { class: 'inline' }, [toggle, document.createTextNode(' ' + T('st.storageToggle'))]),
+        el('p', { class: 'note', text: T('st.storageFlagNote') }),
+        el('label', { class: 'inline', style: 'margin-top:8px' }, [usage, document.createTextNode(' ' + T('st.usageToggle'))]),
+        el('p', { class: 'note', text: T('st.usageNote') })
+      ]));
+
+      /* The inventory: every store, what it holds, how big, and its clear. */
+      const body = el('div');
+      const drawRows = async () => {
+        const snaps = await HR.store.list().catch(() => []);
+        const ctx = await HR.store.loadContext().catch(() => null);
+        const rawKinds = ctx
+          ? ['recon', 'vault', 'rules', 'granted', 'history', 'products', 'assignments', 'directory', 'fieldMapping']
+              .filter(k => ctx[k]).length
+          : 0;
+        const rows = [
+          { name: T('st.storeConfig'), what: T('st.storeConfigWhat'), size: fmtSize(lsSize('hr.config.v1')),
+            clear: async () => { if (!confirm(T('st.resetConfirm'))) return; settingsDraft = null; HR.config.reset(); await HR.app.rebuildBusy(); HR.app.go('settings', { tab: 'storage' }); } },
+          { name: T('st.storeBrand'), what: T('st.storeBrandWhat'), size: fmtSize(lsSize('hr.brand')),
+            clear: () => { try { localStorage.removeItem('hr.brand'); } catch (e) { /* ignore */ }
+              Object.assign(HR.brand.state, { icon: null, logo: null, logoLight: null, productName: '', org: '', preparedBy: '', date: '' });
+              HR.brand.detectAuto().then(() => { HR.app.applyChrome(); HR.app.go('settings', { tab: 'storage' }); }); } },
+          { name: T('st.storePrefs'), what: T('st.storePrefsWhat'),
+            size: fmtSize(lsSize('hr.nav.v1') + lsSize('hr.theme') + lsSize('hr.lang')),
+            clear: () => { ['hr.nav.v1', 'hr.theme', 'hr.lang'].forEach(k => { try { localStorage.removeItem(k); } catch (e) { /* ignore */ } });
+              HR.app.go('settings', { tab: 'storage' }); } },
+          { name: T('st.storeSnapshots'), what: T('st.storeSnapshotsWhat', { n: U.fmtInt(snaps.length) }), size: snaps.length ? U.fmtInt(snaps.length) : '—',
+            clear: async () => { if (!confirm(T('st.clearSnapshotsConfirm', { n: U.fmtInt(snaps.length) }))) return;
+              await HR.store.clear(); await HR.app.refreshSnapshots(); HR.app.go('settings', { tab: 'storage' }); } },
+          { name: T('st.storeContext'), what: T('st.storeContextWhat', { n: U.fmtInt(rawKinds) }), size: rawKinds ? U.fmtInt(rawKinds) : '—',
+            clear: async () => { if (!confirm(T('st.clearContextConfirm'))) return;
+              await HR.store.clearContext(); HR.app.go('settings', { tab: 'storage' }); } }
+        ];
+        const t = el('table', { class: 'tbl' });
+        t.appendChild(el('thead', {}, el('tr', {}, [
+          el('th', { class: 'no-sort', text: T('st.storeCol') }),
+          el('th', { class: 'no-sort', text: T('st.storeWhatCol') }),
+          el('th', { class: 'no-sort num', text: T('st.storeSizeCol') }),
+          el('th', { class: 'no-sort' })
+        ])));
+        const tb = el('tbody');
+        rows.forEach(r => tb.appendChild(el('tr', {}, [
+          el('td', {}, el('strong', { text: r.name })),
+          el('td', {}, el('span', { class: 'note', text: r.what })),
+          el('td', { class: 'num', text: r.size }),
+          el('td', {}, el('button', { class: 'btn sm danger', text: T('st.storeClear'), onclick: r.clear }))
+        ])));
+        t.appendChild(tb);
+        body.innerHTML = '';
+        body.appendChild(el('div', { class: 'tbl-wrap' }, t));
+        body.appendChild(el('div', { class: 'row', style: 'margin-top:10px' }, [
+          el('button', { class: 'btn danger', text: T('st.clearAll'), onclick: async () => {
+            if (!confirm(T('st.clearAllConfirm'))) return;
+            HR.storageMode.wipe();
+            await HR.app.refreshSnapshots();
+            U.toast(T('st.clearAllDone'), 5000);
+            HR.app.go('settings', { tab: 'storage' });
+          } }),
+          el('span', { style: 'flex:1' }),
+          el('span', { class: 'note', text: T('st.storageExports') })
+        ]));
+      };
+      drawRows();
+      wrap.appendChild(card(T('st.storesTitle'), T('st.storesNote'), body));
+      return wrap;
+    };
+
     const aboutCard = () => card(T('st.about'), null, [
       dl([
         [T('st.productName'), HR.brand.state.productName || T('app.title')],
@@ -2291,7 +2387,8 @@
       { id: 'pricing', label: T('st.tab.pricing'), build: pricingTab },
       { id: 'weights', label: T('st.tab.weights'), build: weightsTab },
       { id: 'matching', label: T('st.tab.matching'), build: matchingTab },
-      { id: 'branding', label: T('st.tab.branding'), build: brandingTab }
+      { id: 'branding', label: T('st.tab.branding'), build: brandingTab },
+      { id: 'storage', label: T('st.tab.storage'), build: storageTab }
     ], params));
     return f;
   }

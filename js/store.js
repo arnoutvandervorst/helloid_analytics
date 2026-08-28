@@ -16,6 +16,13 @@
   let usingMemory = false;
 
   function open() {
+    /* Storage off: reject before touching the cached connection, so every
+       caller drops into its existing in-memory fallback. Not cached, so
+       re-enabling works without a reload. */
+    if (HR.storageMode && !HR.storageMode.enabled()) {
+      usingMemory = true;
+      return Promise.reject(new Error('storage disabled'));
+    }
     if (dbPromise) return dbPromise;
     dbPromise = new Promise((resolve, reject) => {
       let req;
@@ -141,6 +148,22 @@
     return snaps.length;
   }
 
+  /** The kill-switch's half: close the connection, delete the database, and
+      forget the in-memory copies so the archive reads as empty afterwards. */
+  async function wipeDb() {
+    if (dbPromise) {
+      try { const db = await dbPromise; if (db) db.close(); } catch (e) { /* never opened */ }
+    }
+    dbPromise = null;
+    memory = new Map();
+    contextMemory = null;
+    await new Promise(res => {
+      let req;
+      try { req = indexedDB.deleteDatabase(DB_NAME); } catch (e) { return res(); }
+      req.onsuccess = req.onerror = req.onblocked = () => res();
+    });
+  }
+
   HR.store = { list, get, put, remove, clear, makeSnapshot, exportAll, importJSON, isMemory,
-    saveContext, loadContext, clearContext };
+    saveContext, loadContext, clearContext, wipeDb };
 })(window.HR);

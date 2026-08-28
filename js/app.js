@@ -129,7 +129,14 @@
   const rebuildBusy = () => withBusy(T('busy.recalc'), () => rebuild());
 
   async function importText(text, fileName, opts) {
-    return withBusy(T('busy.import'), () => importTextNow(text, fileName, opts));
+    const result = await withBusy(T('busy.import'), () => importTextNow(text, fileName, opts));
+    /* First import that persists: say so, once. Silence is the one thing the
+       storage model is not allowed to have. */
+    if (HR.storageMode && HR.storageMode.enabled() && !HR.storageMode.noticeSeen()) {
+      HR.storageMode.markNotice();
+      U.toast(T('toast.storageNotice'), 10000);
+    }
+    return result;
   }
 
   async function importTextNow(text, fileName, opts) {
@@ -835,7 +842,9 @@
       const cur = document.documentElement.getAttribute('data-theme');
       const next = cur === 'dark' ? 'light' : 'dark';
       document.documentElement.setAttribute('data-theme', next);
-      try { localStorage.setItem('hr.theme', next); } catch (e) { /* ignore */ }
+      if (!HR.storageMode || HR.storageMode.enabled()) {
+        try { localStorage.setItem('hr.theme', next); } catch (e) { /* ignore */ }
+      }
     });
     try {
       const t = localStorage.getItem('hr.theme');

@@ -89,6 +89,7 @@
   }
 
   function save() {
+    if (HR.storageMode && !HR.storageMode.enabled()) return;
     try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) { /* not fatal */ }
   }
 

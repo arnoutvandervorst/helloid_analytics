@@ -303,6 +303,8 @@
   function save(cfg) {
     current = cfg || current;
     compile(current);
+    /* Storage off: the in-memory cfg keeps working, nothing is written. */
+    if (HR.storageMode && !HR.storageMode.enabled()) return current;
     try { localStorage.setItem(KEY, JSON.stringify(stripCompiled(current))); }
     catch (e) { HR.util.toast('Could not persist settings (storage blocked).'); }
     return current;

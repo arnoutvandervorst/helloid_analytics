@@ -152,6 +152,28 @@ outside `/assets/` in case one is ever copied onto the host.
 Nothing needs protecting server-side: the page ships no data, makes no network calls, and
 every visitor starts empty and drags in their own exports.
 
+## What the app stores in your browser
+
+Everything stays client-side, and all of it is listed — with live sizes, per-store
+clear buttons and a clear-everything — under **Settings → Storage**:
+
+| Store | Holds |
+| --- | --- |
+| localStorage `hr.config.v1` | settings and decisions: taxonomy, prices, weights — and the match book, Nedap book, classification overrides and permission notes (these contain names from your data) |
+| localStorage `hr.brand` | uploaded logos and the product name |
+| localStorage `hr.nav.v1` / `hr.theme` / `hr.lang` | UI preferences |
+| IndexedDB `helloid-recon/snapshots` | one snapshot per reconciliation import, for the Diff view |
+| IndexedDB `helloid-recon/context` | the raw text of every companion import (vault, directory, rules, activity, …) so a session survives a reload |
+
+The same tab has the kill switch: **Remember data in this browser** off wipes all of the
+above and turns every save path into a no-op — the session keeps working in memory and
+forgets on reload. Only that preference itself persists, so the choice sticks. The first
+persisting import announces itself once with a pointer to this tab. Everything
+configurable also travels by file (settings, match book, Nedap book, snapshot bundle);
+note the settings file contains the decisions and books, names and employee ids included.
+Anonymous usage statistics (event names and size buckets, never data) have their own
+toggle on the same tab.
+
 ## Configuration review on import
 
 Every import stops at a **review step** before any number is shown. It reports how much of

@@ -35,6 +35,7 @@
 
   function send(event, params) {
     if (!enabled) return;
+    if (HR.storageMode && !HR.storageMode.usageAllowed()) return;
     try {
       const q = new URLSearchParams(Object.assign({ e: event }, params || {}));
       const url = ENDPOINT + '?' + q.toString();

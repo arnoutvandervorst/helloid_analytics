@@ -40,6 +40,7 @@
   } catch (e) { /* ignore */ }
 
   function persist() {
+    if (HR.storageMode && !HR.storageMode.enabled()) return;
     try { localStorage.setItem(KEY, JSON.stringify(state)); }
     catch (e) { HR.util.toast(HR.i18n.t('toast.configFail')); }
   }

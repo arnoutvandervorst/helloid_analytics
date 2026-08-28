@@ -3,6 +3,13 @@
 Versions are CalVer (`YYYY.M.N` — Nth release of that month). This file is
 generated from `js/changelog.js` by `make-changelog.js`; edit there, not here.
 
+## [2026.8.13] — 2026-08-28
+
+- Storage transparency: a Settings › Storage tab lists everything the app keeps in the browser — settings and decisions, branding, UI preferences, the snapshot archive and the raw imported files — with live sizes, per-store clear buttons and clear-everything.
+- A storage kill switch: turning "Remember data in this browser" off wipes every store and stops all saving; the session keeps working in memory and forgets on reload.
+- The first persisting import announces itself once, with a pointer to the Storage tab; anonymous usage statistics gained their own toggle there.
+- The settings export is now described honestly: it contains the match decisions and books, names and employee ids included.
+
 ## [2026.8.12] — 2026-08-28
 
 - Versioning and a changelog: CalVer version in the topbar, an About card in Settings, this history rendered in-app, and a generated CHANGELOG.md.
