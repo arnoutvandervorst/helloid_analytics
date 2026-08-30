@@ -81,12 +81,18 @@
       return row ? (row.matched || []) : [];
     };
 
-    /* Siblings: same conditions but one, which is the axis they can merge along. */
+    /* Siblings: same conditions but one, which is the axis they can merge along.
+       Only a value-list condition can absorb another list: widening a not/contains/
+       empty clause changes its meaning, and the Person and time-frame clauses are
+       boilerplate every rule carries, not an axis. They still have to MATCH — they
+       sit in `rest` and are compared like everything else. */
     const groups = new Map();
     for (const rule of live) {
       const conds = rule.conditions.filter(c => c && c.facet);
       if (!conds.length) continue;
       conds.forEach((pivot, i) => {
+        if (pivot.timeFrame || /^person$/i.test(pivot.facet)) return;
+        if (pivot.operator && pivot.operator !== 'one of') return;
         const rest = conds.filter((_, j) => j !== i);
         const key = pivot.facet + SEP + rest.map(condKey).sort().join(' & ');
         if (!groups.has(key)) groups.set(key, { facet: pivot.facet, rest, members: [] });
@@ -111,7 +117,8 @@
 
       const byValueSet = new Map();
       holdersOf.forEach(entry => {
-        const key = entry.who.map(m => (m.pivot.values || []).join(',')).sort().join(SEP);
+        const key = entry.who.map(m => (m.pivot.values || []).slice().sort().join(','))
+          .sort().join(SEP);
         if (!byValueSet.has(key)) byValueSet.set(key, { who: entry.who, ents: [] });
         byValueSet.get(key).ents.push(entry.ent);
       });
@@ -127,7 +134,10 @@
         return;
       }
 
-      /* Otherwise: would merging the whole group anyway be cheap enough to be worth it? */
+      /* Otherwise: would merging the whole group anyway be cheap enough to be worth it?
+         Only when an evaluation can price it — without one every trade would read
+         as free, which is exactly what it is not. */
+      if (!evaluation) return;
       const ents = Array.from(holdersOf.values()).map(e => e.ent);
       const candidate = makeProposal(group, members, ents, peopleOf, current, 'trade');
       if (candidate.added.length <= cfg.maxTrade) {
@@ -253,7 +263,8 @@
     const rows = proposals.map(p => ({
       Name: HR.mine.ruleName('Samengevoegd', p.rules[0].name),
       EntitlementCount: p.entitlements.length,
-      PersonsLatestEvaluation: p.people.length,
+      /* Blank without an evaluation: an invented zero would read as "selects nobody". */
+      PersonsLatestEvaluation: p.people.length || '',
       Categories: p.kind === 'lossless' ? 'Condensed' : 'Condensed (trade-off)',
       Status: 'proposal',
       Conditions: p.keep.map(c => c.raw)

@@ -209,10 +209,13 @@
     return { any: true, skip };
   }
 
-  /** Proposed-rule names honour cfg.mining.ruleName ({kind} and {conditions} tokens). */
+  /** Proposed-rule names honour cfg.mining.ruleName ({kind} and {conditions} tokens).
+      The default is the conditions alone: a kind prefix like "Piramide" says how the
+      rule was found, which is noise in the rule set it lands in — the template brings
+      it back for whoever wants it. */
   function ruleName(kind, conditions) {
     const tpl = (HR.config.get().mining || {}).ruleName;
-    if (!tpl) return kind + ' - ' + conditions;
+    if (!tpl) return conditions;
     return tpl.replace('{kind}', kind).replace('{conditions}', conditions);
   }
 

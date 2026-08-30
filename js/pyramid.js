@@ -755,94 +755,147 @@
    * not something the rules have to keep — and nobody maintaining a rule set thanks you
    * for the hierarchy that produced it.
    */
+  const SEPX = '\u001e';
+
+  /** Canonical identity of one generalized condition: attr, keying, sorted values. */
+  const vkey = c => c.attr + (c.byId ? '#id' : '#nm') + ':' + c.values.slice().sort().join(SEPX);
+
+  /** Rules with identical conditions are one HelloID rule; fold them. */
+  function foldDuplicates(rules) {
+    const byConds = new Map();
+    for (const rule of rules) {
+      const key = rule.conds.map(vkey).sort().join('|');
+      const seen = byConds.get(key);
+      if (!seen) { byConds.set(key, rule); continue; }
+      rule.grants.forEach(g => { if (!seen.grants.some(x => x.ent === g.ent)) seen.grants.push(g); });
+      seen.members = U.uniq(seen.members.concat(rule.members));
+      seen.sources = seen.sources.concat(rule.sources);
+      seen.from += rule.from;
+    }
+    return Array.from(byConds.values());
+  }
+
+  /**
+   * Merge sibling rules along every axis, and keep merging until nothing merges.
+   *
+   * One pass along one axis is not enough: after "Title one of (A, B)" absorbs two
+   * title rules, the result can be a sibling of the same merge in the next department
+   * over, and that second merge only exists once the first has happened. Each applied
+   * merge strictly reduces the rule count, so iterating to the fixpoint terminates;
+   * the pass cap is a belt over those braces.
+   *
+   * Rules arrive generalized: every condition is {attr, values[], labels[], byId}.
+   * Two rules are siblings when they agree on every condition but one, and that one
+   * keys the same way — an ExternalId list never unions with a name list.
+   */
+  function mergeFixpoint(flat, axes) {
+    let rules = foldDuplicates(flat);
+
+    for (let pass = 0, changed = true; changed && pass < 20; pass++) {
+      changed = false;
+      for (const axis of axes) {
+        const groups = new Map();
+        rules.forEach((rule, i) => {
+          const pivot = rule.conds.find(c => c.attr === axis);
+          if (!pivot) return;
+          const context = rule.conds.filter(c => c.attr !== axis).map(vkey).sort().join('|') +
+            '|' + (pivot.byId ? 'id' : 'nm');
+          if (!groups.has(context)) groups.set(context, []);
+          groups.get(context).push({ rule, i, pivot });
+        });
+
+        const consumed = new Set();
+        const emitted = [];
+        groups.forEach(siblings => {
+          if (siblings.length < 2) return;
+
+          /* Which value lists grant each entitlement — the transpose. */
+          const holdersOf = new Map();
+          siblings.forEach(s => s.rule.grants.forEach(g => {
+            if (!holdersOf.has(g.ent)) holdersOf.set(g.ent, []);
+            holdersOf.get(g.ent).push(s);
+          }));
+
+          /* Entitlements granted by the same set of value lists become one rule. */
+          const byValueSet = new Map();
+          holdersOf.forEach((who, ent) => {
+            const key = who.map(s => vkey(s.pivot)).sort().join('|');
+            if (!byValueSet.has(key)) byValueSet.set(key, { who, ents: [] });
+            byValueSet.get(key).ents.push(ent);
+          });
+          if (byValueSet.size >= siblings.length) return;   // no saving on this axis
+
+          const context = siblings[0].rule.conds.filter(c => c.attr !== axis);
+          byValueSet.forEach(entry => {
+            /* value -> label through the union keeps the two lists aligned. */
+            const labelOf = new Map();
+            entry.who.forEach(s => s.pivot.values.forEach((v, k) =>
+              labelOf.set(v, s.pivot.labels[k] || v)));
+            const values = Array.from(labelOf.keys());
+            const members = U.uniq(entry.who.flatMap(s => s.rule.members));
+            /* Sibling populations are disjoint — one value per attribute per person —
+               so holders add up and coverage is recomputed over the union. */
+            const grants = entry.ents.map(ent => {
+              const parts = entry.who.map(s => s.rule.grants.find(g => g.ent === ent));
+              const holders = U.sum(parts, g => g.holders);
+              return { ent, holders,
+                coverage: members.length ? holders / members.length : 0,
+                missing: parts.flatMap(g => g.missing || []) };
+            });
+            emitted.push({
+              conds: context.map(c => ({ attr: c.attr, values: c.values.slice(),
+                labels: c.labels.slice(), byId: c.byId }))
+                .concat([{ attr: axis, values, labels: values.map(v => labelOf.get(v)),
+                  byId: entry.who[0].pivot.byId }]),
+              grants, members,
+              from: U.sum(entry.who, s => s.rule.from),
+              sources: entry.who.flatMap(s => s.rule.sources)
+            });
+          });
+          siblings.forEach(s => consumed.add(s.i));
+          changed = true;
+        });
+
+        if (consumed.size) {
+          rules = foldDuplicates(rules.filter((_, i) => !consumed.has(i)).concat(emitted));
+        }
+      }
+    }
+    return rules;
+  }
+
   function condense(model, pyramid) {
-    /* Every mined rule as a flat condition list, whatever produced it. */
+    /* Every mined rule as a flat generalized condition list, whatever produced it,
+       carrying its origin so a merged rule can still name the rules it replaced. */
     const flat = [];
     pyramid.ruleGroups.forEach((grants, node) => {
       if (!node.path.length) return;                 // the baseline has no condition to merge
       flat.push({
-        conds: node.path.map(p => ({ attr: p.attr, value: p.value, label: p.label, byId: p.byId })),
-        grants: grants.slice(), members: node.members.slice()
+        conds: node.path.map(p => ({ attr: p.attr, values: [p.value], labels: [p.label || p.value], byId: p.byId })),
+        grants: grants.slice(), members: node.members.slice(), from: 1,
+        sources: [{ kind: 'pyramid', level: node.level,
+          conds: node.path.map(p => ({ attr: p.attr, value: p.value, label: p.label, byId: p.byId })),
+          members: node.members.length, grants: grants.length }]
       });
     });
     pyramid.comboGroups.forEach(group => flat.push({
-      conds: group.conds.map(c => ({ attr: c.attr, value: c.value, label: c.label, byId: c.byId })),
-      grants: group.rules.slice(), members: group.members.slice()
+      conds: group.conds.map(c => ({ attr: c.attr, values: [c.value], labels: [c.label || c.value], byId: c.byId })),
+      grants: group.rules.slice(), members: group.members.slice(), from: 1,
+      sources: [{ kind: 'combo', level: null,
+        conds: group.conds.map(c => ({ attr: c.attr, value: c.value, label: c.label, byId: c.byId })),
+        members: group.members.length, grants: group.rules.length }]
     }));
 
     const before = flat.length;
-    const SEPX = '\u001e';
-
-    /* Rules are siblings when they agree on every condition but one. Trying each
-       attribute in turn as the odd one out finds the axis worth condensing along. */
-    const merged = [];
-    const consumed = new Set();
-
-    for (const axis of pyramid.levels.concat(pyramid.attributes)) {
-      const groups = new Map();
-      flat.forEach((rule, i) => {
-        if (consumed.has(i)) return;
-        const pivot = rule.conds.find(c => c.attr === axis);
-        if (!pivot) return;
-        const context = rule.conds.filter(c => c.attr !== axis)
-          .map(c => c.attr + '=' + c.value).sort().join('|');
-        if (!groups.has(context)) groups.set(context, []);
-        groups.get(context).push({ rule, i, pivot });
-      });
-
-      groups.forEach(siblings => {
-        if (siblings.length < 2) return;
-
-        /* Which values grant each entitlement — the transpose. */
-        const holdersOf = new Map();
-        siblings.forEach(s => s.rule.grants.forEach(g => {
-          if (!holdersOf.has(g.ent)) holdersOf.set(g.ent, []);
-          holdersOf.get(g.ent).push(s);
-        }));
-
-        /* Entitlements granted by the same set of values become one rule. */
-        const byValueSet = new Map();
-        holdersOf.forEach((who, ent) => {
-          const key = who.map(s => s.pivot.value).sort().join(SEPX);
-          if (!byValueSet.has(key)) byValueSet.set(key, { who, ents: [] });
-          byValueSet.get(key).ents.push(ent);
-        });
-        if (byValueSet.size >= siblings.length) return;   // no saving on this axis
-
-        const context = siblings[0].rule.conds.filter(c => c.attr !== axis);
-        byValueSet.forEach(entry => {
-          const grantByEnt = new Map();
-          entry.who.forEach(s => s.rule.grants.forEach(g => grantByEnt.set(g.ent, g)));
-          merged.push({
-            conds: context.map(c => ({ attr: c.attr, values: [c.value], labels: [c.label], byId: c.byId }))
-              .concat([{
-                attr: axis,
-                values: U.uniq(entry.who.map(s => s.pivot.value)),
-                labels: U.uniq(entry.who.map(s => s.pivot.label || s.pivot.value)),
-                byId: entry.who[0].pivot.byId
-              }]),
-            grants: entry.ents.map(e => grantByEnt.get(e)),
-            members: U.uniq(entry.who.flatMap(s => s.rule.members)),
-            from: entry.who.length
-          });
-        });
-        siblings.forEach(s => consumed.add(s.i));
-      });
-    }
-
-    /* Whatever never found a sibling stays as it was. */
-    flat.forEach((rule, i) => {
-      if (consumed.has(i)) return;
-      merged.push({
-        conds: rule.conds.map(c => ({ attr: c.attr, values: [c.value], labels: [c.label], byId: c.byId })),
-        grants: rule.grants, members: rule.members, from: 1
-      });
-    });
+    const merged = mergeFixpoint(flat, U.uniq(pyramid.levels.concat(pyramid.attributes)));
 
     merged.sort((a, b) => b.members.length - a.members.length);
     const withLists = merged.filter(r => r.conds.some(c => c.values.length > 1));
     return {
       rules: merged, before,
+      /* The baseline travels with the condensed set so its export is complete. */
+      root: { grants: (pyramid.ruleGroups.get(pyramid.root) || []).slice(),
+        members: pyramid.root.members.length },
       summary: {
         before,
         after: merged.length,
@@ -857,13 +910,68 @@
     };
   }
 
+  /** The condensed set is the canonical output; every consumer shares one run. */
+  function condensedOf(model, pyramid) {
+    if (!pyramid._condensed) pyramid._condensed = condense(model, pyramid);
+    return pyramid._condensed;
+  }
+
+  /** The coverage-first set condenses the same way; the everyone-rule has no axis. */
+  function condenseGreedy(model, result) {
+    if (result._condensed) return result._condensed;
+    const kept = [];
+    const flat = [];
+    result.rules.forEach(rule => {
+      if (rule.everyone || !rule.conds.length) {
+        kept.push({ everyone: true, conds: [], grants: rule.grants,
+          members: rule.members, from: 1, sources: [] });
+        return;
+      }
+      flat.push({
+        conds: rule.conds.map(c => ({ attr: c.attr, values: [c.value], labels: [c.label || c.value], byId: c.byId })),
+        grants: rule.grants.slice(), members: rule.members.slice(), from: 1,
+        sources: [{ kind: 'coverage', level: null,
+          conds: rule.conds.map(c => ({ attr: c.attr, value: c.value, label: c.label, byId: c.byId })),
+          members: rule.members.length, grants: rule.grants.length }]
+      });
+    });
+    const before = kept.length + flat.length;
+    const merged = mergeFixpoint(flat, result.attributes);
+    merged.sort((a, b) => b.members.length - a.members.length);
+    const rules = kept.concat(merged);
+    result._condensed = {
+      rules, before,
+      summary: {
+        before,
+        after: rules.length,
+        saved: before - rules.length,
+        share: before ? (before - rules.length) / before : 0,
+        grants: U.sum(rules, r => r.grants.length)
+      }
+    };
+    return result._condensed;
+  }
+
   /** The condensed set, in the export shape HelloID reads back. */
   function condensedToRulesCsv(model, condensed) {
     const entName = key => {
       const perm = model.permissions.get(key);
       return perm ? (perm.system + ' - ' + perm.name + (perm.path ? ' (' + perm.path + ')' : '')) : key;
     };
-    const rows = condensed.rules.map(rule => ({
+    const rows = [];
+    /* The baseline first: one rule with no condition, the floor everything inherits. */
+    if (condensed.root && condensed.root.grants.length) {
+      rows.push({
+        Name: HR.mine.ruleName('Basis', 'Everyone'),
+        EntitlementCount: condensed.root.grants.length,
+        PersonsLatestEvaluation: condensed.root.members,
+        Categories: 'Baseline',
+        Status: 'proposal',
+        Conditions: '',
+        Entitlements: condensed.root.grants.map(g => entName(g.ent)).join('|')
+      });
+    }
+    rows.push.apply(rows, condensed.rules.map(rule => ({
       Name: HR.mine.ruleName('Voorstel', rule.conds.map(c =>
         (c.labels.length > 1 ? c.labels.slice(0, 3).join(' / ') + (c.labels.length > 3 ? '\u2026' : '')
           : (c.labels[0] || c.values[0]))).join(' + ')),
@@ -875,27 +983,29 @@
       Conditions: rule.conds.map(c =>
         c.attr + (c.byId ? '.ExternalId' : '.Name') + ', one of: ' + c.values.join(', ')).join('|'),
       Entitlements: rule.grants.map(g => entName(g.ent)).join('|')
-    }));
+    })));
     return U.toCSV(rows, ['Name', 'EntitlementCount', 'PersonsLatestEvaluation', 'Categories',
       'Status', 'Conditions', 'Entitlements']);
   }
 
-  /** The coverage-first rule set, in the same export shape. */
-  function greedyToRulesCsv(model, result) {
+  /** The coverage-first rule set — condensed, see condenseGreedy — in the same shape. */
+  function greedyToRulesCsv(model, condensed) {
     const entName = key => {
       const perm = model.permissions.get(key);
       return perm ? (perm.system + ' - ' + perm.name + (perm.path ? ' (' + perm.path + ')' : '')) : key;
     };
-    const rows = result.rules.map(rule => ({
+    const rows = condensed.rules.map(rule => ({
       Name: rule.everyone
         ? 'Basis - Alle medewerkers'
-        : HR.mine.ruleName('Voorstel', rule.conds.map(c => c.label || c.value).join(' + ')),
+        : HR.mine.ruleName('Voorstel', rule.conds.map(c =>
+            (c.labels.length > 1 ? c.labels.slice(0, 3).join(' / ') + (c.labels.length > 3 ? '…' : '')
+              : (c.labels[0] || c.values[0]))).join(' + ')),
       EntitlementCount: rule.grants.length,
       PersonsLatestEvaluation: rule.members.length,
-      Categories: 'Mined',
+      Categories: rule.conds.some(c => c.values.length > 1) ? 'Condensed' : 'Mined',
       Status: 'proposal',
       Conditions: rule.conds.map(c =>
-        c.attr + (c.byId ? '.ExternalId' : '.Name') + ', one of: ' + c.value).join('|'),
+        c.attr + (c.byId ? '.ExternalId' : '.Name') + ', one of: ' + c.values.join(', ')).join('|'),
       Entitlements: rule.grants.map(g => entName(g.ent)).join('|')
     }));
     return U.toCSV(rows, ['Name', 'EntitlementCount', 'PersonsLatestEvaluation', 'Categories',
@@ -950,5 +1060,6 @@
   }
 
   HR.pyramid = { build, mine, account, suggestLevels, mineCombos, population, greedy,
-    sweep, baseline, condense, condensedToRulesCsv, availableAttributes, toRulesCsv, greedyToRulesCsv, ATTRIBUTES };
+    sweep, baseline, condense, condensedOf, condenseGreedy, condensedToRulesCsv,
+    availableAttributes, toRulesCsv, greedyToRulesCsv, ATTRIBUTES };
 })(window.HR);

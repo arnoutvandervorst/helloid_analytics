@@ -2721,7 +2721,9 @@
    * implied.
    */
   function condenseRulesCard(m) {
-    if (!m.ruleSet || !m.evaluation) return null;
+    /* The lossless transpose is pure syntax over the rules themselves; only people
+       counts and near-miss trades need an evaluation, so the card renders without one. */
+    if (!m.ruleSet) return null;
     let c = null;
     try { c = HR.optimise.condenseRules(m, m.ruleSet, m.evaluation); } catch (e) { return null; }
     if (!c) return null;
@@ -2736,6 +2738,7 @@
       el('p', { text: T('op.cdLead', {
         before: s.rules, after: s.after, merges: s.merges,
         replaces: s.replaces, added: s.added }) }),
+      m.evaluation ? null : el('p', { class: 'note', text: T('op.cdNoEval') }),
       HR.table.make({
         columns: [
           { key: 'cond', label: T('op.cCondition'), value: p => p.facet + ': ' + p.values.join(', '),
@@ -2745,7 +2748,10 @@
             ]) },
           { key: 'replaces', label: T('op.cReplaces'), value: p => p.replaces, align: 'right' },
           { key: 'ents', label: T('py.cGrants'), value: p => p.entitlements.length, align: 'right' },
-          { key: 'people', label: T('op.cPeople'), value: p => p.people.length, align: 'right' },
+          { key: 'people', label: T('op.cPeople'), value: p => p.people.length, align: 'right',
+            render: p => (m.evaluation || p.people.length)
+              ? el('span', { text: U.fmtInt(p.people.length) })
+              : el('span', { class: 'note', text: '—' }) },
           { key: 'trade', label: T('op.cTrade'), value: p => p.added.length,
             hint: T('op.cTradeHint'),
             render: p => p.added.length
@@ -2766,7 +2772,7 @@
         } })
       ]),
       el('p', { class: 'note', text: T('op.cdFoot', { max: c.maxTrade }) })
-    ]);
+    ].filter(Boolean));
   }
 
   /** Exactly who would gain what, for a merge that is not free. */
@@ -3019,9 +3025,14 @@
     if (!P || P.unavailable) return proposalsCard(m);
 
     const s2 = P.summary;
+    /* The condensed set is canonical: same count and same export as the Mining view. */
+    let CD = null;
+    try { CD = HR.pyramid.condensedOf(m, P); } catch (e) { CD = null; }
+    const ruleCount = CD ? CD.summary.after + (P.ruleGroups.has(P.root) ? 1 : 0)
+      : s2.rules + s2.combos;
     return card(T('ro.pyramidTitle'), T('ro.pyramidNote'), [
       el('p', { text: T('ro.pyramidLead', {
-        rules: U.fmtInt(s2.rules + s2.combos),
+        rules: U.fmtInt(ruleCount),
         grants: U.fmtInt(s2.grants + s2.comboGrants),
         levels: P.levels.map(l => T('py.attr.' + l) || l).join(' \u203a ') || T('py.noLevels'),
         coverage: U.fmtPct(s2.coverage, 0)
@@ -3030,7 +3041,9 @@
         el('button', { class: 'btn primary', text: T('ro.openPyramid'),
           onclick: () => HR.app.go('mining') }),
         el('button', { class: 'btn', text: T('py.export'), onclick: () => {
-          U.download('pyramid-rules.csv', HR.pyramid.toRulesCsv(m, P), 'text/csv');
+          U.download('pyramid-rules.csv', CD
+            ? HR.pyramid.condensedToRulesCsv(m, CD)
+            : HR.pyramid.toRulesCsv(m, P), 'text/csv');
           HR.usage.exported('pyramid-rules');
         } })
       ]),

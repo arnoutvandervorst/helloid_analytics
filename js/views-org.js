@@ -1034,74 +1034,63 @@
   }
 
   /* Conditions as prose in a cell, one per line in the drawer: "∧" is precise and
-     unreadable, and stacking them is what makes a two-condition rule legible at all. */
+     unreadable, and stacking them is what makes a two-condition rule legible at all.
+     A condition carries either a single value or, condensed, a values list. */
+  const condValues = c => c.values || [c.value];
+  const condLabels = c => c.labels || [c.label];
   const conditionText = row => row.conds && row.conds.length
-    ? row.conds.map(c => (T('py.attr.' + c.attr) || c.attr) + ' = ' +
-        (c.label || c.value || T('py.empty'))).join(T('py.and'))
+    ? row.conds.map(c => {
+        const labels = condLabels(c).map((l, i) => l || condValues(c)[i]);
+        return (T('py.attr.' + c.attr) || c.attr) + (labels.length > 1
+          ? ' ' + T('py.oneOf', { values: labels.join(', ') })
+          : ' = ' + (labels[0] || T('py.empty')));
+      }).join(T('py.and'))
     : T('py.everyone');
 
   function conditionList(row) {
     if (!row.conds || !row.conds.length) {
       return el('p', { class: 'note', text: T('py.dNoCondition') });
     }
-    return el('table', { class: 'cond-list' }, row.conds.map(c => el('tr', {}, [
-      el('td', {}, el('span', { class: 'pill', text: (T('py.attr.' + c.attr) || c.attr) +
-        ' · ' + c.field })),
-      el('td', { class: 'mono', text: c.value || T('py.empty') }),
-      el('td', { class: 'note', text: c.label && c.label !== c.value ? c.label : '' })
-    ])));
+    return el('table', { class: 'cond-list' }, row.conds.map(c => {
+      const values = condValues(c);
+      const labels = condLabels(c);
+      const label = labels.filter(Boolean).join(', ');
+      return el('tr', {}, [
+        el('td', {}, el('span', { class: 'pill', text: (T('py.attr.' + c.attr) || c.attr) +
+          ' · ' + (c.field || (c.byId ? 'ExternalId' : 'Name')) })),
+        el('td', { class: 'mono', text: values.filter(Boolean).join(', ') || T('py.empty') }),
+        el('td', { class: 'note', text: label && label !== values.join(', ') ? label : '' })
+      ]);
+    }));
   }
 
   /**
-   * The same model with "one of" conditions, which is what HelloID actually allows.
+   * What condensing did, now that the condensed set IS the rules table above.
    *
-   * Fewer rules for the same access is the whole point, so the saving leads and the
-   * merged rules are shown as they would be written. Where nothing merges that is a fact
-   * about the tenant — every group grants something of its own — and it is said outright.
+   * The saving leads; the raw single-value set stays reachable as its own export for
+   * whoever wants the rules the way the miner first found them. Where nothing merges
+   * that is a fact about the tenant — every group grants something of its own — and it
+   * is said outright.
    */
   function condensedCard(m, P) {
     let c = null;
-    try { c = HR.pyramid.condense(m, P); } catch (e) { return null; }
-    if (!c || !c.rules.length) return null;
+    try { c = HR.pyramid.condensedOf(m, P); } catch (e) { return null; }
+    if (!c || !c.before) return null;
 
     const s = c.summary;
-    const condText = rule => rule.conds.map(x => (T('py.attr.' + x.attr) || x.attr) +
-      (x.values.length > 1
-        ? ' ' + T('py.oneOf', { values: x.labels.join(', ') })
-        : ' = ' + (x.labels[0] || x.values[0]))).join(T('py.and'));
-
-    const body = [
+    return card(T('py.cdTitle'), T('py.cdNote'), [
       el('p', { text: s.saved
         ? T('py.cdLead', { before: s.before, after: s.after, share: U.fmtPct(s.share, 0),
             lists: s.withLists, widest: s.widest })
-        : T('py.cdNothing', { n: s.before }) })
-    ];
-
-    if (s.withLists) {
-      body.push(HR.table.make({
-        columns: [
-          { key: 'conds', label: T('py.cRule'), value: r => condText(r) },
-          { key: 'from', label: T('py.cdFrom'), value: r => r.from, align: 'right',
-            hint: T('py.cdFromHint') },
-          { key: 'members', label: T('py.cGroup'), value: r => r.members.length, align: 'right' },
-          { key: 'grants', label: T('py.cGrants'), value: r => r.grants.length, align: 'right' },
-          { key: 'list', label: T('py.cGets'), sortable: false,
-            render: r => el('span', { class: 'trunc',
-              title: r.grants.map(g => (m.permissions.get(g.ent) || {}).name || g.ent).join(', '),
-              text: r.grants.map(g => (m.permissions.get(g.ent) || {}).name || g.ent).join(', ') }) }
-        ],
-        rows: c.rules.filter(r => r.conds.some(x => x.values.length > 1)),
-        pageSize: 10, exportName: 'condensed-rules'
-      }));
-      body.push(el('div', { class: 'slot-actions' }, [
-        el('button', { class: 'btn', text: T('py.cdExport'), onclick: () => {
-          U.download('condensed-rules.csv', HR.pyramid.condensedToRulesCsv(m, c), 'text/csv');
-          HR.usage.exported('condensed-rules');
+        : T('py.cdNothing', { n: s.before }) }),
+      s.saved ? el('p', { class: 'note', text: T('py.cdLossless') }) : null,
+      el('div', { class: 'slot-actions' }, [
+        el('button', { class: 'btn', text: T('py.cdRawExport'), onclick: () => {
+          U.download('pyramid-rules-raw.csv', HR.pyramid.toRulesCsv(m, P), 'text/csv');
+          HR.usage.exported('pyramid-rules-raw');
         } })
-      ]));
-      body.push(el('p', { class: 'note', text: T('py.cdLossless') }));
-    }
-    return card(T('py.cdTitle'), T('py.cdNote'), body);
+      ])
+    ].filter(Boolean));
   }
 
   /** One mined rule: its condition, what it grants, and who does not have it yet. */
@@ -1109,11 +1098,22 @@
     const body = document.createDocumentFragment();
     body.appendChild(card(T('py.dCondition'), T('py.dConditionNote'), conditionList(row)));
     body.appendChild(dl([
-      [T('py.dLevel'), row.level === 99 ? T('py.kind.' + row.kind)
+      [T('py.dLevel'), row.level === 99 || row.level === 98 ? T('py.kind.' + row.kind)
         : row.level === 0 ? T('py.baselineTag') : 'L' + row.level],
       [T('py.dMembers'), U.fmtInt(row.members)],
       [T('py.dGrants'), U.fmtInt(row.entitlements)]
     ]));
+
+    /* A condensed rule still names the single-value rules it took the place of. */
+    if (row.from > 1 && row.sources && row.sources.length) {
+      body.appendChild(card(T('py.dSources'), T('py.dSourcesNote'), el('ul', { class: 'clean' },
+        row.sources.map(s => el('li', {}, [
+          el('span', { text: s.conds.map(c => (T('py.attr.' + c.attr) || c.attr) + ' = ' +
+            (c.label || c.value || T('py.empty'))).join(T('py.and')) }),
+          el('span', { class: 'note', text: ' · ' + T('py.dSourceMeta', {
+            members: U.fmtInt(s.members), grants: U.fmtInt(s.grants) }) })
+        ])))));
+    }
 
     body.appendChild(card(T('py.dEntitlements'), T('py.dEntitlementsNote'), HR.table.make({
       columns: [
@@ -1288,11 +1288,18 @@
     try { G = HR.pyramid.greedy(m); } catch (e) { return null; }
     if (!G || !G.rules.length) return null;
 
+    /* Both miners report their condensed rule count: that is what would be created. */
+    const cd = HR.pyramid.condensedOf(m, P);
+    const gc = HR.pyramid.condenseGreedy(m, G);
+    const pyCount = cd.summary.after + (P.ruleGroups.has(P.root) ? 1 : 0);
     const rows = [
-      { method: T('py.cfPyramid'), rules: P.summary.rules + P.summary.combos,
-        coverage: P.summary.coverage, perRule: P.summary.perRule, own: true },
-      { method: T('py.cfGreedy'), rules: G.summary.rules,
-        coverage: G.summary.coverage, perRule: G.summary.perRule, own: true, greedy: G }
+      { method: T('py.cfPyramid'), rules: pyCount,
+        coverage: P.summary.coverage,
+        perRule: pyCount ? P.summary.explained / pyCount : 0, own: true },
+      { method: T('py.cfGreedy'), rules: gc.summary.after,
+        coverage: G.summary.coverage,
+        perRule: gc.summary.after ? G.summary.explained / gc.summary.after : 0,
+        own: true, greedy: G }
     ];
     rows.sort((a, b) => b.coverage - a.coverage);
 
@@ -1314,7 +1321,7 @@
       el('p', { class: 'note', style: 'margin-top:10px', text: T('py.cfExplain') }),
       el('div', { class: 'slot-actions' }, [
         el('button', { class: 'btn', text: T('py.cfExport'), onclick: () => {
-          U.download('coverage-first-rules.csv', HR.pyramid.greedyToRulesCsv(m, G), 'text/csv');
+          U.download('coverage-first-rules.csv', HR.pyramid.greedyToRulesCsv(m, gc), 'text/csv');
           HR.usage.exported('coverage-first-rules');
         } })
       ]),
@@ -1368,6 +1375,13 @@
     }
 
     const s = P.summary;
+    /* The condensed set is the canonical one: it is what the table shows, what the
+       tiles count and what the export writes. The raw tree stays underneath. */
+    let CD = null;
+    try { CD = HR.pyramid.condensedOf(m, P); } catch (e) { CD = null; }
+    const ruleCount = CD
+      ? CD.summary.after + (P.ruleGroups.has(P.root) ? 1 : 0)
+      : s.rules + s.combos;
     f.appendChild(el('div', { class: 'view-head' }, [
       el('div', {}, [
         el('h1', { text: T('py.title') }),
@@ -1376,7 +1390,9 @@
           people: U.fmtInt(s.people) }) })
       ]),
       el('button', { class: 'btn', text: T('py.export'), onclick: () => {
-        U.download('pyramid-rules.csv', HR.pyramid.toRulesCsv(m, P), 'text/csv');
+        U.download('pyramid-rules.csv', CD
+          ? HR.pyramid.condensedToRulesCsv(m, CD)
+          : HR.pyramid.toRulesCsv(m, P), 'text/csv');
         HR.usage.exported('pyramid-rules');
       } })
     ]));
@@ -1388,7 +1404,7 @@
 
     const tiles = el('div', { class: 'grid g4', style: 'margin-bottom:14px' });
     tiles.append(
-      tile(T('py.kRules'), U.fmtInt(s.rules + s.combos),
+      tile(T('py.kRules'), U.fmtInt(ruleCount),
         T('py.kRulesFoot', { grants: U.fmtInt(s.grants + s.comboGrants) })),
       tile(T('py.kCoverage'), U.fmtPct(s.coverage, 0),
         T('py.kCoverageFoot', { explained: U.fmtInt(s.explained), total: U.fmtInt(s.assignments) }),
@@ -1532,7 +1548,7 @@
         wrap.appendChild(hygieneCard);
         return wrap;
       } },
-      { id: 'rules', label: T('py.tab.rules'), count: P.summary.rules + P.summary.combos,
+      { id: 'rules', label: T('py.tab.rules'), count: ruleCount,
         build: () => {
           const wrap = el('div', {});
           wrap.appendChild(minedRulesCard());
@@ -1554,53 +1570,64 @@
     function minedRulesCard() {
     /* ---- the rules, as rules ----
        One row per condition, the way HelloID stores them and the way the export writes
-       them. Listing a row per granted entitlement made the table disagree with the CSV
-       it produces and made a two-level model look like hundreds of rules. */
-    const ruleRows = Array.from(P.ruleGroups.entries()).map(entry => {
-      const node = entry[0], grants = entry[1];
-      const isBaseline = node.level === 0;
-      return {
-        kind: isBaseline ? 'baseline' : 'pyramid',
-        name: isBaseline
-          ? T('py.baselineRuleName')
-          : 'Piramide - ' + node.path.map(x => (T('py.attr.' + x.attr) || x.attr) + ': ' +
-            (x.label || x.value || T('py.empty'))).join(' / '),
-        conds: node.path.map(x => ({ attr: x.attr, field: x.byId ? 'ExternalId' : 'Name',
-          value: x.value, label: x.label })),
-        level: node.level,
-        members: node.members.length,
-        grants: grants,
-        entitlements: grants.length,
+       them. The rows are the CONDENSED set — multi-value "one of" conditions, which is
+       what HelloID actually allows and what the export ships. The journey and the
+       diagram deliberately stay on the raw tree: the nesting is what found the rules;
+       condensing is how the output is written, not how the model thinks. */
+    const cd = HR.pyramid.condensedOf(m, P);
+    const nameOf = r => r.conds.map(c => (T('py.attr.' + c.attr) || c.attr) + ': ' +
+      (c.labels.length > 1
+        ? c.labels.slice(0, 3).join(' / ') + (c.labels.length > 3 ? '…' : '')
+        : (c.labels[0] || c.values[0] || T('py.empty')))).join(' / ');
+
+    const ruleRows = [];
+    const rootGrants = P.ruleGroups.get(P.root);
+    if (rootGrants) {
+      ruleRows.push({
+        kind: 'baseline', name: T('py.baselineRuleName'),
+        conds: [], level: 0,
+        members: P.root.members.length, membersList: P.root.members,
+        grants: rootGrants, entitlements: rootGrants.length,
+        minCoverage: Math.min.apply(null, rootGrants.map(g => g.coverage)),
+        missing: new Set(rootGrants.flatMap(g => g.missing)).size,
+        from: 1, sources: [], node: P.root
+      });
+    }
+    cd.rules.forEach(r => {
+      const src = r.from === 1 ? r.sources[0] : null;
+      const kind = r.from > 1 ? 'condensed' : (src && src.kind === 'combo' ? 'combo' : 'pyramid');
+      ruleRows.push({
+        kind,
+        name: HR.mine.ruleName(kind === 'condensed' ? 'Voorstel'
+          : kind === 'combo' ? 'Combinatie' : 'Piramide', nameOf(r)),
+        conds: r.conds,
+        level: kind === 'condensed' ? 98 : kind === 'combo' ? 99 : src.level,
+        members: r.members.length,
+        membersList: r.members,
+        grants: r.grants,
+        entitlements: r.grants.length,
         /* The weakest entitlement in the rule decides how safe the rule is. */
-        minCoverage: Math.min.apply(null, grants.map(g => g.coverage)),
-        missing: new Set(grants.flatMap(g => g.missing)).size,
-        node: node
-      };
-    }).concat(Array.from(P.comboGroups.values()).map(group => ({
-      kind: 'combo',
-      name: 'Combinatie - ' + group.conds.map(c => c.label || c.value).join(' + '),
-      conds: group.conds.map(c => ({ attr: c.attr, field: c.byId ? 'ExternalId' : 'Name',
-        value: c.value, label: c.label })),
-      level: 99,
-      members: group.members.length,
-      membersList: group.members,
-      grants: group.rules,
-      entitlements: group.rules.length,
-      minCoverage: Math.min.apply(null, group.rules.map(g => g.coverage)),
-      missing: new Set(group.rules.flatMap(g => g.missing)).size,
-      node: null
-    })));
+        minCoverage: Math.min.apply(null, r.grants.map(g => g.coverage)),
+        missing: new Set(r.grants.flatMap(g => g.missing)).size,
+        from: r.from, sources: r.sources, node: null
+      });
+    });
 
     return card(T('py.rulesTitle'), T('py.rulesNote'), HR.table.make({
       columns: [
         { key: 'name', label: T('py.cRule'), value: r => r.name,
           render: r => el('span', { text: r.name, title: conditionText(r) }) },
         { key: 'level', label: T('py.cLevel'), value: r => r.level,
-          render: r => r.level === 99
+          render: r => r.level === 99 || r.level === 98
             ? el('span', { class: 'pill muted', text: T('py.kind.' + r.kind) })
             : r.level === 0
               ? el('span', { class: 'pill ok', text: T('py.baselineTag') })
               : el('span', { class: 'mono', text: 'L' + r.level }) },
+        { key: 'from', label: T('py.cdFrom'), value: r => r.from || 1, align: 'right',
+          hint: T('py.cdFromHint'),
+          render: r => (r.from || 1) > 1
+            ? el('span', { class: 'pill ok', text: String(r.from) })
+            : el('span', { class: 'note', text: '—' }) },
         { key: 'members', label: T('py.cGroup'), value: r => r.members, align: 'right' },
         { key: 'entitlements', label: T('py.cGrants'), value: r => r.entitlements, align: 'right' },
         { key: 'coverage', label: T('py.cWeakest'), value: r => r.minCoverage,
