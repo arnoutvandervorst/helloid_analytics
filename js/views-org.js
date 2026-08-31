@@ -663,7 +663,7 @@
             render: r => r.perm.monthlyPrice ? el('span', { text: U.fmtMoney(r.perm.monthlyPrice) })
               : el('span', { class: 'note', text: '—' }) }
         ],
-        rows: bf.rows, pageSize: 12, exportName: 'bus-factor',
+        rows: bf.rows, pageSize: 12, exportName: 'key-person-risk',
         search: (r, q) => (r.dept + ' ' + r.perm.name + ' ' + r.person.displayName).toLowerCase().includes(q)
       }));
     } else {

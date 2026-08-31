@@ -3,6 +3,12 @@
 Versions are CalVer (`YYYY.M.N` — Nth release of that month). This file is
 generated from `js/changelog.js` by `make-changelog.js`; edit there, not here.
 
+## [2026.8.18] — 2026-08-31
+
+- Plain-language sweep across the dashboard: ~70 figurative or insider phrasings rewritten in both languages ("What the paperwork carries" → "What the HR data provides", "it travelled with them" → "usually kept from an earlier role", and many more).
+- One word per concept everywhere: "drift" became "unmanaged access/assignments" (NL "onbeheerd"), the four different meanings of "floor" became baseline, threshold and minimum, and EN/NL now say the same thing where they used to diverge.
+- Renames: Bus factor → Key-person risk, Blast radius → Reach, the Lift column → "× vs organisation", the cost Leaks tab → Wasted spend ("hard buckets" → "directly recoverable").
+
 ## [2026.8.17] — 2026-08-31
 
 - Imported-rule polish: a rule whose only conditions are the Person and time-frame clauses now reads "everyone active" in the rules table instead of a dash, with the clauses in the tooltip.

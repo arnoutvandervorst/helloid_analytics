@@ -18,6 +18,14 @@
 
   const ENTRIES = [
     {
+      version: '2026.8.18', date: '2026-08-31',
+      changes: [
+        'Plain-language sweep across the dashboard: ~70 figurative or insider phrasings rewritten in both languages ("What the paperwork carries" → "What the HR data provides", "it travelled with them" → "usually kept from an earlier role", and many more).',
+        'One word per concept everywhere: "drift" became "unmanaged access/assignments" (NL "onbeheerd"), the four different meanings of "floor" became baseline, threshold and minimum, and EN/NL now say the same thing where they used to diverge.',
+        'Renames: Bus factor → Key-person risk, Blast radius → Reach, the Lift column → "× vs organisation", the cost Leaks tab → Wasted spend ("hard buckets" → "directly recoverable").'
+      ]
+    },
+    {
       version: '2026.8.17', date: '2026-08-31',
       changes: [
         'Imported-rule polish: a rule whose only conditions are the Person and time-frame clauses now reads "everyone active" in the rules table instead of a dash, with the clauses in the tooltip.',
