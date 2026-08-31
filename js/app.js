@@ -730,7 +730,8 @@
   function buildOpts() {
     return { ruleSet: state.ruleSet, vault: effVault(),
       granted: state.granted, history: state.history,
-      products: state.products, assignments: state.assignments };
+      products: state.products, assignments: state.assignments,
+      directory: state.directory };
   }
 
   function rebuild() {

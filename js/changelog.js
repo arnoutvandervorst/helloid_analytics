@@ -18,6 +18,15 @@
 
   const ENTRIES = [
     {
+      version: '2026.8.22', date: '2026-08-31',
+      changes: [
+        'Policy KPIs: a new Policies view holds 24 quality KPIs an organisation sets for itself \u2014 unowned, admin, service, test, shared, disabled, dormant and former-employee accounts, privileged accounts without an owner, people with more access than the rules give, peer outliers, employees without an account, duplicate employee ids, approvals routed to someone who left, empty and deeply nested groups, access outside the IAM model, rule coverage, and more \u2014 each with its own adjustable limit.',
+        'Every KPI shows today\u2019s number against the limit, met or not met, the accounts and people behind the number, and one line on how to improve. The overall score counts the KPIs that pass \u2014 groundwork for certifications such as NIS2. The catalog follows what the field measures (SailPoint outlier factors, Saviynt posture metrics, Omada\u2019s KPI model) using only data the tool already reads.',
+        'Dormant accounts use the last sign-in the collectors already ship (AD: the replicated lastLogonTimestamp; Entra: signInActivity); KPIs whose import is missing say what they need instead of scoring.',
+        'Limits are saved with the settings and exported in the settings file; the board report gains a Policy KPIs sheet with the same numbers. The KPI shape follows the IAM-masterplan threshold policies, so chosen limits can migrate to a full policy engine later.'
+      ]
+    },
+    {
       version: '2026.8.21', date: '2026-08-31',
       changes: [
         'HelloID allows about 100 business rules, so mined rules are now ranked: rank 1 is the baseline, and each next rank goes to the rule that explains the most access nothing above it explains. The best 100 sit inside the cap; everything past it stays visible, marked "over the rule cap".',

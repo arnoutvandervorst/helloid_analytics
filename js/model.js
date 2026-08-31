@@ -225,6 +225,9 @@
     const history = opts && opts.history;
     const products = opts && opts.products;
     const assignments = opts && opts.assignments;
+    /* The collected AD/Entra export, for checks that need the directory's own
+       shape (group nesting, last sign-ins) rather than the reconciliation's. */
+    if (opts && opts.directory) model.directory = opts.directory;
     if (granted) model.granted = granted;
     if (history) model.history = history;
     if (granted || history) {

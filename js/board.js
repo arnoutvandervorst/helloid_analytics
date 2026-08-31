@@ -325,6 +325,38 @@
       paper.appendChild(page(changeChildren));
 
       /* ============ page 5 — recommendations ============ */
+      /* ============ policy guidelines ============ */
+      const pol = HR.policy.evaluate(m);
+      if (pol.summary.evaluated) {
+        const ps = pol.summary;
+        const pt = el('table', { class: 'board-tbl' });
+        pt.appendChild(el('thead', {}, el('tr', {}, [
+          el('th', { text: T('bd.polGuideline') }),
+          el('th', { text: T('bd.polActual') }),
+          el('th', { text: T('bd.polLimit') }),
+          el('th', { text: T('c.status') })
+        ])));
+        const ptb = el('tbody');
+        pol.rows.filter(r => r.applicable && r.on).forEach(r => {
+          const pct = r.def.unit === 'pct';
+          ptb.appendChild(el('tr', {}, [
+            el('td', {}, el('strong', { text: T('po.p.' + r.def.id) })),
+            el('td', { class: 'num nowrap', text: pct ? U.fmtNum(r.value, 1) + '%' : U.fmtInt(r.value) }),
+            el('td', { class: 'num nowrap', text: (r.def.dir === 'max' ? '≤ ' : '≥ ') +
+              (pct ? U.fmtNum(r.threshold, 1) + '%' : U.fmtInt(r.threshold)) }),
+            el('td', {}, statusPill(r.pass ? 'good' : 'bad'))
+          ]));
+        });
+        pt.appendChild(ptb);
+        paper.appendChild(page([
+          el('h2', { class: 'sheet-h', text: T('bd.polTitle') }),
+          el('p', { class: 'lead', text: T('bd.polLead', {
+            passed: ps.passed, n: ps.evaluated, score: U.fmtPct(ps.score, 0) }) }),
+          pt,
+          el('p', { class: 'footnote', text: T('bd.polFoot') })
+        ]));
+      }
+
       const t3 = el('table', { class: 'board-tbl' });
       t3.appendChild(el('thead', {}, el('tr', {}, [
         el('th', { text: '#' }), el('th', { text: T('bd.action') }),
