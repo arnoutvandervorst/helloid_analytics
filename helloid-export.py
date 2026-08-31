@@ -67,7 +67,7 @@ class HelloID:
         req = urllib.request.Request(url, headers={
             'Authorization': self.auth,
             'Accept': 'application/json',
-            'User-Agent': 'helloid-analytics-export/1.0'
+            'User-Agent': 'helloid-sidekick-export/1.0'
         })
         try:
             with urllib.request.urlopen(req, context=self.ctx, timeout=120) as res:

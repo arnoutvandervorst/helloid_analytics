@@ -21,7 +21,7 @@ DIST = ROOT / 'dist'
 # there so the zip name and generator meta never drift from what the app shows.
 VERSION = re.search(r"version:\s*'([^']+)'",
                     (Path(__file__).resolve().parent / 'js' / 'changelog.js').read_text()).group(1)
-NAME = 'helloid-analytics'
+NAME = 'helloid-sidekick'
 
 FOLDER_FILES = [
     'index.html', 'README.md', 'serve.sh', 'devserve.py', 'build.py',

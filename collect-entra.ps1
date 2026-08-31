@@ -1,6 +1,6 @@
 ﻿<#
 .SYNOPSIS
-  Read-only Microsoft Entra ID collector for HelloID Analytics.
+  Read-only Microsoft Entra ID collector for HelloID Sidekick.
 
 .DESCRIPTION
   Exports users, groups, memberships (including nesting), license assignments and

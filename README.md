@@ -1,8 +1,11 @@
-# HelloID Analytics
+# HelloID Sidekick
 
-A self-hostable, dependency-free dashboard for HelloID exports. Drop any HelloID export
-on the page and it shows the most analysis that export can carry — every import is
-optional, and each one deepens the model rather than gating it.
+The self-hostable companion to HelloID. A dependency-free web app that works alongside
+the platform: it analyses what is there — risk, cost, coverage, unmanaged access — and
+prepares what comes next — mined and condensed business rules, account matching, naming
+conventions, field-mapping simulations. Drop any HelloID export on the page and it shows
+the most analysis that export can carry — every import is optional, and each one deepens
+the model rather than gating it.
 
 The **reconciliation** (`ReconciliationReport.csv`) is the base of the access analysis: the
 account ↔ entitlement ↔ person graph, risk scoring, licence drift pricing, and the diff
@@ -91,7 +94,7 @@ produces two things in `dist/`:
 | Artefact | What it is | Use it when |
 | --- | --- | --- |
 | `reconciliation-analytics.html` | ~270 KB single file, every script, stylesheet and the logo inlined | mailing it, dropping it on a share, handing it to a customer. Double-click opens it; drag the CSV on. Snapshots stay in the tab unless it is served over http. |
-| `helloid-analytics-<version>.zip` | the folder form, plus `serve.sh` | the customer wants diffing across sessions, or you want to keep editing it |
+| `helloid-sidekick-<version>.zip` | the folder form, plus `serve.sh` | the customer wants diffing across sessions, or you want to keep editing it |
 
 Both are static: no install, no runtime, no network access. If you want it permanently
 available for a team, the folder can also be dropped on any static host (an internal IIS

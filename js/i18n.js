@@ -8,7 +8,7 @@ window.HR = window.HR || {};
 
   const EN = {
     /* ---- shell ---- */
-    'app.title': 'HelloID Analytics',
+    'app.title': 'HelloID Sidekick',
     'app.noData': 'no data loaded',
     'app.versionTitle': 'What changed in this version — click for the full history',
     'app.changelog': 'What\u2019s changed',
@@ -2670,7 +2670,7 @@ window.HR = window.HR || {};
   };
 
   const NL = {
-    'app.title': 'HelloID Analytics',
+    'app.title': 'HelloID Sidekick',
     'app.noData': 'geen data geladen',
     'app.versionTitle': 'Wat er in deze versie veranderde — klik voor de volledige historie',
     'app.changelog': 'Wat is er veranderd',

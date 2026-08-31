@@ -1,6 +1,6 @@
 ﻿<#
 .SYNOPSIS
-  Read-only Active Directory collector for HelloID Analytics.
+  Read-only Active Directory collector for HelloID Sidekick.
 
 .DESCRIPTION
   Exports users, groups and memberships (including group-in-group nesting) to one

@@ -12,5 +12,5 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         pass
 
 with socketserver.TCPServer(('127.0.0.1', PORT), Handler) as httpd:
-    print('HelloID Analytics  ->  http://localhost:%d' % PORT)
+    print('HelloID Sidekick  ->  http://localhost:%d' % PORT)
     httpd.serve_forever()

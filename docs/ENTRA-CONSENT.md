@@ -8,7 +8,7 @@ customer before the appointment.
 A read-only PowerShell script that exports users, groups, memberships and
 license assignments from your Microsoft Entra ID tenant into **one JSON file on
 your own machine**. The file is analysed in the consultant's browser with
-[HelloID Analytics](../README.md) — a static page with no back end. Nothing is
+[HelloID Sidekick](../README.md) — a static page with no back end. Nothing is
 uploaded, nothing is installed in your tenant, and nothing is changed.
 
 The purpose: understand your naming conventions, group structure and account

@@ -18,6 +18,12 @@
 
   const ENTRIES = [
     {
+      version: '2026.8.20', date: '2026-08-31',
+      changes: [
+        'The product is now called HelloID Sidekick — it works alongside HelloID rather than only reporting on it. New home: github.com/arnoutvandervorst/helloid_sidekick (the old address redirects). File formats, settings and browser storage are unchanged; existing exports and collector scripts keep working.'
+      ]
+    },
+    {
       version: '2026.8.19', date: '2026-08-31',
       changes: [
         'Target-attribute analyzer: a new "Target attributes" tab in Field mapping profiles every attribute of the collected AD/Entra accounts — how many accounts have a value, how many distinct values, the most common ones — with a value-distribution drawer per attribute.',
