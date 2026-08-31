@@ -1100,9 +1100,11 @@
     body.appendChild(dl([
       [T('py.dLevel'), row.level === 99 || row.level === 98 ? T('py.kind.' + row.kind)
         : row.level === 0 ? T('py.baselineTag') : 'L' + row.level],
+      row.rank ? [T('py.dRank'), T('py.dRankOf', { rank: row.rank, n: row.rankTotal }) +
+        (row.withinCap === false ? ' — ' + T('py.rankOverCap') : '')] : null,
       [T('py.dMembers'), U.fmtInt(row.members)],
       [T('py.dGrants'), U.fmtInt(row.entitlements)]
-    ]));
+    ].filter(Boolean)));
 
     /* A condensed rule still names the single-value rules it took the place of. */
     if (row.from > 1 && row.sources && row.sources.length) {
@@ -1382,6 +1384,8 @@
     const ruleCount = CD
       ? CD.summary.after + (P.ruleGroups.has(P.root) ? 1 : 0)
       : s.rules + s.combos;
+    let RK = null;
+    try { RK = CD ? HR.pyramid.rankForCap(m, P, CD) : null; } catch (e) { RK = null; }
     f.appendChild(el('div', { class: 'view-head' }, [
       el('div', {}, [
         el('h1', { text: T('py.title') }),
@@ -1405,7 +1409,10 @@
     const tiles = el('div', { class: 'grid g4', style: 'margin-bottom:14px' });
     tiles.append(
       tile(T('py.kRules'), U.fmtInt(ruleCount),
-        T('py.kRulesFoot', { grants: U.fmtInt(s.grants + s.comboGrants) })),
+        RK && RK.cap && RK.overCap
+          ? T('py.kRulesOver', { over: U.fmtInt(RK.overCap), cap: U.fmtInt(RK.cap) })
+          : T('py.kRulesFoot', { grants: U.fmtInt(s.grants + s.comboGrants) }),
+        RK && RK.cap && RK.overCap ? { severity: 'medium' } : undefined),
       tile(T('py.kCoverage'), U.fmtPct(s.coverage, 0),
         T('py.kCoverageFoot', { explained: U.fmtInt(s.explained), total: U.fmtInt(s.assignments) }),
         { severity: s.coverage > 0.6 ? 'good' : s.coverage > 0.3 ? 'medium' : 'high' }),
@@ -1522,6 +1529,13 @@
         placeholder: T('py.hyTplPh') });
       tpl.style.minWidth = '260px';
       tpl.onchange = () => { cfg.mining.ruleName = tpl.value.trim(); HR.config.save(); };
+      const capIn = el('input', { type: 'number', min: 0, step: 1,
+        value: cfg.mining.ruleCap === undefined ? 100 : cfg.mining.ruleCap });
+      capIn.style.width = '80px';
+      capIn.onchange = () => {
+        cfg.mining.ruleCap = Math.max(0, Math.round(+capIn.value || 0));
+        apply();
+      };
       const deep = el('input', { type: 'checkbox' });
       deep.checked = cfg.mining.deepestOnly !== false;
       deep.onchange = () => { cfg.mining.deepestOnly = deep.checked; apply(); };
@@ -1533,7 +1547,9 @@
         list,
         el('label', { class: 'inline' }, [deep, document.createTextNode(T('py.hyDeep'))]),
         el('p', { class: 'note', text: deepNote }),
-        el('label', { class: 'inline' }, [document.createTextNode(T('py.hyTpl')), tpl])
+        el('label', { class: 'inline' }, [document.createTextNode(T('py.hyTpl')), tpl]),
+        el('label', { class: 'inline' }, [document.createTextNode(T('py.hyCap')), capIn]),
+        el('p', { class: 'note', text: T('py.hyCapNote') })
       ]));
     })();
 
@@ -1575,6 +1591,7 @@
        diagram deliberately stay on the raw tree: the nesting is what found the rules;
        condensing is how the output is written, not how the model thinks. */
     const cd = HR.pyramid.condensedOf(m, P);
+    const rk = HR.pyramid.rankForCap(m, P, cd);
     const nameOf = r => r.conds.map(c => (T('py.attr.' + c.attr) || c.attr) + ': ' +
       (c.labels.length > 1
         ? c.labels.slice(0, 3).join(' / ') + (c.labels.length > 3 ? '…' : '')
@@ -1590,7 +1607,8 @@
         grants: rootGrants, entitlements: rootGrants.length,
         minCoverage: Math.min.apply(null, rootGrants.map(g => g.coverage)),
         missing: new Set(rootGrants.flatMap(g => g.missing)).size,
-        from: 1, sources: [], node: P.root
+        from: 1, sources: [], node: P.root,
+        rank: 1, withinCap: true, rankTotal: rk.total
       });
     }
     cd.rules.forEach(r => {
@@ -1609,12 +1627,24 @@
         /* The weakest entitlement in the rule decides how safe the rule is. */
         minCoverage: Math.min.apply(null, r.grants.map(g => g.coverage)),
         missing: new Set(r.grants.flatMap(g => g.missing)).size,
-        from: r.from, sources: r.sources, node: null
+        from: r.from, sources: r.sources, node: null,
+        rank: r.rank, withinCap: r.withinCap !== false, rankTotal: rk.total
       });
     });
 
-    return card(T('py.rulesTitle'), T('py.rulesNote'), HR.table.make({
+    const capNote = rk.cap && rk.overCap
+      ? el('p', { class: 'note', style: 'margin-top:10px', text: T('py.capNote', {
+          cap: rk.cap, capCov: U.fmtPct(rk.capCoverage, 0),
+          n: rk.total, cov: U.fmtPct(rk.fullCoverage, 0), over: rk.overCap }) })
+      : null;
+
+    return card(T('py.rulesTitle'), T('py.rulesNote'), [HR.table.make({
       columns: [
+        { key: 'rank', label: T('py.cRank'), num: true, hint: T('py.cRankHint'),
+          value: r => r.rank || 9e9,
+          render: r => r.withinCap
+            ? el('span', { class: 'mono', text: String(r.rank) })
+            : el('span', { class: 'pill warn', title: T('py.rankOverCap'), text: String(r.rank) }) },
         { key: 'name', label: T('py.cRule'), value: r => r.name,
           render: r => el('span', { text: r.name, title: conditionText(r) }) },
         { key: 'level', label: T('py.cLevel'), value: r => r.level,
@@ -1648,10 +1678,10 @@
           } }
       ],
       rows: ruleRows, pageSize: 15, exportName: 'pyramid-rules',
-      /* By level, so the rules an added level produces are visible rather than buried. */
-      initialSort: { key: 'level', dir: 1 },
+      /* Best rules first: the ranking that decides what fits under HelloID's cap. */
+      initialSort: { key: 'rank', dir: 1 },
       onRowClick: r => drawerPyramidRule(m, P, r)
-    }));
+    }), capNote].filter(Boolean));
     }
 
     function gapsCard() {

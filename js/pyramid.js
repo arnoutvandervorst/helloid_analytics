@@ -952,6 +952,81 @@
     return result._condensed;
   }
 
+  /** The rule cap HelloID enforces (softly): default 100, 0 = ranking off. */
+  function ruleCap() {
+    const v = (HR.config.get().mining || {}).ruleCap;
+    const n = v === undefined || v === null || v === '' ? 100 : +v;
+    return isFinite(n) && n > 0 ? Math.round(n) : 0;
+  }
+
+  /**
+   * Rank the condensed rules against HelloID's rule cap.
+   *
+   * HelloID allows about a hundred business rules, so when the miner proposes
+   * more, the order matters: the best {cap} rules should be the ones that
+   * explain the most access. Ranking is greedy: the baseline takes rank 1
+   * (one rule, the widest coverage there is), then each next rank goes to the
+   * rule that explains the most assignments nothing ranked above it explains.
+   * Every rule keeps its rank; whatever lands past the cap is still shown,
+   * marked as over it.
+   */
+  function rankForCap(model, pyramid, condensed) {
+    if (condensed._rank) return condensed._rank;
+    const cap = ruleCap();
+
+    const covered = new Set();
+    const pairsOf = (grants, members) => {
+      const out = [];
+      for (const g of grants) for (const m of members) {
+        if (m.ents.has(g.ent)) out.push(m.person.personId + SEP + g.ent);
+      }
+      return out;
+    };
+
+    let rank = 0;
+    const baseGrants = pyramid.ruleGroups.get(pyramid.root);
+    if (baseGrants && baseGrants.length) {
+      rank = 1;                                        // the baseline occupies one slot
+      pairsOf(baseGrants, pyramid.root.members).forEach(p => covered.add(p));
+    }
+    const basePairs = covered.size;
+
+    const remaining = condensed.rules.map(r => ({ rule: r, pairs: pairsOf(r.grants, r.members) }));
+    let capPairs = cap > 0 && rank >= cap ? covered.size : null;
+    while (remaining.length) {
+      let best = -1, bestGain = -1;
+      for (let i = 0; i < remaining.length; i++) {
+        let gain = 0;
+        for (const p of remaining[i].pairs) if (!covered.has(p)) gain++;
+        if (best < 0 || gain > bestGain ||
+            (gain === bestGain &&
+             remaining[i].rule.members.length > remaining[best].rule.members.length)) {
+          best = i; bestGain = gain;
+        }
+      }
+      const pick = remaining.splice(best, 1)[0];
+      rank++;
+      pick.rule.rank = rank;
+      pick.rule.capGain = bestGain;
+      pick.rule.withinCap = cap === 0 || rank <= cap;
+      for (const p of pick.pairs) covered.add(p);
+      if (cap > 0 && rank === cap) capPairs = covered.size;
+    }
+    if (capPairs === null) capPairs = covered.size;    // fewer rules than the cap, or no cap
+
+    const total = pyramid.stats.totalAssignments || 1;
+    const ranked = condensed.rules.slice().sort((a, b) => a.rank - b.rank);
+    condensed._rank = {
+      ranked, cap,
+      total: rank,
+      overCap: cap > 0 ? ranked.filter(r => !r.withinCap).length : 0,
+      basePairs,
+      capCoverage: capPairs / total,
+      fullCoverage: covered.size / total
+    };
+    return condensed._rank;
+  }
+
   /** The condensed set, in the export shape HelloID reads back. */
   function condensedToRulesCsv(model, condensed) {
     const entName = key => {
@@ -971,13 +1046,18 @@
         Entitlements: condensed.root.grants.map(g => entName(g.ent)).join('|')
       });
     }
-    rows.push.apply(rows, condensed.rules.map(rule => ({
+    /* In rank order when ranked, so the file reads best-first; whatever sits
+       past HelloID's rule cap carries an extra category saying so. */
+    const ordered = condensed.rules.slice()
+      .sort((a, b) => (a.rank || Infinity) - (b.rank || Infinity));
+    rows.push.apply(rows, ordered.map(rule => ({
       Name: HR.mine.ruleName('Voorstel', rule.conds.map(c =>
         (c.labels.length > 1 ? c.labels.slice(0, 3).join(' / ') + (c.labels.length > 3 ? '\u2026' : '')
           : (c.labels[0] || c.values[0]))).join(' + ')),
       EntitlementCount: rule.grants.length,
       PersonsLatestEvaluation: rule.members.length,
-      Categories: rule.conds.some(c => c.values.length > 1) ? 'Condensed' : 'Mined',
+      Categories: (rule.conds.some(c => c.values.length > 1) ? 'Condensed' : 'Mined') +
+        (rule.withinCap === false ? '|Over rule cap' : ''),
       Status: 'proposal',
       /* "one of" already takes a list; this is the shape HelloID writes itself. */
       Conditions: rule.conds.map(c =>
@@ -994,7 +1074,9 @@
       const perm = model.permissions.get(key);
       return perm ? (perm.system + ' - ' + perm.name + (perm.path ? ' (' + perm.path + ')' : '')) : key;
     };
-    const rows = condensed.rules.map(rule => ({
+    /* Already in marginal-gain order by construction; index = rank. */
+    const cap = ruleCap();
+    const rows = condensed.rules.map((rule, i) => ({
       Name: rule.everyone
         ? 'Basis - Alle medewerkers'
         : HR.mine.ruleName('Voorstel', rule.conds.map(c =>
@@ -1002,7 +1084,8 @@
               : (c.labels[0] || c.values[0]))).join(' + ')),
       EntitlementCount: rule.grants.length,
       PersonsLatestEvaluation: rule.members.length,
-      Categories: rule.conds.some(c => c.values.length > 1) ? 'Condensed' : 'Mined',
+      Categories: (rule.conds.some(c => c.values.length > 1) ? 'Condensed' : 'Mined') +
+        (cap && i >= cap ? '|Over rule cap' : ''),
       Status: 'proposal',
       Conditions: rule.conds.map(c =>
         c.attr + (c.byId ? '.ExternalId' : '.Name') + ', one of: ' + c.values.join(', ')).join('|'),
@@ -1061,5 +1144,5 @@
 
   HR.pyramid = { build, mine, account, suggestLevels, mineCombos, population, greedy,
     sweep, baseline, condense, condensedOf, condenseGreedy, condensedToRulesCsv,
-    availableAttributes, toRulesCsv, greedyToRulesCsv, ATTRIBUTES };
+    rankForCap, ruleCap, availableAttributes, toRulesCsv, greedyToRulesCsv, ATTRIBUTES };
 })(window.HR);

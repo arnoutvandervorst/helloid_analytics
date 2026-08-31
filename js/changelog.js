@@ -18,6 +18,14 @@
 
   const ENTRIES = [
     {
+      version: '2026.8.21', date: '2026-08-31',
+      changes: [
+        'HelloID allows about 100 business rules, so mined rules are now ranked: rank 1 is the baseline, and each next rank goes to the rule that explains the most access nothing above it explains. The best 100 sit inside the cap; everything past it stays visible, marked "over the rule cap".',
+        'The rules table sorts by rank, the drawer shows each rule’s rank, and a note states what the best 100 explain versus the full set. The rule exports are ordered best-first, with over-cap rows carrying an "Over rule cap" category.',
+        'The cap is a setting in the mining-hygiene card (default 100, 0 switches it off).'
+      ]
+    },
+    {
       version: '2026.8.20', date: '2026-08-31',
       changes: [
         'The product is now called HelloID Sidekick — it works alongside HelloID rather than only reporting on it. New home: github.com/arnoutvandervorst/helloid_sidekick (the old address redirects). File formats, settings and browser storage are unchanged; existing exports and collector scripts keep working.'

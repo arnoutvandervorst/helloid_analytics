@@ -3032,7 +3032,10 @@
     const s2 = P.summary;
     /* The condensed set is canonical: same count and same export as the Mining view. */
     let CD = null;
-    try { CD = HR.pyramid.condensedOf(m, P); } catch (e) { CD = null; }
+    try {
+      CD = HR.pyramid.condensedOf(m, P);
+      HR.pyramid.rankForCap(m, P, CD);     // ranks the set so the export reads best-first
+    } catch (e) { CD = null; }
     const ruleCount = CD ? CD.summary.after + (P.ruleGroups.has(P.root) ? 1 : 0)
       : s2.rules + s2.combos;
     return card(T('ro.pyramidTitle'), T('ro.pyramidNote'), [
