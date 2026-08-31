@@ -2898,8 +2898,13 @@
         { key: 'unmanaged', label: T('ru.cUnmanaged'), num: true, value: r => r.unmanagedRows },
         { key: 'scope', label: T('ru.cScope'),
           value: r => r.rule.scopingConditions.map(x => x.facet).join(', '),
-          render: r => el('span', { class: 'trunc', title: r.rule.scopingConditions.map(x => x.raw).join(' · '),
-            text: r.rule.scopingConditions.map(x => x.facet).join(', ') || '—' }) },
+          /* No scoping condition does not mean no condition: every rule carries the
+             Person and time-frame clauses, so the honest reading is "everyone active". */
+          render: r => r.rule.scopingConditions.length
+            ? el('span', { class: 'trunc', title: r.rule.scopingConditions.map(x => x.raw).join(' · '),
+                text: r.rule.scopingConditions.map(x => x.facet).join(', ') })
+            : el('span', { class: 'note', title: r.rule.conditions.map(x => x.raw).join(' · '),
+                text: T('ru.scopeAll') }) },
         m.evaluation ? { key: 'people', label: T('ru.cSelected'), num: true,
           value: r => (m.evaluation.perRule.get(r.rule.name) || { matched: [] }).matched.length } : null
       ].filter(Boolean),
@@ -3164,11 +3169,12 @@
       [T('dr.monthlyCost'), row.monthlyCost ? U.fmtMoney(row.monthlyCost) : '—']
     ]));
 
-    body.appendChild(card(T('ru.cScope'), null, el('ul', { class: 'clean' },
-      r.conditions.map(cd => el('li', {}, [
-        el('strong', { text: cd.facet }),
-        cd.operator ? el('span', { class: 'pill', text: cd.operator }) : null,
-        el('span', { class: 'note', text: ' ' + cd.values.join(', ') })
+    body.appendChild(card(T('ru.cScope'), T('ru.scopeNote'), el('table', { class: 'cond-list' },
+      r.conditions.map(cd => el('tr', {}, [
+        el('td', {}, el('span', { class: 'pill', text: cd.facet })),
+        el('td', { style: 'width:1%;white-space:nowrap' },
+          cd.operator ? el('span', { class: 'pill muted', text: cd.operator }) : null),
+        el('td', { class: 'mono', text: cd.values.join(', ') || '—' })
       ])))));
 
     body.appendChild(card(T('ru.cEnt'), T('dr.groupsN', { n: row.matched.length }), HR.table.make({
@@ -3184,11 +3190,11 @@
 
     if (row.stale.length) {
       body.appendChild(card(T('ru.staleTable'), T('ru.staleTableNote'),
-        el('ul', { class: 'clean' }, row.stale.map(e => el('li', { text: e.raw })))));
+        el('ul', { class: 'clean' }, row.stale.map(e => el('li', { class: 'mono', text: e.raw })))));
     }
     if (row.accountEntitlements.length) {
-      body.appendChild(card(T('ru.accountEnt'), null,
-        el('ul', { class: 'clean' }, row.accountEntitlements.map(e => el('li', { text: e.raw })))));
+      body.appendChild(card(T('ru.accountEntTitle'), null,
+        el('ul', { class: 'clean' }, row.accountEntitlements.map(e => el('li', { class: 'mono', text: e.raw })))));
     }
 
     /* Who this rule actually selects — the export-users-per-rule ask from the

@@ -1185,6 +1185,9 @@ window.HR = window.HR || {};
     'ru.cRuleCount': 'Rules',
     'ru.clear': 'Remove rules',
     'ru.accountEnt': 'account',
+    'ru.accountEntTitle': 'Account entitlements',
+    'ru.scopeAll': 'everyone active',
+    'ru.scopeNote': 'every condition must hold; values within one condition are alternatives (\u201cone of\u201d)',
     'ru.statusLive': 'live',
     'ru.statusDraft': 'draft',
 
@@ -3813,6 +3816,9 @@ window.HR = window.HR || {};
     'ru.cRuleCount': 'Regels',
     'ru.clear': 'Regels verwijderen',
     'ru.accountEnt': 'account',
+    'ru.accountEntTitle': 'Accountrechten',
+    'ru.scopeAll': 'iedereen actief',
+    'ru.scopeNote': 'elke voorwaarde moet gelden; waarden binnen \u00e9\u00e9n voorwaarde zijn alternatieven (\u201cone of\u201d)',
     'ru.statusLive': 'actief',
     'ru.statusDraft': 'concept',
 

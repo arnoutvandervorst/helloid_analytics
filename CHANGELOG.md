@@ -3,6 +3,12 @@
 Versions are CalVer (`YYYY.M.N` — Nth release of that month). This file is
 generated from `js/changelog.js` by `make-changelog.js`; edit there, not here.
 
+## [2026.8.17] — 2026-08-31
+
+- Imported-rule polish: a rule whose only conditions are the Person and time-frame clauses now reads "everyone active" in the rules table instead of a dash, with the clauses in the tooltip.
+- The rule drawer’s conditions render as a proper table — facet, operator and values clearly separated — with a note stating the semantics: every condition must hold, values within one condition are alternatives.
+- The account-entitlement card got a capitalized title, and raw entitlement names in the drawer read as data (monospace).
+
 ## [2026.8.16] — 2026-08-30
 
 - Mined rules condense the way HelloID allows: sibling rules merge into multi-value "one of" conditions, iterated across every attribute until nothing merges, and the condensed set is now the canonical output — the mined-rules table, the counts and the pyramid-rules.csv export all use it, with the raw single-value set kept as a separate export and each condensed rule naming the rules it replaced in its drawer.
