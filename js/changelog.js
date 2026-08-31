@@ -18,6 +18,14 @@
 
   const ENTRIES = [
     {
+      version: '2026.8.19', date: '2026-08-31',
+      changes: [
+        'Target-attribute analyzer: a new "Target attributes" tab in Field mapping profiles every attribute of the collected AD/Entra accounts — how many accounts have a value, how many distinct values, the most common ones — with a value-distribution drawer per attribute.',
+        'With a mapping loaded it answers the two questions that matter before trusting it: which attributes hold real data that no mapping field writes (nothing keeps them up to date), and which mapped attributes are empty today (the first update run would write them on nearly every account).',
+        'The tab works from a directory import alone; mapped attributes link straight into the update simulation.'
+      ]
+    },
+    {
       version: '2026.8.18', date: '2026-08-31',
       changes: [
         'Plain-language sweep across the dashboard: ~70 figurative or insider phrasings rewritten in both languages ("What the paperwork carries" → "What the HR data provides", "it travelled with them" → "usually kept from an earlier role", and many more).',

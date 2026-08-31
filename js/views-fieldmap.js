@@ -12,7 +12,7 @@
 
   const U = HR.util, el = U.el;
   const T = (k, p) => HR.i18n.t(k, p);
-  const { card, tile, tabbed, openDrawer } = HR.viewkit;
+  const { card, tile, tabbed, openDrawer, scoreBar, dl } = HR.viewkit;
 
   const ACTIONS = ['Create', 'Update', 'Enable', 'Disable', 'Delete'];
   let SIM = null;          // last simulation result, invalidated on re-render inputs
@@ -282,6 +282,117 @@
     return wrap;
   }
 
+  /* ------------------------------------------------------- target attributes */
+
+  /** One target attribute: its values, and which mapping fields write it. */
+  function drawerAttribute(a, fm) {
+    const body = el('div', { class: 'stack' });
+    body.appendChild(dl([
+      [T('fm.cFill'), U.fmtPct(a.fillPct, 0) + ' (' + U.fmtInt(a.fill) + ')'],
+      [T('fm.cDistinct'), U.fmtInt(a.distinct)]
+    ]));
+
+    body.appendChild(card(T('fm.dValues'), T('fm.dValuesNote'), HR.table.make({
+      columns: [
+        { key: 'value', label: T('fm.cValue'), value: r => r.value,
+          render: r => el('span', { class: 'mono trunc', title: r.value, text: r.value }) },
+        { key: 'n', label: T('ov.accounts'), num: true, value: r => r.n },
+        { key: 'share', label: T('fm.cShare'), num: true, value: r => r.n / (a.fill || 1),
+          render: r => el('span', { text: U.fmtPct(r.n / (a.fill || 1), 0) }) }
+      ],
+      rows: a.top, pageSize: 20, exportName: 'attribute-values'
+    })));
+
+    if (a.mapped) {
+      body.appendChild(card(T('fm.dWrittenBy'), T('fm.dWrittenByNote'), el('ul', { class: 'clean' },
+        a.mappedBy.map(name => {
+          const pf = SIM && (SIM.perField || []).find(x => x.name === name);
+          return el('li', {}, pf
+            ? el('a', { href: '#', class: 'mono', text: name,
+                onclick: e => { e.preventDefault(); drawerSimField(pf, SIM); } })
+            : el('span', { class: 'mono', text: name }));
+        }))));
+      if (a.fill) {
+        body.appendChild(el('div', { class: 'slot-actions' },
+          el('button', { class: 'btn', text: T('fm.dOpenSim'),
+            onclick: () => HR.app.go('fieldmap', { tab: 'simulation' }) })));
+      }
+    } else if (fm && !a.system) {
+      body.appendChild(el('p', { class: 'note', text: T('fm.dNotWritten') }));
+    }
+
+    openDrawer(el('div', {}, [
+      el('div', { class: 'mono', text: a.name }),
+      el('span', { class: 'note', text: T('fm.dHeadNote', {
+        fill: U.fmtPct(a.fillPct, 0), distinct: U.fmtInt(a.distinct) }) })
+    ]), body);
+  }
+
+  function attributesTab(fm) {
+    const st = HR.app.state;
+    const wrap = el('div', {});
+    if (!st.directory) {
+      wrap.appendChild(el('p', { class: 'note', text: T('fm.attrNeedsDirectory') }));
+      return wrap;
+    }
+    const prof = HR.fieldmap.attributeProfile(st.directory, fm);
+    const s = prof.summary;
+
+    const tiles = el('div', { class: 'grid g4', style: 'margin-bottom:14px' }, [
+      tile(T('fm.kAttrs'), U.fmtInt(s.attrs), T('fm.kAttrsFoot', { n: U.fmtInt(s.users) }), { small: true }),
+      fm ? tile(T('fm.kUnmapped'), U.fmtInt(s.filledUnmapped), T('fm.kUnmappedFoot'),
+        { small: true, severity: s.filledUnmapped ? 'high' : 'good' }) : null,
+      fm ? tile(T('fm.kMappedEmpty'), U.fmtInt(s.mappedEmpty), T('fm.kMappedEmptyFoot'),
+        { small: true, severity: s.mappedEmpty ? 'medium' : 'good' }) : null
+    ]);
+    wrap.appendChild(tiles);
+
+    if (fm && prof.filledUnmapped.length) {
+      wrap.appendChild(card(T('fm.unmappedTitle'), T('fm.unmappedNote'), el('ul', { class: 'clean' },
+        prof.filledUnmapped.map(a => el('li', {}, [
+          el('span', { class: 'mono', text: a.name }),
+          el('span', { class: 'note', text: ' · ' + T('fm.unmappedLine', {
+            fill: U.fmtPct(a.fillPct, 0), distinct: U.fmtInt(a.distinct) }) })
+        ])))));
+    }
+    if (fm && prof.mappedEmpty.length) {
+      wrap.appendChild(card(T('fm.mappedEmptyTitle'), T('fm.mappedEmptyNote'), el('ul', { class: 'clean' },
+        prof.mappedEmpty.map(x => el('li', {}, [
+          el('span', { class: 'mono', text: x.attr }),
+          el('span', { class: 'note', text: ' · ' + x.fields.join(', ') })
+        ])))));
+    }
+
+    wrap.appendChild(card(T('fm.attrTitle'), T('fm.attrNote'), HR.table.make({
+      columns: [
+        { key: 'name', label: T('fm.cAttr'), value: a => a.name,
+          render: a => el('span', { class: 'mono', text: a.name }) },
+        { key: 'fill', label: T('fm.cFill'), num: true, value: a => a.fillPct,
+          render: a => scoreBar(Math.round(a.fillPct * 100)) },
+        { key: 'distinct', label: T('fm.cDistinct'), num: true, value: a => a.distinct },
+        { key: 'top', label: T('fm.cTop'), sortable: false,
+          render: a => {
+            const text = a.top.slice(0, 4).map(v => v.value).join(', ');
+            return el('span', { class: 'trunc note', title: text, text });
+          } },
+        fm ? { key: 'status', label: T('fm.cStatus'),
+          value: a => a.system ? 'system' : a.mapped ? 'mapped' : 'unmapped',
+          render: a => a.system
+            ? el('span', { class: 'pill muted', text: T('fm.stSystem') })
+            : a.mapped
+              ? el('span', { class: 'pill ok', text: T('fm.stMapped') })
+              : a.fillPct >= 0.5
+                ? el('span', { class: 'pill warn', text: T('fm.stUnmapped') })
+                : el('span', { class: 'note', text: T('fm.stUnmapped') }) } : null
+      ].filter(Boolean),
+      rows: prof.attrs, pageSize: 25, exportName: 'target-attributes',
+      initialSort: { key: 'fill', dir: -1 },
+      search: (a, q) => (a.name + ' ' + a.top.map(v => v.value).join(' ')).toLowerCase().includes(q),
+      onRowClick: a => drawerAttribute(a, fm)
+    })));
+    return wrap;
+  }
+
   /* -------------------------------------------------------------------- view */
 
   function fieldmapView(m, params) {
@@ -292,22 +403,29 @@
       el('p', { text: T('fm.lead') })
     ])));
 
-    if (!fm) {
-      f.appendChild(el('div', { class: 'grid' }, card(T('fm.emptyTitle'), null, el('div', { class: 'stack' }, [
-        el('p', { text: T('fm.emptyBody') }),
-        el('div', { class: 'row' }, el('button', { class: 'btn primary', text: T('fm.emptyImport'), onclick: () => {
-          const inp = el('input', { type: 'file', accept: '.json' });
-          inp.onchange = () => { if (inp.files[0]) HR.app.importFileAs(inp.files[0]); };
-          inp.click();
-        } }))
-      ]))));
+    const importCard = () => card(T('fm.emptyTitle'), null, el('div', { class: 'stack' }, [
+      el('p', { text: T('fm.emptyBody') }),
+      el('div', { class: 'row' }, el('button', { class: 'btn primary', text: T('fm.emptyImport'), onclick: () => {
+        const inp = el('input', { type: 'file', accept: '.json' });
+        inp.onchange = () => { if (inp.files[0]) HR.app.importFileAs(inp.files[0]); };
+        inp.click();
+      } }))
+    ]));
+
+    /* Without a mapping, the target-attribute profile still works from the
+       directory alone — the mapping and simulation tabs then hold the import
+       invitation instead of disappearing. */
+    if (!fm && !HR.app.state.directory) {
+      f.appendChild(el('div', { class: 'grid' }, importCard()));
       return f;
     }
 
     f.appendChild(tabbed('fieldmap', [
-      { id: 'mapping', label: T('fm.tab.mapping'), count: fm.counts.fields, build: () => mappingTab(fm) },
-      { id: 'simulation', label: T('fm.tab.simulation'), build: () => simulationTab(fm) }
-    ], params));
+      { id: 'mapping', label: T('fm.tab.mapping'), count: fm ? fm.counts.fields : undefined,
+        build: () => fm ? mappingTab(fm) : el('div', { class: 'grid' }, importCard()) },
+      { id: 'attributes', label: T('fm.tab.attributes'), build: () => attributesTab(fm) },
+      fm ? { id: 'simulation', label: T('fm.tab.simulation'), build: () => simulationTab(fm) } : null
+    ].filter(Boolean), params));
     return f;
   }
 

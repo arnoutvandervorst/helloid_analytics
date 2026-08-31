@@ -385,6 +385,100 @@
       fixableCount: gaps.filter(g => g.fixable).length };
   }
 
+  /* Attributes the system or another process maintains, not a connector mapping:
+     shown in the profile, never counted as "should be mapped". */
+  const SYSTEM_ATTRS = new Set(['ou', 'managerId', 'managerName', 'created', 'hireDate',
+    'expires', 'licenses']);
+
+  /**
+   * What the target accounts contain today: per attribute how many accounts have
+   * a value, how many distinct values there are, and the most common ones — the
+   * Conventions HR-attribute analysis, aimed at the other side of the mapping.
+   *
+   * With a mapping loaded, each attribute also says whether any mapping field
+   * writes it. That yields the two checks that matter before trusting a mapping:
+   *   filledUnmapped — an attribute with real data that no mapping field writes,
+   *                    so nothing keeps it up to date;
+   *   mappedEmpty    — a mapped attribute that is empty today, so the first
+   *                    Update run would write it on nearly every account.
+   */
+  function attributeProfile(dir, mapping) {
+    if (!dir) return null;
+    const users = dir.users || [];
+    const stats = new Map();
+    const note = (name, value) => {
+      let s = stats.get(name);
+      if (!s) { s = { name, fill: 0, values: new Map(), array: false }; stats.set(name, s); }
+      let text;
+      if (Array.isArray(value)) {
+        s.array = true;
+        text = value.map(v => String(v == null ? '' : v).trim()).filter(Boolean).sort().join(', ');
+      } else {
+        text = String(value == null ? '' : value).trim();
+      }
+      if (!text) return;
+      s.fill++;
+      s.values.set(text, (s.values.get(text) || 0) + 1);
+    };
+    for (const u of users) {
+      for (const k in u) {
+        if (k === 'id' || k === 'extensionAttributes' || k === 'extra') continue;
+        const v = u[k];
+        if (typeof v === 'boolean') continue;
+        if (v && typeof v === 'object' && !Array.isArray(v)) continue;
+        note(k, v);
+      }
+      for (const k in (u.extensionAttributes || {})) note(k, u.extensionAttributes[k]);
+      for (const k in (u.extra || {})) note(k, u.extra[k]);
+    }
+
+    /* Which profiled attribute each mapping field writes. */
+    const lowerName = new Map();
+    stats.forEach((s, name) => lowerName.set(name.toLowerCase(), name));
+    const mappedBy = new Map();
+    const emptyByAttr = new Map();
+    if (mapping) {
+      for (const f of mapping.fields) {
+        const lower = targetAttr(f.name);
+        if (NON_ATTRS.has(lower)) continue;
+        const extM = /^extensionattribute(\d{1,2})$/.exec(lower);
+        const alias = ATTR_ALIASES[lower];
+        const dirName = extM ? 'extensionAttribute' + extM[1]
+          : (alias || lowerName.get(lower) || f.name.replace(/^AdditionalFields\./i, ''));
+        if (!mappedBy.has(dirName)) mappedBy.set(dirName, []);
+        mappedBy.get(dirName).push(f.name);
+        const sourceMissing = alias && SOURCE_MISSING[dir.source] && SOURCE_MISSING[dir.source].has(alias);
+        const st = stats.get(dirName);
+        const fillPct = st && users.length ? st.fill / users.length : 0;
+        if (!sourceMissing && fillPct < 0.05) {
+          if (!emptyByAttr.has(dirName)) emptyByAttr.set(dirName, { attr: dirName, fields: [], fillPct });
+          emptyByAttr.get(dirName).fields.push(f.name);
+        }
+      }
+    }
+
+    const attrs = Array.from(stats.values()).map(s => ({
+      name: s.name, array: s.array,
+      fill: s.fill, fillPct: users.length ? s.fill / users.length : 0,
+      distinct: s.values.size,
+      top: Array.from(s.values.entries()).map(([value, n]) => ({ value, n }))
+        .sort((a, b) => b.n - a.n).slice(0, 20),
+      system: SYSTEM_ATTRS.has(s.name),
+      mapped: mappedBy.has(s.name),
+      mappedBy: mappedBy.get(s.name) || []
+    })).sort((a, b) => b.fillPct - a.fillPct || a.name.localeCompare(b.name));
+
+    const filledUnmapped = mapping
+      ? attrs.filter(a => a.fillPct >= 0.5 && !a.mapped && !a.system)
+      : [];
+    const mappedEmpty = [...emptyByAttr.values()];
+    return {
+      attrs, filledUnmapped, mappedEmpty,
+      summary: { attrs: attrs.length, filledUnmapped: filledUnmapped.length,
+        mappedEmpty: mappedEmpty.length, users: users.length, hasMapping: !!mapping }
+    };
+  }
+
   function simulate(mapping, state, opts) {
     const action = (opts && opts.action) || 'Update';
     const dir = state.directory;
@@ -474,7 +568,7 @@
     };
   }
 
-  HR.fieldmap = { looksLikeFieldMapping, looksLikeSourceMapping, parse, actionFor,
+  HR.fieldmap = { looksLikeFieldMapping, looksLikeSourceMapping, parse, actionFor, attributeProfile,
     evaluateField, personObjects, accountsFor, simulate, wrapComplex,
     deleteDiacriticalMarks, ATTR_ALIASES, targetAttr, coverage, currentValueOf };
 })(window.HR);
