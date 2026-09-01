@@ -193,11 +193,22 @@
 
     updateTopbar();
 
-    /* First look at a new export: show what the settings do and do not describe about
-       it, with rules mined from its own naming, before any number is presented. */
+    /* First look at a new export: examine the classifications and lead with what
+       is unmapped, before any number is presented. Skippable, and skipped runs
+       still say how much is unclassified. */
     HR.usage.imported('reconciliation', parsed.records.length);
-    state.review = (opts.quiet || HR.config.get().skipReview) ? null : HR.mine.suggest(state.model);
-    go(state.review ? 'review' : 'overview');
+    state.review = null;
+    if (!opts.quiet && state.model) {
+      const ex = HR.wizard.examine(state.model);
+      const open = ex.unmapped.permissions + ex.unmapped.families + ex.unmapped.cohorts;
+      if (open && !HR.config.get().skipReview) {
+        state.review = ex;
+        go('classify');
+        return;
+      }
+      if (open) U.toast(HR.i18n.t('wz.skippedToast', { n: U.fmtInt(open) }), 6000);
+    }
+    go('overview');
   }
 
   /**
@@ -519,6 +530,18 @@
       u: U.fmtInt(dir.meta.userCount), g: U.fmtInt(dir.meta.groupCount) }), 7000);
     HR.usage.imported('directory', dir.meta.rowCount);
     rebuild();
+    /* A collection brings a fresh population: examine the classifications and
+       lead with whatever is unmapped, same as a reconciliation import. */
+    if (state.model) {
+      const ex = HR.wizard.examine(state.model);
+      const open = ex.unmapped.permissions + ex.unmapped.families + ex.unmapped.cohorts;
+      if (open && !HR.config.get().skipReview) {
+        state.review = ex;
+        go('classify');
+        return;
+      }
+      if (open) U.toast(HR.i18n.t('wz.skippedToast', { n: U.fmtInt(open) }), 6000);
+    }
     go('overview');
   }
 

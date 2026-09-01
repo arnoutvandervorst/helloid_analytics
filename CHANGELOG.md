@@ -3,6 +3,13 @@
 Versions are CalVer (`YYYY.M.N` — Nth release of that month). This file is
 generated from `js/changelog.js` by `make-changelog.js`; edit there, not here.
 
+## [2026.8.24] — 2026-09-01
+
+- Classification rethought: no more pattern filters. Every permission and account is placed in a naming family mined from the actual data (per system), and classification is an answer per family or per single item — like categorising bank statements. Built-in knowledge (PRIV means privileged, adm- means admin account) classifies automatically until you answer otherwise, and accounts holding privileged entitlements class as admin accounts whatever their name says.
+- The classification wizard shows every family with its current answer and where it came from (your answer, automatic, none yet); changing the choice classifies every member, single members can be corrected, and names without a family are tagged one by one. A reconciliation or directory import opens it when anything is unanswered.
+- Settings › Classification now holds definitions only (label, sensitivity, weight, colour) with live counts; family and item answers travel with the settings export. Existing category and class definitions survive; old custom pattern rules do not — re-answer them once in the wizard.
+- Clearer names for the two account axes: “Account type” (what it technically is: admin, service, test …) and “Workforce category” (who it works for: payroll, temp, supplier … — formerly “Account classification”). Workforce categories keep their layered detection unchanged.
+
 ## [2026.8.23] — 2026-08-31
 
 - Accounts and rows accounted for in the HelloID reconciliation no longer count against the fault KPIs — a justified account is, by definition, OK. Resolutions are per entitlement: whole-account KPIs (unowned, unowned-enabled, service, former-employee, disabled-entitled, dormant) need every row excluded or resolved; the privileged-account KPI is judged on its privileged rows alone; access outside the IAM model counts only unresolved rows. Composition KPIs (admin, test, shared, wide accounts) measure what exists regardless.

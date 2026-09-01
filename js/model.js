@@ -19,6 +19,14 @@
     const permissions = new Map();
     const persons = new Map();
     const systems = new Map();
+    /* Per-item classification answers from the wizard: they win over every
+       pattern rule, the way a corrected bank transaction stays corrected. */
+    const catOverrides = HR.config.getCatOverrides();
+    const clsOverrides = HR.config.getClsOverrides();
+    const catFamilies = HR.config.getCatFamilies();
+    const clsFamilies = HR.config.getClsFamilies();
+    const categoryById = id => (cfg.categories || []).find(c => c.id === id) || null;
+    const classById = id => (cfg.accountClasses || []).find(c => c.id === id) || null;
 
     const akey = r => accountKey(r.system, r.userName);
     const pkey = r => permissionKey(r.system, r.permission);
@@ -53,11 +61,27 @@
         const pk = pkey(r);
         let p = permissions.get(pk);
         if (!p) {
-          const cat = HR.config.categoryFor(r.permission);
+          /* item assignment > family assignment > built-in hint > fallback */
+          let cat = null, catSource = 'default';
+          const ov = catOverrides[r.permission];
+          if (ov && categoryById(ov)) { cat = categoryById(ov); catSource = 'manual'; }
+          if (!cat) {
+            const fam = HR.wizard.famKeyOf(r.permission);
+            if (fam) {
+              const famId = catFamilies[HR.wizard.famStoreKey(r.system, fam)];
+              if (famId && categoryById(famId)) { cat = categoryById(famId); catSource = 'family'; }
+              if (!cat) {
+                const hint = HR.mine.hintFor(fam);
+                if (hint && categoryById(hint.hint)) { cat = categoryById(hint.hint); catSource = 'auto'; }
+              }
+            }
+          }
+          if (!cat) cat = cfg.categories[cfg.categories.length - 1];
           const price = HR.config.priceFor(r.permission, cat.id);
           p = {
             key: pk, system: r.system, name: r.permission, path: r.permissionPath,
             category: cat.id, categoryLabel: HR.config.labelOf(cat), sensitivity: cat.sensitivity, colorSlot: cat.color,
+            categorySource: catSource,
             monthlyPrice: price.monthly, priceLabel: price.entry ? price.entry.label : null,
             holders: new Set(), holdersEnabled: 0, holdersDisabled: 0, holdersOrphan: 0,
             missingFor: new Set(), issues: {}, records: []
@@ -132,11 +156,32 @@
         Account: [a.userName, a.displayName || ''],
         Group: a.perms.map(p => p.name)
       };
-      const cls = classifyByLayers(cfg.accountClasses, ['Account', 'Group', 'Vault'], ctx);
-      a.cls = cls.row ? cls.row.id : '';
-      a.clsLabel = cls.row ? HR.config.labelOf(cls.row) : '';
-      a.clsWeight = cls.row && cls.row.weight > 0 ? cls.row.weight : 1;
-      a.clsSource = cls.source;
+      /* item assignment > cohort assignment > name hint > privileged
+         membership > fallback. The membership step replaces the old
+         group-pattern layer: an account holding privileged entitlements is an
+         admin account, whatever its name says, unless assigned otherwise. */
+      let clsRow = null, clsSource = 'default';
+      const clsOv = clsOverrides[a.key];
+      if (clsOv && classById(clsOv)) { clsRow = classById(clsOv); clsSource = 'manual'; }
+      if (!clsRow) {
+        const co = HR.wizard.cohortKeyOf(a.userName);
+        if (co) {
+          const famId = clsFamilies[HR.wizard.famStoreKey(a.system, co)];
+          if (famId && classById(famId)) { clsRow = classById(famId); clsSource = 'family'; }
+          if (!clsRow) {
+            const hint = HR.mine.classHintFor(co.slice(2));
+            if (hint && classById(hint.id)) { clsRow = classById(hint.id); clsSource = 'auto'; }
+          }
+        }
+      }
+      if (!clsRow && a.privileged.length && classById('admin')) {
+        clsRow = classById('admin'); clsSource = 'membership';
+      }
+      if (!clsRow) clsRow = cfg.accountClasses[cfg.accountClasses.length - 1];
+      a.cls = clsRow.id;
+      a.clsLabel = HR.config.labelOf(clsRow);
+      a.clsWeight = clsRow.weight > 0 ? clsRow.weight : 1;
+      a.clsSource = clsSource;
       const ec = classifyByLayers(cfg.employeeCategories || [], ['Vault', 'Account', 'Group'], ctx);
       a.ecat = ec.row ? ec.row.id : '';
       a.ecatLabel = ec.row ? HR.config.labelOf(ec.row) : '';

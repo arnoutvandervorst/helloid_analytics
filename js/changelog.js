@@ -18,6 +18,15 @@
 
   const ENTRIES = [
     {
+      version: '2026.8.24', date: '2026-09-01',
+      changes: [
+        'Classification rethought: no more pattern filters. Every permission and account is placed in a naming family mined from the actual data (per system), and classification is an answer per family or per single item \u2014 like categorising bank statements. Built-in knowledge (PRIV means privileged, adm- means admin account) classifies automatically until you answer otherwise, and accounts holding privileged entitlements class as admin accounts whatever their name says.',
+        'The classification wizard shows every family with its current answer and where it came from (your answer, automatic, none yet); changing the choice classifies every member, single members can be corrected, and names without a family are tagged one by one. A reconciliation or directory import opens it when anything is unanswered.',
+        'Settings \u203a Classification now holds definitions only (label, sensitivity, weight, colour) with live counts; family and item answers travel with the settings export. Existing category and class definitions survive; old custom pattern rules do not \u2014 re-answer them once in the wizard.',
+        'Clearer names for the two account axes: \u201cAccount type\u201d (what it technically is: admin, service, test \u2026) and \u201cWorkforce category\u201d (who it works for: payroll, temp, supplier \u2026 \u2014 formerly \u201cAccount classification\u201d). Workforce categories keep their layered detection unchanged.'
+      ]
+    },
+    {
       version: '2026.8.23', date: '2026-08-31',
       changes: [
         'Accounts and rows accounted for in the HelloID reconciliation no longer count against the fault KPIs \u2014 a justified account is, by definition, OK. Resolutions are per entitlement: whole-account KPIs (unowned, unowned-enabled, service, former-employee, disabled-entitled, dormant) need every row excluded or resolved; the privileged-account KPI is judged on its privileged rows alone; access outside the IAM model counts only unresolved rows. Composition KPIs (admin, test, shared, wide accounts) measure what exists regardless.',

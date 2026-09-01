@@ -113,33 +113,15 @@
      permission taxonomy should be written in. Each one can become a category rule;
      the row shows how the current settings already carve it, so a family that is
      100% uncategorised is a visible classification gap. */
-  /* Rules mined here land as structured matchers, not regex — the separator is
-     known per system, so "starts with ORG-" says exactly what the lookahead said. */
-  const familySpec = (prefix, sep) => ({ op: 'starts', value: prefix + (sep || '') });
-  const suffixSpec = (sfx, sep) => ({ op: 'ends', value: (sep || '-') + sfx });
-
-  const rulePatternExists = pattern =>
-    HR.config.get().categories.some(c => c.pattern === pattern);
-
-  function addCategoryRule(label, spec, sensitivity) {
-    const cfg = HR.config.clone(HR.config.get());
-    /* Mined rules are more specific than the catch-all, so they go in front of it —
-       the same placement the import review uses. */
-    const at = cfg.categories.findIndex(c => c.id === 'other');
-    cfg.categories.splice(at < 0 ? cfg.categories.length : at, 0, {
-      id: 'mined-' + label.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
-      label, pattern: HR.config.compileMatch(spec), match: spec, sensitivity, color: 2
-    });
-    HR.config.save(cfg);
-    HR.app.rebuildBusy().then(() => U.toast(T('cv.ruleAdded', { label }), 5000));
-  }
-
-  function ruleCell(label, spec, sensitivity) {
-    if (rulePatternExists(HR.config.compileMatch(spec))) return el('span', { class: 'pill ok', text: T('cv.ruleExists') });
-    return el('button', {
-      class: 'btn sm', text: T('cv.addRule'),
-      onclick: e => { e.stopPropagation(); addCategoryRule(label, spec, sensitivity); }
-    });
+  /* Classification lives in the family model now: this cell says how the
+     family is answered today, or hands the open ones to the wizard. */
+  function familyStatusCell(system, prefix) {
+    const cfg = HR.config.get();
+    const key = HR.wizard.famStoreKey(system, String(prefix).toUpperCase());
+    if ((cfg.catFamilies || {})[key]) return el('span', { class: 'pill ok', text: T('cv.famAssigned') });
+    if (HR.mine.hintFor(prefix)) return el('span', { class: 'pill muted', text: T('cv.famAuto') });
+    return el('button', { class: 'btn sm', text: T('cv.famClassify'),
+      onclick: e => { e.stopPropagation(); HR.app.go('classify'); } });
   }
 
   /** Where a set of permissions lands in the current taxonomy: [label, share, isCatchAll]. */
@@ -216,10 +198,8 @@
               render: r => r.offCase
                 ? el('span', { class: 'sev medium', text: String(r.offCase) })
                 : el('span', { class: 'note', text: '0' }) },
-            { key: 'rule', label: '', sortable: false, render: r => {
-                const hint = HR.mine.hintFor(r.prefix);
-                return ruleCell(r.prefix, familySpec(r.prefix, sys.sep), hint ? hint.sensitivity : 1.0);
-              } }
+            { key: 'rule', label: '', sortable: false,
+              render: r => familyStatusCell(sys.system, r.prefix) }
           ],
           rows: sys.families, pageSize: 8, exportName: 'ent-families-' + sys.system,
           onRowClick: r => drawerFamily(m, sys, r)
@@ -232,9 +212,7 @@
           columns: [
             { key: 'suffix', label: T('cv.cSuffix'), render: r => el('span', { class: 'mono', text: '…' + (sys.sep || '-') + r.suffix }) },
             { key: 'count', label: T('pm.title'), num: true },
-            { key: 'families', label: T('cv.cFamiliesCol'), num: true },
-            { key: 'rule', label: '', sortable: false,
-              render: r => ruleCell(r.suffix, suffixSpec(r.suffix, sys.sep), 1.0) }
+            { key: 'families', label: T('cv.cFamiliesCol'), num: true }
           ],
           rows: sys.vocab.slice(0, 12), pageSize: 12, exportName: 'ent-suffixes-' + sys.system
         }));
@@ -265,19 +243,17 @@
   /** One family opened up: every member, how it classifies today, and the rule action. */
   function drawerFamily(m, sys, f) {
     const d = dominantCategory(f.perms);
-    const hint = HR.mine.hintFor(f.prefix);
-    const spec = familySpec(f.prefix, sys.sep);
     const head = el('div', {}, [
       el('h2', { text: f.prefix + (sys.sep || '') + '…' }),
       el('div', { class: 'row' }, [
         el('span', { class: 'pill', text: U.fmtInt(f.count) + ' ' + T('pm.title').toLowerCase() }),
         d ? el('span', { class: d.other ? 'pill removed' : 'pill', text: d.label + ' · ' + U.fmtPct(d.share, 0) }) : null,
         el('span', { class: 'pill', text: T('cv.cSens') + ' ' + U.fmtNum(meanSens(f.perms), 1) }),
-        ruleCell(f.prefix, spec, hint ? hint.sensitivity : 1.0)
+        familyStatusCell(sys.system, f.prefix)
       ])
     ]);
     const body = el('div', { class: 'stack' });
-    body.appendChild(el('p', { class: 'note', text: T('cv.familyRule', { value: spec.value }) }));
+    body.appendChild(el('p', { class: 'note', text: T('cv.familyRule', { value: f.prefix + (sys.sep || '') }) }));
     body.appendChild(card(null, null, HR.table.make({
       columns: [
         { key: 'name', label: T('ct.group'), render: r => el('span', { class: 'mono', text: r.name }) },

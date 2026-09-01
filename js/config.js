@@ -33,8 +33,6 @@
 
   /* Which pattern field pairs with which spec field, per list. */
   const MATCH_FIELDS = {
-    categories: [['pattern', 'match']],
-    accountClasses: [['pattern', 'match'], ['groupPattern', 'groupMatch'], ['vaultPattern', 'vaultMatch']],
     employeeCategories: [['vaultPattern', 'vaultMatch'], ['accountPattern', 'accountMatch'], ['groupPattern', 'groupMatch']],
     priceBook: [['pattern', 'match']]
   };
@@ -56,17 +54,17 @@
      Matched in order against the permission display name. `sensitivity` is the
      multiplier applied to a permission-level risk weight. */
   const DEFAULT_CATEGORIES = [
-    { id: 'privileged', key: 'cat.privileged', label: 'Privileged / PAM', pattern: '^(PRIV|ADMIN|TIER0)', match: { op: 'starts', value: 'PRIV, ADMIN, TIER0' }, sensitivity: 3.0, color: 8 },
-    { id: 'server', key: 'cat.server',     label: 'Server / infra',   pattern: '^(SRV|DB|LOG)',       match: { op: 'starts', value: 'SRV, DB, LOG' }, sensitivity: 2.4, color: 7 },
-    { id: 'security', key: 'cat.security',   label: 'Security control', pattern: '^SEC',                match: { op: 'starts', value: 'SEC' }, sensitivity: 1.6, color: 5 },
-    { id: 'licence', key: 'cat.licence',    label: 'Licence',          pattern: '^LIC',                match: { op: 'starts', value: 'LIC' }, sensitivity: 1.0, color: 4 },
-    { id: 'role', key: 'cat.role',       label: 'Business role',    pattern: '^(ROLE|ROL)',         match: { op: 'starts', value: 'ROLE, ROL' }, sensitivity: 1.8, color: 3 },
-    { id: 'fileshare', key: 'cat.fileshare',  label: 'File share',       pattern: '^(FS|SHARE)',         match: { op: 'starts', value: 'FS, SHARE' }, sensitivity: 1.5, color: 2 },
-    { id: 'application', key: 'cat.application',label: 'Application',      pattern: '^APP',                match: { op: 'starts', value: 'APP' }, sensitivity: 1.2, color: 1 },
-    { id: 'mailbox', key: 'cat.mailbox',    label: 'Mailbox',          pattern: '^MBX',                match: { op: 'starts', value: 'MBX' }, sensitivity: 1.2, color: 6 },
-    { id: 'team', key: 'cat.team',       label: 'Team / collab',    pattern: '^TEAM',               match: { op: 'starts', value: 'TEAM' }, sensitivity: 0.8, color: 3 },
-    { id: 'device', key: 'cat.device',     label: 'Device / print',   pattern: '^(PRINT|WIFI|VPN)',   match: { op: 'starts', value: 'PRINT, WIFI, VPN' }, sensitivity: 0.8, color: 6 },
-    { id: 'other', key: 'cat.other',      label: 'Uncategorised',    pattern: '.',                   sensitivity: 1.0, color: 2 }
+    { id: 'privileged', key: 'cat.privileged', label: 'Privileged / PAM', sensitivity: 3.0, color: 8 },
+    { id: 'server', key: 'cat.server', label: 'Server / infra', sensitivity: 2.4, color: 7 },
+    { id: 'security', key: 'cat.security', label: 'Security control', sensitivity: 1.6, color: 5 },
+    { id: 'licence', key: 'cat.licence', label: 'Licence', sensitivity: 1.0, color: 4 },
+    { id: 'role', key: 'cat.role', label: 'Business role', sensitivity: 1.8, color: 3 },
+    { id: 'fileshare', key: 'cat.fileshare', label: 'File share', sensitivity: 1.5, color: 2 },
+    { id: 'application', key: 'cat.application', label: 'Application', sensitivity: 1.2, color: 1 },
+    { id: 'mailbox', key: 'cat.mailbox', label: 'Mailbox', sensitivity: 1.2, color: 6 },
+    { id: 'team', key: 'cat.team', label: 'Team / collab', sensitivity: 0.8, color: 3 },
+    { id: 'device', key: 'cat.device', label: 'Device / print', sensitivity: 0.8, color: 6 },
+    { id: 'other', key: 'cat.other', label: 'Uncategorised', sensitivity: 1.0, color: 2 }
   ];
 
   /* --- account classes ------------------------------------------------------
@@ -78,27 +76,12 @@
      account that does not announce itself. The last row is the fallback and is
      not matched on patterns. */
   const DEFAULT_ACCOUNT_CLASSES = [
-    { id: 'admin', key: 'cls.admin',   label: 'Admin account',
-      pattern: '^(adm[-_.]|admin[-_.]|a-|_adm)', legacyPattern: '^(adm[-_.]|admin[-_.]|a-|_adm)',
-      match: { op: 'starts', value: 'adm-, adm_, adm., admin-, admin_, admin., a-, _adm' },
-      weight: 2.4, groupPattern: '^(PRIV|TIER0)', groupMatch: { op: 'starts', value: 'PRIV, TIER0' }, vaultPattern: '' },
-    { id: 'service', key: 'cls.service', label: 'Service account',
-      pattern: '^(svc|srv|sa[-_.]|app[-_.]|sys[-_.])', legacyPattern: '^(svc|srv|sa[-_.]|app[-_.]|sys[-_.])',
-      match: { op: 'starts', value: 'svc, srv, sa-, sa_, sa., app-, app_, app., sys-, sys_, sys.' },
-      weight: 1.6, groupPattern: '', vaultPattern: '' },
-    { id: 'test', key: 'cls.test',    label: 'Test / demo',
-      pattern: '^(test|tst|demo|dummy|poc)', match: { op: 'starts', value: 'test, tst, demo, dummy, poc' },
-      weight: 1.8, groupPattern: '', vaultPattern: '' },
-    { id: 'shared', key: 'cls.shared',  label: 'Shared / generic',
-      pattern: '^(shared|gen[-_.]|info|balie|receptie|algemeen)', legacyPattern: '^(shared|gen[-_.]|info|balie|receptie|algemeen)',
-      match: { op: 'starts', value: 'shared, gen-, gen_, gen., info, balie, receptie, algemeen' },
-      weight: 1.5, groupPattern: '', vaultPattern: '' },
-    { id: 'external', key: 'cls.external',label: 'External / vendor',
-      pattern: '(leverancier|partner|extern|detachering|contractor|vendor)',
-      match: { op: 'contains', value: 'leverancier, partner, extern, detachering, contractor, vendor' },
-      weight: 1.7, groupPattern: '(leverancier|extern|contractor|vendor)',
-      groupMatch: { op: 'contains', value: 'leverancier, extern, contractor, vendor' }, vaultPattern: '' },
-    { id: 'user', key: 'cls.user',    label: 'User account',    pattern: '.', weight: 1.0, groupPattern: '', vaultPattern: '' }
+    { id: 'admin', key: 'cls.admin', label: 'Admin account', weight: 2.4 },
+    { id: 'service', key: 'cls.service', label: 'Service account', weight: 1.6 },
+    { id: 'test', key: 'cls.test', label: 'Test / demo', weight: 1.8 },
+    { id: 'shared', key: 'cls.shared', label: 'Shared / generic', weight: 1.5 },
+    { id: 'external', key: 'cls.external', label: 'External / vendor', weight: 1.7 },
+    { id: 'user', key: 'cls.user', label: 'User account', weight: 1.0 }
   ];
 
   /* --- employee categories --------------------------------------------------
@@ -296,6 +279,13 @@
     let stored = null;
     try { stored = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (e) { /* ignore */ }
     current = stored ? deepMerge(clone(DEFAULTS), stored) : clone(DEFAULTS);
+    /* Classification moved from pattern filters to mined families + assignments:
+       configs saved by older builds still carry pattern fields on these two
+       lists — the definitions stay, the patterns are gone. */
+    [current.categories, current.accountClasses].forEach(list => (list || []).forEach(r => {
+      delete r.pattern; delete r.match; delete r.legacyPattern;
+      delete r.groupPattern; delete r.groupMatch; delete r.vaultPattern; delete r.vaultMatch;
+    }));
     adoptKeys(current);
     compile(current);
     return current;
@@ -330,7 +320,7 @@
     pair.forEach(([list, defs, listKey]) => list.forEach(item => {
       const def = defs.find(d => d.id === item.id);
       if (!def) return;
-      ['groupPattern', 'vaultPattern', 'accountPattern', 'multiplier'].forEach(k => {
+      ['groupPattern', 'vaultPattern', 'accountPattern', 'multiplier', 'sensitivity', 'weight', 'color'].forEach(k => {
         if (def[k] !== undefined && item[k] === undefined) item[k] = def[k];
       });
       /* Structured specs introduced after the row was saved are adopted only when
@@ -359,13 +349,11 @@
       try { r._rx = new RegExp(r.pattern, 'i'); }
       catch (e) { r._rx = /$^/; r._bad = true; }
     });
-    rx(cfg.categories);
     migratePriceBook(cfg);
     rx(cfg.priceBook);
-    /* Both classification axes carry one pattern per detection layer; an empty
-       pattern means "this layer never claims an account for this row". Account
-       classes keep their historic `pattern` field as the account-name layer, so
-       mined and hand-written rows keep working unchanged. */
+    /* Employee categories keep their layered patterns; permission categories and
+       account classes are pure definitions since classification moved to mined
+       families + assignments (see js/wizard.js). */
     const layers = (list, accountField) => (list || []).forEach(c => {
       const one = (src) => {
         if (!src) return null;
@@ -376,7 +364,6 @@
       c._rxGroup = one(c.groupPattern);
     });
     layers(cfg.employeeCategories, 'accountPattern');
-    layers(cfg.accountClasses, 'pattern');
   }
 
   /* Price rows saved before rules linked to classifications carry only a regex.
@@ -422,16 +409,45 @@
   /** Shipped entries carry a translation key; user-added rows keep their own label. */
   const labelOf = item => (item && item.key && HR.i18n.has(item.key)) ? HR.i18n.t(item.key) : (item ? item.label : '');
 
-  const categoryFor = name => {
+  const categoryDefOf = id => {
     const cfg = load();
-    return cfg.categories.find(c => c._rx.test(name)) || cfg.categories[cfg.categories.length - 1];
+    return cfg.categories.find(c => c.id === id) || cfg.categories[cfg.categories.length - 1];
   };
-  /* Name-layer only; the full layered classification (membership, vault) happens
-     in the model build, which also sees the account's entitlements. */
-  const accountClassFor = (userName, displayName) => {
+  const classDefOf = id => {
     const cfg = load();
-    return cfg.accountClasses.find(c => c._rxAccount && (c._rxAccount.test(userName) || c._rxAccount.test(displayName || ''))) ||
-      cfg.accountClasses[cfg.accountClasses.length - 1];
+    return cfg.accountClasses.find(c => c.id === id) || cfg.accountClasses[cfg.accountClasses.length - 1];
+  };
+  /* Resolve a permission name without model context: per-item assignment, then a
+     family assignment in any system, then the built-in name hint, else the
+     fallback. The model build does the same with the system known. */
+  const categoryFor = (name, system) => {
+    const cfg = load();
+    const ov = (cfg.catOverrides || {})[name];
+    if (ov) return categoryDefOf(ov);
+    const fam = HR.wizard ? HR.wizard.famKeyOf(name) : null;
+    if (fam) {
+      const fams = cfg.catFamilies || {};
+      const key = system ? system + '\u001f' + fam : Object.keys(fams).find(k => k.endsWith('\u001f' + fam));
+      if (key && fams[key]) return categoryDefOf(fams[key]);
+    }
+    const hint = fam && HR.mine ? HR.mine.hintFor(fam) : (HR.mine ? HR.mine.hintFor(name) : null);
+    if (hint) {
+      const def = cfg.categories.find(c => c.id === hint.hint);
+      if (def) return def;
+    }
+    return cfg.categories[cfg.categories.length - 1];
+  };
+  /* Name evidence only; the model build adds assignments and the membership
+     heuristic (privileged holdings make an admin account). */
+  const accountClassFor = (userName) => {
+    const cfg = load();
+    const key = HR.wizard ? HR.wizard.cohortKeyOf(userName) : null;
+    const hint = key && HR.mine ? HR.mine.classHintFor(key.split(':')[1] || '') : null;
+    if (hint) {
+      const def = cfg.accountClasses.find(c => c.id === hint.id);
+      if (def) return def;
+    }
+    return cfg.accountClasses[cfg.accountClasses.length - 1];
   };
   /* A rule applies when its classification matches (empty = any) and its refine
      regex matches (empty = the whole classification). First match wins. */
@@ -602,6 +618,58 @@
     save();
   }
 
+  /* Per-item classification assignments — the wizard's "just this one" answer.
+     Permission categories keyed by permission name, account classes by account
+     key. They win over every pattern rule, the way a corrected bank transaction
+     wins over the auto-categoriser. */
+  function getCatOverrides() {
+    const cfg = load();
+    if (!cfg.catOverrides) cfg.catOverrides = {};
+    return cfg.catOverrides;
+  }
+
+  function setCatOverride(name, id) {
+    const overrides = getCatOverrides();
+    if (id) overrides[name] = id; else delete overrides[name];
+    save();
+  }
+
+  function getCatFamilies() {
+    const cfg = load();
+    if (!cfg.catFamilies) cfg.catFamilies = {};
+    return cfg.catFamilies;
+  }
+
+  function setCatFamily(key, id) {
+    const fams = getCatFamilies();
+    if (id) fams[key] = id; else delete fams[key];
+    save();
+  }
+
+  function getClsFamilies() {
+    const cfg = load();
+    if (!cfg.clsFamilies) cfg.clsFamilies = {};
+    return cfg.clsFamilies;
+  }
+
+  function setClsFamily(key, id) {
+    const fams = getClsFamilies();
+    if (id) fams[key] = id; else delete fams[key];
+    save();
+  }
+
+  function getClsOverrides() {
+    const cfg = load();
+    if (!cfg.clsOverrides) cfg.clsOverrides = {};
+    return cfg.clsOverrides;
+  }
+
+  function setClsOverride(key, id) {
+    const overrides = getClsOverrides();
+    if (id) overrides[key] = id; else delete overrides[key];
+    save();
+  }
+
   function exportMatchBook() {
     return JSON.stringify({
       kind: MATCH_KIND, version: 1, exportedAt: new Date().toISOString(),
@@ -717,6 +785,8 @@
     getMap, setMapping, exportMap, exportMapCsv, importMap, looksLikeProductMap, MAP_KIND,
     getMatchBook, setMatchDecision, exportMatchBook, importMatchBook, looksLikeMatchBook, MATCH_KIND,
     getEcatOverrides, setEcatOverride,
+    getCatOverrides, setCatOverride, getClsOverrides, setClsOverride,
+    getCatFamilies, setCatFamily, getClsFamilies, setClsFamily, categoryDefOf, classDefOf,
     getNedapBook, setNedapBook, exportNedapBook, importNedapBook, looksLikeNedapBook, NEDAP_KIND,
     getNamegen, getPermNote, setPermNote };
 })(window.HR);

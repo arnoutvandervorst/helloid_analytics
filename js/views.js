@@ -2057,33 +2057,45 @@
 
     /* The classification is defined once, globally; pricing links to it below and
        risk attributes live on the rows themselves. */
+    /* Categories and classes are definitions now — label, sensitivity/weight,
+       colour. What lands in each is decided by the classification wizard
+       (mined families + assignments), not by patterns. The count pill shows
+       what each definition currently holds. */
+    const assignedCategory = item => {
+      const m2 = HR.app.state.model;
+      return { valid: true, count: m2 ? m2.permissionList.filter(p => p.category === item.id).length : 0 };
+    };
+    const assignedClass = item => {
+      const m2 = HR.app.state.model;
+      return { valid: true, count: m2 ? m2.accountList.filter(a => a.cls === item.id).length : 0 };
+    };
     const classificationTab = () => grid([
+      HR.app.state.model ? card(T('wz.stTitle'), T('wz.stNote'), el('div', { class: 'slot-actions' },
+        el('button', { class: 'btn primary', text: T('wz.stOpen'),
+          onclick: () => HR.app.go('classify') }))) : null,
       editableList(T('st.categories'), T('st.categoriesNote'),
         cfg.categories,
         [{ key: 'label', label: T('c.category'), translated: true },
-         { key: 'pattern', matcher: 'match', label: T('st.patternShort'), width: '180px' },
          { key: 'sensitivity', label: T('st.sensitivity'), num: true, step: '0.1' }],
-        () => ({ id: 'custom' + Date.now(), label: 'New category', pattern: '', match: { op: 'starts', value: '' }, sensitivity: 1, color: 2 }), { target: 'permission' }),
-
+        () => ({ id: 'custom' + Date.now(), label: 'New category', sensitivity: 1, color: 2 }),
+        { matchFn: assignedCategory }),
       editableList(T('st.classes'), T('st.classesNote'),
         cfg.accountClasses,
         [{ key: 'label', label: T('c.class'), translated: true },
-         { key: 'pattern', matcher: 'match', label: T('st.accountPattern'), width: '140px' },
-         { key: 'groupPattern', matcher: 'groupMatch', label: T('st.groupPattern'), width: '130px' },
-         { key: 'vaultPattern', matcher: 'vaultMatch', label: T('st.vaultPattern'), width: '110px' },
          { key: 'weight', label: T('st.weight'), num: true, step: '0.1' }],
-        () => ({ id: 'custom' + Date.now(), label: 'New class', pattern: '', match: { op: 'starts', value: '' }, groupPattern: '', vaultPattern: '', weight: 1 }), { target: 'account' }),
-
+        () => ({ id: 'custom' + Date.now(), label: 'New class', weight: 1 }),
+        { matchFn: assignedClass }),
       editableList(T('st.ecats'), T('st.ecatsNote'),
         cfg.employeeCategories,
-        [{ key: 'label', label: T('c.empCategory'), translated: true },
+        [{ key: 'label', label: T('c.category'), translated: true },
          { key: 'multiplier', label: T('st.multiplier'), num: true, step: '0.05' },
-         { key: 'vaultPattern', matcher: 'vaultMatch', label: T('st.vaultPattern'), width: '130px' },
-         { key: 'accountPattern', matcher: 'accountMatch', label: T('st.accountPattern'), width: '130px' },
-         { key: 'groupPattern', matcher: 'groupMatch', label: T('st.groupPattern'), width: '130px' }],
+         { key: 'vaultPattern', matcher: 'vaultMatch', label: T('st.vaultPattern'), width: '120px' },
+         { key: 'accountPattern', matcher: 'accountMatch', label: T('st.accountPattern'), width: '120px' },
+         { key: 'groupPattern', matcher: 'groupMatch', label: T('st.groupPattern'), width: '120px' }],
         () => ({ id: 'custom' + Date.now(), label: 'New category', multiplier: 1,
           vaultPattern: '', vaultMatch: { op: 'contains', value: '' }, accountPattern: '', groupPattern: '' }))
     ]);
+
 
     const pricingTab = () => grid([
       editableList(T('st.priceBook'), T('st.priceBookNote'),
@@ -3237,164 +3249,24 @@
     openDrawer(head, body);
   }
 
-  /* ============================================== CONFIGURATION REVIEW ==== */
-  /* Shown once per import (unless switched off): what the current settings do and do
-     not describe about this particular export, plus rules mined from its own naming. */
-  function reviewView(m) {
-    const f = document.createDocumentFragment();
-    const sug = HR.app.state.review || HR.mine.suggest(m);
-    const cfg = HR.config.clone(HR.config.get());
-    const picked = { categories: new Set(), classes: new Set(), prices: new Set() };
-
-    f.appendChild(el('div', { class: 'view-head' }, el('div', {}, [
-      el('h1', { text: T('rv.title') }),
-      el('p', { text: T('rv.lead') })
-    ])));
-
-    const c = sug.coverage;
-    const k = el('div', { class: 'grid g4' });
-    k.append(
-      tile(T('rv.covCategorised'), U.fmtPct(c.categorisedPct, 0),
-        T('rv.covCategorisedFoot', { n: c.permissions - c.categorised }),
-        { small: true, severity: c.categorisedPct > 0.9 ? 'good' : 'medium' }),
-      tile(T('rv.covClassified'), U.fmtPct(c.classifiedPct, 0),
-        T('rv.covClassifiedFoot', { n: c.accounts - c.classified }), { small: true }),
-      tile(T('rv.covPriced'), U.fmtInt(c.priced),
-        T('rv.covPricedFoot', { n: c.priceable }), { small: true, severity: c.priceable ? 'medium' : 'good' }),
-      tile(T('rv.covSpend'), U.fmtMoney(c.pricedSpend) + '/mo', T('rv.covSpendFoot'), { small: true })
-    );
-    f.appendChild(k);
-
-    /* ---- one proposal table per rule type ---- */
-    const proposalTable = (kind, rows, valueField, valueLabel, targetType) => {
-      if (!rows.length) return null;
-      const body = el('div');
-      const t = el('table', { class: 'tbl' });
-      t.appendChild(el('thead', {}, el('tr', {}, [
-        el('th', { class: 'no-sort', text: '' }),
-        el('th', { class: 'no-sort', text: T('st.label') }),
-        el('th', { class: 'no-sort', text: T('st.patternShort') }),
-        el('th', { class: 'no-sort num', text: valueLabel }),
-        el('th', { class: 'no-sort num', text: T('rv.matches') }),
-        el('th', { class: 'no-sort', text: T('rv.examples') })
-      ])));
-      const tb = el('tbody');
-      rows.forEach((row, i) => {
-        const check = el('input', { type: 'checkbox', onchange: e => {
-          if (e.target.checked) picked[kind].add(i); else picked[kind].delete(i);
-        } });
-        const patternInput = el('input', { type: 'text', value: row.pattern,
-          oninput: e => { row.pattern = e.target.value; refreshMatch(); } });
-        patternInput.style.minWidth = '190px';
-        const valueInput = el('input', { type: 'number', step: '0.1', value: row[valueField],
-          oninput: e => row[valueField] = parseFloat(e.target.value) || 0 });
-        valueInput.style.width = '80px';
-        const matchCell = el('td', { class: 'num' });
-        const refreshMatch = () => {
-          const res = HR.mine.test(row.pattern, targetType, m);
-          matchCell.textContent = res.valid ? U.fmtInt(res.count) : '!';
-          matchCell.title = res.valid ? (res.everything ? T('rv.matchesEverything') : '') : res.error;
-          matchCell.className = 'num' + (!res.valid || res.everything ? ' tone-warn' : '');
-        };
-        refreshMatch();
-        tb.appendChild(el('tr', {}, [
-          el('td', {}, check),
-          el('td', {}, [el('strong', { text: row.label }),
-            row.hint ? el('span', { class: 'pill', text: T('cat.' + row.hint) !== 'cat.' + row.hint ? T('cat.' + row.hint) : row.hint }) : null]),
-          el('td', {}, patternInput),
-          el('td', { class: 'num' }, valueInput),
-          matchCell,
-          el('td', {}, el('span', { class: 'trunc mono', title: row.samples.join(', '), text: row.samples.join(', ') }))
-        ]));
-      });
-      t.appendChild(tb);
-      body.appendChild(el('div', { class: 'tbl-wrap' }, t));
-      body.appendChild(el('div', { class: 'row', style: 'margin-top:8px' }, [
-        el('button', { class: 'btn sm', text: T('rv.selectAll'), onclick: () => {
-          body.querySelectorAll('input[type=checkbox]').forEach((cb, i) => {
-            if (!cb.checked) { cb.checked = true; picked[kind].add(i); }
-          });
-        } }),
-        el('button', { class: 'btn sm', text: T('rv.selectNone'), onclick: () => {
-          body.querySelectorAll('input[type=checkbox]').forEach(cb => { cb.checked = false; });
-          picked[kind].clear();
-        } })
-      ]));
-      return body;
-    };
-
-    const stack = el('div', { class: 'stack', style: 'margin-top:14px' });
-    const catBody = proposalTable('categories', sug.categories, 'sensitivity', T('st.sensitivity'), 'permission');
-    if (catBody) stack.appendChild(card(T('rv.secCategories'), T('rv.secCategoriesNote'), catBody));
-    const clsBody = proposalTable('classes', sug.classes, 'weight', T('st.weight'), 'account');
-    if (clsBody) stack.appendChild(card(T('rv.secClasses'), T('rv.secClassesNote'), clsBody));
-    const priceBody = proposalTable('prices', sug.prices, 'price', T('st.price'), 'permission');
-    if (priceBody) stack.appendChild(card(T('rv.secPrices'), T('rv.secPricesNote'), priceBody));
-    if (!catBody && !clsBody && !priceBody) {
-      stack.appendChild(card(T('rv.secNone'), null, el('p', { class: 'note', text: T('rv.secNoneBody') })));
-    }
-    stack.appendChild(card(T('rv.tester'), T('rv.testerNote'), regexTester(m)));
-    f.appendChild(stack);
-
-    /* ---- apply ---- */
-    const skip = el('input', { type: 'checkbox', onchange: e => { cfg.skipReview = e.target.checked; } });
-    f.appendChild(el('div', { class: 'row', style: 'margin-top:16px' }, [
-      el('button', { class: 'btn primary', text: T('rv.apply'), onclick: async () => {
-        /* Order matters: mined rules are more specific than the catch-all, so they go
-           in front of it and keep the shipped defaults ahead of them. */
-        const insertBefore = (list, id, items) => {
-          const at = list.findIndex(x => x.id === id);
-          list.splice(at < 0 ? list.length : at, 0, ...items);
-        };
-        insertBefore(cfg.categories, 'other', Array.from(picked.categories).map(i => {
-          const r = sug.categories[i];
-          return { id: 'mined-' + r.label.toLowerCase(), label: r.label, pattern: r.pattern, sensitivity: r.sensitivity, color: 2 };
-        }));
-        insertBefore(cfg.accountClasses, 'user', Array.from(picked.classes).map(i => {
-          const r = sug.classes[i];
-          return { id: 'mined-' + r.label.toLowerCase(), label: r.label, pattern: r.pattern, weight: r.weight };
-        }));
-        cfg.priceBook.unshift(...Array.from(picked.prices).map(i => {
-          const r = sug.prices[i];
-          /* The proposal's label is the exact permission name, so its classification
-             is whatever the taxonomy says about that name. */
-          return { label: r.label, classification: HR.config.categoryFor(r.label).id,
-            pattern: r.pattern, price: r.price, unit: 'month' };
-        }));
-        HR.config.save(cfg);
-        HR.app.state.review = null;
-        await HR.app.rebuildBusy();
-        U.toast(T('toast.settingsSaved'));
-        HR.app.go('overview');
-      } }),
-      el('button', { class: 'btn', text: T('rv.skip'), onclick: () => {
-        HR.config.save(cfg);
-        HR.app.state.review = null;
-        HR.app.go('overview');
-      } }),
-      el('label', { class: 'inline' }, [skip, document.createTextNode(T('rv.dontAsk'))])
-    ]));
-    return f;
-  }
-
-  /** Live regex check against the imported names — pattern in, matches out. */
+  /* Live pattern tester: a pattern, a target list, the matches. Used by the
+     Settings matching tab; the old configuration review that also used it was
+     replaced by the classification wizard (js/views-wizard.js). */
   function regexTester(m) {
-    const wrap = el('div');
-    const input = el('input', { type: 'text', placeholder: '^APP-', oninput: () => run() });
-    input.style.minWidth = '260px';
-    const target = el('select', { onchange: () => run() });
-    target.append(el('option', { value: 'permission', text: T('rv.targetPermission') }),
-                  el('option', { value: 'account', text: T('rv.targetAccount') }));
-    const out = el('div', { style: 'margin-top:10px' });
-    function run() {
+    const wrap = el('div', { class: 'stack' });
+    const input = el('input', { type: 'text', placeholder: T('rv.testerEmpty') });
+    input.style.flex = '1';
+    const target = el('select', {}, [
+      el('option', { value: 'permission', text: T('rv.targetPermission') }),
+      el('option', { value: 'account', text: T('rv.targetAccount') })
+    ]);
+    const out = el('div', {});
+    const run = () => {
       out.innerHTML = '';
-      if (!input.value.trim()) {                       // empty box tests nothing
-        out.appendChild(el('p', { class: 'note', text: T('rv.testerEmpty') }));
-        return;
-      }
-      const res = HR.mine.test(input.value, target.value, m);
+      if (!input.value.trim()) return;
+      const res = HR.mine.test(input.value.trim(), target.value, m);
       if (!res.valid) {
-        out.appendChild(el('p', { class: 'note tone-warn', text: T('rv.invalid', { msg: res.error }) }));
+        out.appendChild(el('p', { class: 'note sev high', text: res.error }));
         return;
       }
       out.append(
@@ -3402,7 +3274,9 @@
           (res.everything ? ' · ' + T('rv.matchesEverything') : '') }),
         el('div', { class: 'mono trunc-multi', text: res.samples.join(', ') || T('rv.noMatch') })
       );
-    }
+    };
+    input.addEventListener('input', run);
+    target.addEventListener('change', run);
     wrap.append(el('div', { class: 'row' }, [input, target]), out);
     run();
     return wrap;
@@ -3745,7 +3619,6 @@
 
   HR.views = {
     board: (m, params) => HR.board.view(m, params),
-    review: reviewView,
     rules: rulesView,
     explain: explainView,
     activity: activityView,
