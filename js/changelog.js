@@ -18,6 +18,12 @@
 
   const ENTRIES = [
     {
+      version: '2026.9.1', date: '2026-09-01',
+      changes: [
+        'The Dutch settings tab for matching is called “Matching” again, the same word the sidebar uses — it had drifted to “Koppeling”.'
+      ]
+    },
+    {
       version: '2026.8.24', date: '2026-09-01',
       changes: [
         'Classification rethought: no more pattern filters. Every permission and account is placed in a naming family mined from the actual data (per system), and classification is an answer per family or per single item \u2014 like categorising bank statements. Built-in knowledge (PRIV means privileged, adm- means admin account) classifies automatically until you answer otherwise, and accounts holding privileged entitlements class as admin accounts whatever their name says.',

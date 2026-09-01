@@ -4576,7 +4576,7 @@ window.HR = window.HR || {};
     'st.anyClassification': '— alle —',
     'st.refine': 'Verfijning (optioneel)',
     'st.tab.weights': 'Wegingen & drempels',
-    'st.tab.matching': 'Koppeling',
+    'st.tab.matching': 'Matching',
     'st.tab.branding': 'Huisstijl',
     'st.tab.storage': 'Opslag',
     'st.lead': 'Het model is bewust expliciet: prijzen, gevoeligheden en wegingen zijn aannames en die zijn van jou. Elke wijziging herberekent de geladen momentopname direct.',
