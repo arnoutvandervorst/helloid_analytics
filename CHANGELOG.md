@@ -3,6 +3,10 @@
 Versions are CalVer (`YYYY.M.N` — Nth release of that month). This file is
 generated from `js/changelog.js` by `make-changelog.js`; edit there, not here.
 
+## [2026.9.4] — 2026-09-01
+
+- Mined rules now show risk: each entitlement in the rule drawer carries its risk score, and the rule itself gets an aggregate — the riskiest entitlement it grants, the same weakest-link reading as coverage. The mined-rules table has the aggregate as a sortable column, so the risky proposals surface first.
+
 ## [2026.9.3] — 2026-09-01
 
 - Mined name groups are called “patterns” now (Dutch: “patronen”) — “family” and “scheme” were vague; the wizard, the conventions view and the settings notes all use the one word.

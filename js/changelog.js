@@ -18,6 +18,12 @@
 
   const ENTRIES = [
     {
+      version: '2026.9.4', date: '2026-09-01',
+      changes: [
+        'Mined rules now show risk: each entitlement in the rule drawer carries its risk score, and the rule itself gets an aggregate — the riskiest entitlement it grants, the same weakest-link reading as coverage. The mined-rules table has the aggregate as a sortable column, so the risky proposals surface first.'
+      ]
+    },
+    {
       version: '2026.9.3', date: '2026-09-01',
       changes: [
         'Mined name groups are called “patterns” now (Dutch: “patronen”) — “family” and “scheme” were vague; the wizard, the conventions view and the settings notes all use the one word.'

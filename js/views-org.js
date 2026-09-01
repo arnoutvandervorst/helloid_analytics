@@ -1093,6 +1093,15 @@
     ].filter(Boolean));
   }
 
+  /** The riskiest entitlement a rule grants decides the rule's risk — the same
+      weakest-link reading as coverage: publishing hands every member at least this. */
+  const grantRisk = (m, g) => {
+    const p = m.permissions.get(g.ent);
+    return p ? (p.riskScore || 0) : 0;
+  };
+  const ruleRisk = (m, grants) =>
+    grants && grants.length ? Math.max.apply(null, grants.map(g => grantRisk(m, g))) : 0;
+
   /** One mined rule: its condition, what it grants, and who does not have it yet. */
   function drawerPyramidRule(m, P, row) {
     const body = document.createDocumentFragment();
@@ -1103,7 +1112,8 @@
       row.rank ? [T('py.dRank'), T('py.dRankOf', { rank: row.rank, n: row.rankTotal }) +
         (row.withinCap === false ? ' — ' + T('py.rankOverCap') : '')] : null,
       [T('py.dMembers'), U.fmtInt(row.members)],
-      [T('py.dGrants'), U.fmtInt(row.entitlements)]
+      [T('py.dGrants'), U.fmtInt(row.entitlements)],
+      [T('c.risk'), el('span', { title: T('py.cRiskHint') }, scoreBar(ruleRisk(m, row.grants)))]
     ].filter(Boolean)));
 
     /* A condensed rule still names the single-value rules it took the place of. */
@@ -1128,6 +1138,8 @@
               : el('span', { text: g.ent });
           } },
         { key: 'holders', label: T('py.cHolders'), value: g => g.holders, align: 'right' },
+        { key: 'risk', label: T('c.risk'), num: true, value: g => grantRisk(m, g),
+          render: g => scoreBar(grantRisk(m, g)) },
         { key: 'coverage', label: T('py.cOfGroup'), value: g => g.coverage,
           render: g => scoreBar(Math.round(g.coverage * 100)) },
         { key: 'missing', label: T('py.cLackingIt'), value: g => g.missing.length, align: 'right',
@@ -1662,6 +1674,8 @@
         { key: 'entitlements', label: T('py.cGrants'), value: r => r.entitlements, align: 'right' },
         { key: 'coverage', label: T('py.cWeakest'), value: r => r.minCoverage,
           hint: T('py.cWeakestHint'), render: r => scoreBar(Math.round(r.minCoverage * 100)) },
+        { key: 'risk', label: T('c.risk'), num: true, hint: T('py.cRiskHint'),
+          value: r => ruleRisk(m, r.grants), render: r => scoreBar(ruleRisk(m, r.grants)) },
         { key: 'missing', label: T('py.cMissingPeople'), value: r => r.missing, align: 'right',
           render: r => r.missing
             ? el('span', { class: 'sev medium', text: String(r.missing) })
