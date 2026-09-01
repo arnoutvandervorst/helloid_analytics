@@ -28,6 +28,24 @@
     lastlogon: m => !!(m.directory && m.directory.users.some(u => u.lastLogon))
   };
 
+  /* Accounted for in the HelloID reconciliation: a row with any resolution
+     other than None (Excluded, mostly) was looked at and justified by a person.
+     Resolutions are per permission row, so one account can be half accounted
+     for — the whole-account check requires every row resolved; the per-subset
+     check (used for privileged access) requires only the rows that matter.
+     The export carries only the resolution type — the remark and end date
+     entered in HelloID stay behind — so this is as far as the evidence reaches. */
+  const resolved = r => r.resolution && r.resolution !== 'None';
+  const justified = a => {
+    const none = (a.resolutions && a.resolutions.None) || 0;
+    const total = Object.values(a.resolutions || {}).reduce((n, v) => n + v, 0);
+    return total > 0 && none === 0;
+  };
+  const justifiedFor = (a, permNames) => {
+    const rows = (a.records || []).filter(r => permNames.has(r.permission));
+    return rows.length > 0 && rows.every(resolved);
+  };
+
   const clsShare = (m, cls) => {
     const affected = m.accountList.filter(a => a.cls === cls)
       .map(a => ({ kind: 'account', a }));
@@ -44,10 +62,11 @@
    */
   const CATALOG = [
     { id: 'unowned-share', unit: 'pct', dir: 'max', def: 15, needs: [],
-      measure: m => ({
-        value: m.summary.accounts ? 100 * m.summary.orphanAccounts / m.summary.accounts : 0,
-        affected: m.accountList.filter(a => a.orphan).map(a => ({ kind: 'account', a }))
-      }) },
+      measure: m => {
+        const affected = m.accountList.filter(a => a.orphan && !justified(a))
+          .map(a => ({ kind: 'account', a }));
+        return { value: m.summary.accounts ? 100 * affected.length / m.summary.accounts : 0, affected };
+      } },
     { id: 'admin-share', unit: 'pct', dir: 'max', def: 2, needs: [],
       measure: m => clsShare(m, 'admin') },
     { id: 'wide-membership', unit: 'pct', dir: 'max', def: 0, paramDef: 25, needs: [],
@@ -69,10 +88,10 @@
     { id: 'shared-share', unit: 'pct', dir: 'max', def: 2, needs: [],
       measure: m => clsShare(m, 'shared') },
     { id: 'unmanaged-share', unit: 'pct', dir: 'max', def: 25, needs: [],
-      measure: m => ({
-        value: m.summary.rows ? 100 * m.summary.unmanagedPermissionRows / m.summary.rows : 0,
-        affected: []
-      }) },
+      measure: m => {
+        const open = m.records.filter(r => r.issue === 'Permission unmanaged' && !resolved(r)).length;
+        return { value: m.summary.rows ? 100 * open / m.summary.rows : 0, affected: [] };
+      } },
     { id: 'rule-coverage', unit: 'pct', dir: 'min', def: 60, needs: ['rules'],
       measure: m => ({
         value: 100 * (m.comparison.summary.coverage || 0),
@@ -94,19 +113,25 @@
     /* ---- unique identification & ownership ---- */
     { id: 'unowned-enabled', unit: 'pct', dir: 'max', def: 5, needs: [],
       measure: m => {
-        const affected = m.accountList.filter(a => a.orphan && a.enabled !== false)
+        const affected = m.accountList.filter(a => a.orphan && a.enabled !== false && !justified(a))
           .map(a => ({ kind: 'account', a }));
         return { value: m.accountList.length ? 100 * affected.length / m.accountList.length : 0, affected };
       } },
     { id: 'privileged-unowned', unit: 'count', dir: 'max', def: 0, needs: [],
+      /* Judged on the privileged rows alone: excluding those in the HelloID
+         reconciliation accounts for the privileged access, even when a mundane
+         row on the same account is still open. */
       measure: m => {
-        const affected = m.accountList.filter(a => a.orphan && a.privileged.length)
+        const affected = m.accountList
+          .filter(a => a.orphan && a.privileged.length &&
+            !justifiedFor(a, new Set(a.privileged.map(p => p.name))))
           .map(a => ({ kind: 'account', a }));
         return { value: affected.length, affected };
       } },
     { id: 'service-unowned', unit: 'count', dir: 'max', def: 5, needs: [],
       measure: m => {
-        const affected = m.accountList.filter(a => a.cls === 'service' && a.orphan)
+        const affected = m.accountList
+          .filter(a => a.cls === 'service' && a.orphan && !justified(a))
           .map(a => ({ kind: 'account', a }));
         return { value: affected.length, affected };
       } },
@@ -121,13 +146,15 @@
     /* ---- timely revocation ---- */
     { id: 'former-accounts', unit: 'count', dir: 'max', def: 0, needs: ['vault'],
       measure: m => {
-        const hits = ((m.correlation && m.correlation.former) || []).filter(h => h.stillEnabled);
+        const hits = ((m.correlation && m.correlation.former) || [])
+          .filter(h => h.stillEnabled && !justified(h.account));
         return { value: hits.length, affected: hits.map(h => ({ kind: 'account', a: h.account })) };
       } },
     { id: 'disabled-entitled', unit: 'pct', dir: 'max', def: 25, needs: [],
       measure: m => {
         const disabled = m.accountList.filter(a => a.enabled === false);
-        const affected = disabled.filter(a => a.permCount > 0).map(a => ({ kind: 'account', a }));
+        const affected = disabled.filter(a => a.permCount > 0 && !justified(a))
+          .map(a => ({ kind: 'account', a }));
         return { value: disabled.length ? 100 * affected.length / disabled.length : 0, affected };
       } },
 
@@ -201,11 +228,15 @@
           const t = Date.parse(u.lastLogon);
           return isFinite(t) && (now - t) / 86400000 > param;
         });
-        const affected = dormant
+        const open = dormant.filter(u => {
+          const a = byName.get(String(u.userName || '').toLowerCase());
+          return !a || !justified(a);
+        });
+        const affected = open
           .map(u => byName.get(String(u.userName || '').toLowerCase()))
           .filter(Boolean)
           .map(a => ({ kind: 'account', a }));
-        return { value: withStamp.length ? 100 * dormant.length / withStamp.length : 0, affected };
+        return { value: withStamp.length ? 100 * open.length / withStamp.length : 0, affected };
       } }
   ];
 

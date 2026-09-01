@@ -18,6 +18,13 @@
 
   const ENTRIES = [
     {
+      version: '2026.8.23', date: '2026-08-31',
+      changes: [
+        'Accounts and rows accounted for in the HelloID reconciliation no longer count against the fault KPIs \u2014 a justified account is, by definition, OK. Resolutions are per entitlement: whole-account KPIs (unowned, unowned-enabled, service, former-employee, disabled-entitled, dormant) need every row excluded or resolved; the privileged-account KPI is judged on its privileged rows alone; access outside the IAM model counts only unresolved rows. Composition KPIs (admin, test, shared, wide accounts) measure what exists regardless.',
+        'The export carries only the resolution type; the remark and end date entered in HelloID stay behind in HelloID.'
+      ]
+    },
+    {
       version: '2026.8.22', date: '2026-08-31',
       changes: [
         'Policy KPIs: a new Policies view holds 24 quality KPIs an organisation sets for itself \u2014 unowned, admin, service, test, shared, disabled, dormant and former-employee accounts, privileged accounts without an owner, people with more access than the rules give, peer outliers, employees without an account, duplicate employee ids, approvals routed to someone who left, empty and deeply nested groups, access outside the IAM model, rule coverage, and more \u2014 each with its own adjustable limit.',
