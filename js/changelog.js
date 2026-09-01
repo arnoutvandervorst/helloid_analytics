@@ -18,6 +18,12 @@
 
   const ENTRIES = [
     {
+      version: '2026.9.3', date: '2026-09-01',
+      changes: [
+        'Mined name groups are called “patterns” now (Dutch: “patronen”) — “family” and “scheme” were vague; the wizard, the conventions view and the settings notes all use the one word.'
+      ]
+    },
+    {
       version: '2026.9.2', date: '2026-09-01',
       changes: [
         'The recognition vocabulary is now editable data instead of code: Settings › Classification gains two “Name recognition” lists — words an entitlement name starts with per category, and words an account name begins or ends with per account type. Edits travel with the settings export; deleting every row brings the built-in list back.',

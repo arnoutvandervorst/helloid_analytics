@@ -3,6 +3,10 @@
 Versions are CalVer (`YYYY.M.N` — Nth release of that month). This file is
 generated from `js/changelog.js` by `make-changelog.js`; edit there, not here.
 
+## [2026.9.3] — 2026-09-01
+
+- Mined name groups are called “patterns” now (Dutch: “patronen”) — “family” and “scheme” were vague; the wizard, the conventions view and the settings notes all use the one word.
+
 ## [2026.9.2] — 2026-09-01
 
 - The recognition vocabulary is now editable data instead of code: Settings › Classification gains two “Name recognition” lists — words an entitlement name starts with per category, and words an account name begins or ends with per account type. Edits travel with the settings export; deleting every row brings the built-in list back.
