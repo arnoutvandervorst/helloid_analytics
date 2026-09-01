@@ -10,32 +10,8 @@
   const MIN_NAMES = 5;          // a prefix needs this many distinct names to be worth a rule
   const MIN_ACCOUNTS = 2;       // an account-name pattern needs this many accounts
 
-  /* Hints used to pre-fill a sensitivity for a newly proposed category. Matching is on
-     the token itself, so a customer's own prefix ("BEH", "SYS") can be recognised too. */
-  const SENSITIVITY_HINTS = [
-    { rx: /^(priv|pam|tier0|admin|beh|adm)/i, sensitivity: 3.0, hint: 'privileged' },
-    { rx: /^(srv|server|db|sql|log|sys)/i, sensitivity: 2.4, hint: 'server' },
-    { rx: /^(sec|mfa|av|crypt)/i, sensitivity: 1.6, hint: 'security' },
-    { rx: /^(rol|role|func)/i, sensitivity: 1.8, hint: 'role' },
-    { rx: /^(fs|share|dfs|nas)/i, sensitivity: 1.5, hint: 'fileshare' },
-    { rx: /^(app|sw|soft)/i, sensitivity: 1.2, hint: 'application' },
-    { rx: /^(mbx|mail|exch)/i, sensitivity: 1.2, hint: 'mailbox' },
-    { rx: /^(team|grp|group|sp|sharepoint)/i, sensitivity: 0.8, hint: 'team' },
-    { rx: /^(print|wifi|vpn|dev)/i, sensitivity: 0.8, hint: 'device' },
-    { rx: /^(lic|licen|m365|o365)/i, sensitivity: 1.0, hint: 'licence' }
-  ];
-
   /* Names that carry a per-seat price often enough to be worth flagging for pricing. */
   const PRICEABLE = /(^lic|licen|m365|o365|e[135]\b|f[13]\b|copilot|adobe|acrobat|visio|project|power ?bi|tableau|autocad|salesforce|jira|confluence|zoom|docusign)/i;
-
-  /* Account-name shapes worth proposing as a class. */
-  const CLASS_HINTS = [
-    { rx: /^(adm|admin|a)$/i, id: 'admin', weight: 2.4 },
-    { rx: /^(svc|srv|sa|sys|app|service)$/i, id: 'service', weight: 1.6 },
-    { rx: /^(test|tst|demo|dummy|poc|acc|dev)$/i, id: 'test', weight: 1.8 },
-    { rx: /^(info|balie|receptie|algemeen|shared|gen|generic)$/i, id: 'shared', weight: 1.5 },
-    { rx: /^(ext|extern|external|inhuur|contractor|vendor|leverancier|partner)$/i, id: 'external', weight: 1.7 }
-  ];
 
   const escapeRx = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -79,11 +55,10 @@
     };
   }
 
-  /** Sensitivity pre-fill for a proposed token, shared with the conventions viewer. */
-  const hintFor = token => SENSITIVITY_HINTS.find(h => h.rx.test(token)) || null;
-
-  /** Account-class pre-fill for a name token (adm → admin, svc → service, …). */
-  const classHintFor = token => CLASS_HINTS.find(h => h.rx.test(token)) || null;
+  /* The recognition vocabulary lives in js/hints.js (editable data); these
+     shims keep the callers' address stable. */
+  const hintFor = token => HR.hints.categoryHintFor(token);
+  const classHintFor = token => HR.hints.classHintFor(token);
 
   /* --- mining hygiene (shared by pyramid, roles and optimise) ---------------
      Entitlements matching cfg.mining.excluded stay out of every mining engine:

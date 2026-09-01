@@ -2069,6 +2069,29 @@
       const m2 = HR.app.state.model;
       return { valid: true, count: m2 ? m2.accountList.filter(a => a.cls === item.id).length : 0 };
     };
+    /* The recognition vocabulary rides in the draft too; without stored rows
+       the built-in table shows (and deleting every row brings it back). */
+    if (!cfg.hints || !Array.isArray(cfg.hints.categories)) {
+      cfg.hints = HR.config.clone(HR.hints.DEFAULTS);
+    }
+    const hintCatCount = item => {
+      const m2 = HR.app.state.model;
+      if (!m2) return null;
+      const toks = HR.hints.tokens(item);
+      return { valid: true, count: m2.permissionList.filter(p => {
+        const fam = HR.wizard.famKeyOf(p.name);
+        return fam && toks.some(x => fam.toLowerCase().startsWith(x));
+      }).length };
+    };
+    const hintClsCount = item => {
+      const m2 = HR.app.state.model;
+      if (!m2) return null;
+      const toks = HR.hints.tokens(item);
+      return { valid: true, count: m2.accountList.filter(a => {
+        const co = HR.wizard.cohortKeyOf(a.userName);
+        return co && toks.includes(co.slice(2));
+      }).length };
+    };
     const classificationTab = () => grid([
       HR.app.state.model ? card(T('wz.stTitle'), T('wz.stNote'), el('div', { class: 'slot-actions' },
         el('button', { class: 'btn primary', text: T('wz.stOpen'),
@@ -2085,6 +2108,20 @@
          { key: 'weight', label: T('st.weight'), num: true, step: '0.1' }],
         () => ({ id: 'custom' + Date.now(), label: 'New class', weight: 1 }),
         { matchFn: assignedClass }),
+      editableList(T('st.hintsCat'), T('st.hintsCatNote'),
+        cfg.hints.categories,
+        [{ key: 't', label: T('st.hintTokens'), width: '260px' },
+         { key: 'id', label: T('c.category'), options: () =>
+            cfg.categories.map(c => ({ value: c.id, label: HR.config.labelOf(c) })) }],
+        () => ({ t: '', id: 'other' }),
+        { matchFn: hintCatCount }),
+      editableList(T('st.hintsCls'), T('st.hintsClsNote'),
+        cfg.hints.classes,
+        [{ key: 't', label: T('st.hintTokensExact'), width: '260px' },
+         { key: 'id', label: T('c.class'), options: () =>
+            cfg.accountClasses.map(c => ({ value: c.id, label: HR.config.labelOf(c) })) }],
+        () => ({ t: '', id: 'user' }),
+        { matchFn: hintClsCount }),
       editableList(T('st.ecats'), T('st.ecatsNote'),
         cfg.employeeCategories,
         [{ key: 'label', label: T('c.category'), translated: true },

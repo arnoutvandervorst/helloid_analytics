@@ -3,6 +3,12 @@
 Versions are CalVer (`YYYY.M.N` — Nth release of that month). This file is
 generated from `js/changelog.js` by `make-changelog.js`; edit there, not here.
 
+## [2026.9.2] — 2026-09-01
+
+- The recognition vocabulary is now editable data instead of code: Settings › Classification gains two “Name recognition” lists — words an entitlement name starts with per category, and words an account name begins or ends with per account type. Edits travel with the settings export; deleting every row brings the built-in list back.
+- The wizard’s “auto” badge now says “recognised” — it means the name was recognised from those word lists, and a wizard answer always wins over recognition.
+- The last of the hidden filter code is gone: hints were regex tables inside the code, now they are the plain word lists you can see and edit.
+
 ## [2026.9.1] — 2026-09-01
 
 - The Dutch settings tab for matching is called “Matching” again, the same word the sidebar uses — it had drifted to “Koppeling”.
