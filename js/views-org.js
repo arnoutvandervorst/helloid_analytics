@@ -1388,10 +1388,15 @@
       tile(T('co.kPlaced'), U.fmtPct(s.placedShare, 0),
         T('co.kPlacedFoot', { placed: U.fmtInt(s.placed), people: U.fmtInt(s.people) }),
         { severity: s.placedShare > 0.8 ? 'good' : s.placedShare > 0.5 ? 'medium' : 'high' }),
-      tile(T('co.kRoles'), U.fmtInt(s.cohorts), T('co.kRolesFoot', { attrs: attrsLabel(R.levels) })),
+      tile(T('co.kRoles'), U.fmtInt(s.cohorts),
+        s.overCap
+          ? T('py.kRulesOver', { over: U.fmtInt(s.overCap), cap: U.fmtInt(R.cap) })
+          : T('co.kRolesFoot', { attrs: attrsLabel(R.levels) }),
+        s.overCap ? { severity: 'medium' } : undefined),
+      tile(T('co.kAlike'), U.fmtPct(s.alike, 0), T('co.kAlikeFoot'),
+        { severity: s.alike > 0.6 ? 'good' : s.alike > 0.3 ? 'medium' : 'high' }),
       tile(T('co.kLeftover'), U.fmtInt(s.leftover), T('co.kLeftoverFoot', { min: U.fmtInt(R.minSize) }),
-        { severity: s.leftover ? 'medium' : 'good' }),
-      tile(T('co.kEconomy'), U.fmtInt(s.rulesFor80), T('co.kEconomyFoot'))
+        { severity: s.leftover ? 'medium' : 'good' })
     );
     wrap.appendChild(tiles);
 
@@ -1417,7 +1422,11 @@
 
     const isChosen = c => c.attrs.join() === R.levels.join();
     const isSuggested = c => c.attrs.join() === R.suggestion.join();
-    wrap.appendChild(card(T('co.candTitle'), T('co.candNote'), [
+    const candNote = R.excluded.length
+      ? T('co.candNote') + ' ' + T('co.excluded', {
+          attrs: R.excluded.map(x => attrName(x.attr) + ' (' + U.fmtPct(x.placedShare, 0) + ')').join(', ') })
+      : T('co.candNote');
+    wrap.appendChild(card(T('co.candTitle'), candNote, [
       knobs,
       HR.table.make({
         columns: [
@@ -1426,20 +1435,21 @@
               el(isChosen(c) ? 'strong' : 'span', { text: attrsLabel(c.attrs) }),
               isSuggested(c) ? el('span', { class: 'pill', style: 'margin-left:6px', text: T('co.suggested') }) : null,
               c.follows ? el('span', { class: 'pill', style: 'margin-left:6px',
-                text: T('co.follows', { attr: attrName(c.follows) }) }) : null
+                text: T('co.follows', { attr: attrsLabel(c.follows) }) }) : null,
+              c.counts.overCap ? el('span', { class: 'pill warn', style: 'margin-left:6px',
+                text: T('co.overCap', { over: U.fmtInt(c.counts.overCap) }) }) : null
             ].filter(Boolean)) },
           { key: 'cells', label: T('co.cCells'), num: true, value: c => c.counts.cells, align: 'right' },
           { key: 'usable', label: T('co.cUsable'), num: true, value: c => c.counts.usable, align: 'right' },
           { key: 'placed', label: T('co.cPlaced'), num: true, value: c => c.counts.placedShare,
             render: c => scoreBar(Math.round(c.counts.placedShare * 100)) },
-          { key: 'distinct', label: T('co.cDistinct'), num: true, hint: T('co.cDistinctHint'),
-            value: c => c.counts.distinct, align: 'right', render: c => U.fmtNum(c.counts.distinct, 1) },
+          { key: 'alike', label: T('co.cAlike'), num: true, hint: T('co.cAlikeHint'),
+            value: c => c.counts.alike, render: c => scoreBar(Math.round(c.counts.alike * 100)) },
           { key: 'median', label: T('co.cMedian'), num: true, value: c => c.counts.median, align: 'right' },
-          { key: 'economy', label: T('co.cEconomy'), num: true, value: c => c.counts.rulesFor80, align: 'right' },
           { key: 'score', label: T('co.cScore'), num: true, hint: T('co.cScoreHint'),
-            value: c => c.counts.score, align: 'right', render: c => U.fmtNum(c.counts.score, 1) }
+            value: c => c.counts.score, render: c => scoreBar(Math.round(c.counts.score * 100)) }
         ],
-        rows: R.candidates, pageSize: 12, exportName: 'hr-attribute-pairs',
+        rows: R.candidates, pageSize: 20, exportName: 'hr-attribute-pairs',
         initialSort: { key: 'score', dir: -1 },
         onRowClick: c => setLevels(c.attrs)
       })
@@ -1458,15 +1468,21 @@
       rolesHead,
       HR.table.make({
         columns: [
+          { key: 'rank', label: T('py.cRank'), num: true, value: r => r.rank, align: 'right',
+            render: r => r.overCap
+              ? el('span', { class: 'pill warn', title: T('py.rankOverCap'), text: String(r.rank) })
+              : el('span', { class: 'mono', text: String(r.rank) }) },
           { key: 'role', label: T('co.cRole'), value: roleName },
           { key: 'conds', label: T('co.cConds'), value: condText,
             render: r => el('span', { class: 'mono', text: condText(r) }) },
           { key: 'people', label: T('co.cPeople'), num: true, value: r => r.members.length, align: 'right' },
           { key: 'share', label: T('co.cShare'), num: true, value: r => r.share,
-            render: r => scoreBar(Math.round(r.share * 100)) }
+            render: r => scoreBar(Math.round(r.share * 100)) },
+          { key: 'alike', label: T('co.cAlike'), num: true, hint: T('co.cAlikeHint'),
+            value: r => r.alike, render: r => scoreBar(Math.round(r.alike * 100)) }
         ],
         rows: R.cohorts, pageSize: 25, exportName: 'hr-roles',
-        initialSort: { key: 'people', dir: -1 },
+        initialSort: { key: 'rank', dir: 1 },
         search: (r, q) => roleName(r).toLowerCase().includes(q),
         onRowClick: r => drawerCohort(m, r)
       })

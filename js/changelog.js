@@ -18,6 +18,14 @@
 
   const ENTRIES = [
     {
+      version: '2026.9.6', date: '2026-09-02',
+      changes: [
+        'Roles from HR now scores on alikeness. A role is a group of people who are roughly alike, so every candidate is scored on the people it places in defendable cohorts × how much more the members of those cohorts resemble each other on every other attribute than everybody does. A rule for everybody scores zero by construction; more cohorts is more specific, not more expensive.',
+        'HelloID’s rule cap is part of the score: people placed counts only the largest cohorts that fit the cap, so a combination that needs 260 rules is judged on the 100 it can have. Over-cap cohorts stay visible, ranked past the cap.',
+        'Three-attribute combinations are candidates too. Attributes that cannot group even half the people at the smallest group size — a cost centre per person — are left out and named, instead of dragging every score down.'
+      ]
+    },
+    {
       version: '2026.9.5', date: '2026-09-02',
       changes: [
         'Role mining opens with only the vault loaded. A new “Roles from HR” tab mines the condition half of a rule set from the contracts alone: every attribute and every pair (department, job title, location, …) is scored on how many people it places in a cohort large enough to defend as a rule and how many roles those cohorts really tell apart. The chosen pair’s cohorts are the candidate roles — condition, headcount, members — exported as HelloID business rules with nothing granted yet, so a consultant can draft the skeleton before a target system is connected.',
