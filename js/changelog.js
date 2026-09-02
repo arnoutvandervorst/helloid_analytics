@@ -18,6 +18,13 @@
 
   const ENTRIES = [
     {
+      version: '2026.9.8', date: '2026-09-02',
+      changes: [
+        'The pyramid now uses alikeness too. When two attributes explain the same access and govern equally sensitive entitlements, the one whose groups are more alike on everything else wins the level; the suggestion note says how alike the deepest groups are.',
+        'Mined rules carry an “Alike” column and drawer row — how much more the people a rule selects resemble each other than everybody does — so a rule that explains access by accident of grouping shows up next to one that describes a real role.'
+      ]
+    },
+    {
       version: '2026.9.7', date: '2026-09-02',
       changes: [
         'Roles from HR now fits the organisation into HelloID’s rule cap. Sibling groups merge into one rule with a “one of” list as long as the merged rule stays alike enough (slider, default 50%): three wards with the same titles and site are one rule, and a ward of two is placed by joining its siblings instead of being left over. On a real vault, 374 departments became 85 rules placing everyone.',

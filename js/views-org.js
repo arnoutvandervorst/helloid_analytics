@@ -1113,7 +1113,8 @@
         (row.withinCap === false ? ' — ' + T('py.rankOverCap') : '')] : null,
       [T('py.dMembers'), U.fmtInt(row.members)],
       [T('py.dGrants'), U.fmtInt(row.entitlements)],
-      [T('c.risk'), el('span', { title: T('py.cRiskHint') }, scoreBar(ruleRisk(m, row.grants)))]
+      [T('c.risk'), el('span', { title: T('py.cRiskHint') }, scoreBar(ruleRisk(m, row.grants)))],
+      row.alike != null ? [T('co.cAlike'), el('span', { title: T('co.cAlikeHint') }, scoreBar(Math.round(row.alike * 100)))] : null
     ].filter(Boolean)));
 
     /* A condensed rule still names the single-value rules it took the place of. */
@@ -1742,7 +1743,8 @@
         ? T('py.suggestion', {
             steps: P.suggestion.steps.map(x => (T('py.attr.' + x.attr) || x.attr) +
               ' +' + U.fmtNum(x.gain * 100, 1) + 'pp').join(', '),
-            coverage: U.fmtPct(P.suggestion.coverage, 0) })
+            coverage: U.fmtPct(P.suggestion.coverage, 0),
+            alike: U.fmtPct(P.suggestion.alike || 0, 0) })
         : T('py.noSuggestion') })
     ]);
 
@@ -1857,7 +1859,7 @@
         kind: 'baseline', name: T('py.baselineRuleName'),
         conds: [], level: 0,
         members: P.root.members.length, membersList: P.root.members,
-        grants: rootGrants, entitlements: rootGrants.length,
+        grants: rootGrants, entitlements: rootGrants.length, alike: 0,
         minCoverage: Math.min.apply(null, rootGrants.map(g => g.coverage)),
         missing: new Set(rootGrants.flatMap(g => g.missing)).size,
         from: 1, sources: [], node: P.root,
@@ -1877,6 +1879,8 @@
         membersList: r.members,
         grants: r.grants,
         entitlements: r.grants.length,
+        /* How alike the members are on the attributes the condition leaves open. */
+        alike: HR.cohorts.alikeOf(P.people, r.members, r.conds.map(c => c.attr), P.attributes),
         /* The weakest entitlement in the rule decides how safe the rule is. */
         minCoverage: Math.min.apply(null, r.grants.map(g => g.coverage)),
         missing: new Set(r.grants.flatMap(g => g.missing)).size,
@@ -1917,6 +1921,8 @@
           hint: T('py.cWeakestHint'), render: r => scoreBar(Math.round(r.minCoverage * 100)) },
         { key: 'risk', label: T('c.risk'), num: true, hint: T('py.cRiskHint'),
           value: r => ruleRisk(m, r.grants), render: r => scoreBar(ruleRisk(m, r.grants)) },
+        { key: 'alike', label: T('co.cAlike'), num: true, hint: T('co.cAlikeHint'),
+          value: r => r.alike, render: r => scoreBar(Math.round(r.alike * 100)) },
         { key: 'missing', label: T('py.cMissingPeople'), value: r => r.missing, align: 'right',
           render: r => r.missing
             ? el('span', { class: 'sev medium', text: String(r.missing) })

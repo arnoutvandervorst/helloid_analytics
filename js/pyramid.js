@@ -326,13 +326,27 @@
    * with more rules is still the better model, and the frontier below shows what each
    * level cost. So the greedy step maximises plain coverage, and uses weighted coverage
    * only to break ties, where the tie-break prefers the attribute that governs the more
-   * sensitive and more expensive access.
+   * sensitive and more expensive access; when that is level too, the attribute whose
+   * groups are more alike on everything else wins — the same alikeness the HR-only
+   * miner scores on, because a group that agrees on more is a group access attaches to.
    */
   function suggestLevels(people, candidates, opts) {
     opts = Object.assign({ maxLevels: 4, minGain: 0.004, threshold: 0.9, minSize: 3, weight: () => 1 }, opts || {});
     const chosen = [];
     const steps = [];
-    const measure = levels => account(people, mine(people, levels, opts), null, opts);
+    const measure = levels => {
+      const mined = mine(people, levels, opts);
+      const stats = account(people, mined, null, opts);
+      /* How alike the deepest groups are, weighted by members — the leaves of the tree
+         the levels describe, over the people they place. */
+      const leaves = Array.from(mined.nodes.values())
+        .filter(n => n.level === levels.length && n.members.length >= opts.minSize);
+      const placed = U.sum(leaves, n => n.members.length);
+      stats.alike = placed && HR.cohorts
+        ? U.sum(leaves, n => n.members.length * HR.cohorts.alikeOf(people, n.members, levels, candidates)) / placed
+        : 0;
+      return stats;
+    };
     let current = measure([]);
     const base = current.coverage;
 
@@ -341,19 +355,22 @@
       for (const attr of candidates) {
         if (chosen.includes(attr)) continue;
         const trial = measure(chosen.concat([attr]));
+        const tied = Math.abs(trial.coverage - bestStats.coverage) <= opts.minGain;
         const better = trial.coverage > bestStats.coverage + opts.minGain ||
-          (Math.abs(trial.coverage - bestStats.coverage) <= opts.minGain &&
-           trial.weightedCoverage > bestStats.weightedCoverage + opts.minGain);
+          (tied && trial.weightedCoverage > bestStats.weightedCoverage + opts.minGain) ||
+          (tied && Math.abs(trial.weightedCoverage - bestStats.weightedCoverage) <= opts.minGain &&
+           best && trial.alike > bestStats.alike);
         if (better) { bestStats = trial; best = attr; }
       }
       if (!best) break;
-      steps.push({ attr: best, gain: bestStats.coverage - current.coverage, coverage: bestStats.coverage });
+      steps.push({ attr: best, gain: bestStats.coverage - current.coverage, coverage: bestStats.coverage,
+        alike: bestStats.alike });
       chosen.push(best);
       current = bestStats;
     }
     return {
       levels: chosen, coverage: current.coverage, weightedCoverage: current.weightedCoverage,
-      base, steps
+      alike: current.alike, base, steps
     };
   }
 
