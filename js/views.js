@@ -2074,10 +2074,6 @@
     if (!cfg.hints || !Array.isArray(cfg.hints.categories)) {
       cfg.hints = HR.config.clone(HR.hints.DEFAULTS);
     }
-    /* Settings saved before the staff list existed: seed it. */
-    if (!Array.isArray(cfg.hints.staff)) {
-      cfg.hints.staff = HR.config.clone(HR.hints.DEFAULTS.staff);
-    }
     const hintCatCount = item => {
       const m2 = HR.app.state.model;
       if (!m2) return null;
@@ -2094,15 +2090,6 @@
       return { valid: true, count: m2.accountList.filter(a => {
         const co = HR.wizard.cohortKeyOf(a.userName);
         return co && toks.includes(co.slice(2));
-      }).length };
-    };
-    /* Staff rows count people: any word of the job title or department starts with a token. */
-    const hintStaffCount = item => {
-      const m2 = HR.app.state.model;
-      if (!m2 || !m2.vault) return null;
-      return { valid: true, count: m2.vault.persons.filter(p => {
-        const c = p.primaryContract || p.contracts[0];
-        return c && HR.hints.staffFor(c.title && c.title.name, c.department && c.department.name, [item]);
       }).length };
     };
     const classificationTab = () => grid([
@@ -2135,11 +2122,6 @@
             cfg.accountClasses.map(c => ({ value: c.id, label: HR.config.labelOf(c) })) }],
         () => ({ t: '', id: 'user' }),
         { matchFn: hintClsCount }),
-      editableList(T('st.hintsStaff'), T('st.hintsStaffNote'),
-        cfg.hints.staff,
-        [{ key: 't', label: T('st.hintTokensWord'), width: '420px' }],
-        () => ({ t: '', id: 'staff' }),
-        { matchFn: hintStaffCount }),
       editableList(T('st.ecats'), T('st.ecatsNote'),
         cfg.employeeCategories,
         [{ key: 'label', label: T('c.category'), translated: true },

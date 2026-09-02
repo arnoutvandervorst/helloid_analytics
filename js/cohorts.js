@@ -39,11 +39,13 @@
 
    Not every person is worth the same slot. A person who joined, moved or left in the
    last year counts double — that is the join, move or leave a rule would have handled,
-   and where a rule set pays. A person whose job or department is staff work — HR,
-   finance, IT, communication, projects — counts half: staff roles are project-based
-   and better served by self-service, while operational roles fit rules densely. That
-   is why healthcare models well with roles and government does not. The staff words
-   are an editable list like the other recognition vocabularies.
+   and where a rule set pays. A person in the long tail of job titles counts half: the
+   job titles are ordered by headcount, the ones that together hold 80% of people are
+   the core — operational by construction, nurses and helpers and drivers — and the
+   rest is the long tail: controllers, jurists, one-offs, project work, which is better
+   served by self-service than by rules. No word list, no HR vocabulary: mass alone.
+   How concentrated the titles are is itself the headline — healthcare puts 80% of its
+   people in a few dozen titles, government spreads them over hundreds.
 
    No real access model uses one attribute, so the proposal is built as a set: every
    merged rule from every combination is a candidate, and rules are taken layer by
@@ -75,9 +77,11 @@
   /* A "one of" list that selects at least this share of the people its other conditions
      already select is that wider rule with a pointless list: it becomes the wider rule. */
   const GENERAL_ABOVE = 0.9;
-  /* What a person is worth to the objective: staff work counts half, a join, move or
-     leave in the last year doubles. Overridable through cfg.cohorts.worth. */
-  const WORTH = { staff: 0.5, flow: 2 };
+  /* What a person is worth to the objective: the long tail counts half, a join, move
+     or leave in the last year doubles. Overridable through cfg.cohorts.worth. */
+  const WORTH = { tail: 0.5, flow: 2 };
+  /* The values that together hold this share of people are the core; the rest is tail. */
+  const CORE_SHARE = 0.8;
   const DAY = 86400000;
 
   const settings = () => Object.assign({ alikeFloor: 0.5, ignore: [], require: [], weight: {}, worth: {} },
@@ -325,11 +329,31 @@
   }
 
   /**
-   * What each person is worth to the objective, written onto the population: staff
-   * or operational (job title or department against the staff word list), and whether
-   * they joined, moved or left within the last year.
+   * Where the mass sits: per attribute, the values ordered by headcount, the ones that
+   * together hold CORE_SHARE of the people, and the size of the group a typical person
+   * sits in (people-weighted median of their own value's headcount).
    */
-  function worthOf(model, people) {
+  function massOf(people, attr) {
+    const tally = new Map();
+    for (const p of people) { const v = p.attrs[attr]; if (v) tally.set(v, (tally.get(v) || 0) + 1); }
+    const ordered = Array.from(tally.entries()).sort((a, b) => b[1] - a[1]);
+    const withValue = U.sum(ordered, x => x[1]);
+    const core = new Set();
+    let running = 0;
+    for (const [v, n] of ordered) { if (running >= withValue * CORE_SHARE) break; core.add(v); running += n; }
+    /* Half the people sit in a value at least this big. */
+    let seen = 0, typical = 0;
+    for (const [, n] of ordered) { seen += n; if (seen >= withValue / 2) { typical = n; break; } }
+    return { values: ordered.length, coreValues: core.size, core, withValue,
+      coreShare: withValue ? running / withValue : 0, typical };
+  }
+
+  /**
+   * What each person is worth to the objective, written onto the population: core or
+   * long tail by their job title's headcount, and whether they joined, moved or left
+   * within the last year.
+   */
+  function worthOf(model, people, mass) {
     const worth = Object.assign({}, WORTH, settings().worth);
     /* "Last year" counts from the vault's own horizon — the latest contract start that
        is not in the future — so an export from a while ago still shows its flow. Starts
@@ -346,9 +370,9 @@
       HR.workforce.moves(model.vault, now).forEach(mv => { if (mv.daysAgo >= 0 && mv.daysAgo <= 365) moved.add(mv.person); });
     }
     for (const p of people) {
-      p.staff = HR.hints.staffFor(p.labels.Title, p.labels.Department);
+      p.core = !!p.attrs.Title && mass.Title.core.has(p.attrs.Title);
       p.flow = recent(p.person.firstStart) || recent(p.person.lastEnd) || moved.has(p.person);
-      p.worth = (p.staff ? worth.staff : 1) * (p.flow ? worth.flow : 1);
+      p.worth = (p.core ? 1 : worth.tail) * (p.flow ? worth.flow : 1);
     }
   }
 
@@ -383,7 +407,7 @@
            is not alike at all is a rule for everybody. */
         if (r.attrs.length > 1 ? r.alike < floor : r.alike <= 0) return;
         r.share = people.length ? r.members.length / people.length : 0;
-        r.staffShare = U.sum(r.members, p => p.staff ? 1 : 0) / r.members.length;
+        r.tailShare = U.sum(r.members, p => p.core ? 0 : 1) / r.members.length;
         r.flowShare = U.sum(r.members, p => p.flow ? 1 : 0) / r.members.length;
         const key = ruleKey(r);
         const seen = byKey.get(key);
@@ -477,12 +501,12 @@
       .map(root => ({ root, under: rules.filter(r => r.root === root && r !== root && !r.overCap).length }))
       .sort((a, b) => b.root.members.length - a.root.members.length);
 
-    /* Who is placed, by what they are worth: operational vs staff, and recent flow. */
+    /* Who is placed, by what they are worth: core vs long tail, and recent flow. */
     const placedWithin = new Map();
     rules.forEach(r => { if (!r.overCap) r.members.forEach(p => placedWithin.set(p, 1)); });
     const groups = {
-      operational: splitOn(people, p => !p.staff, placedWithin),
-      staff: splitOn(people, p => p.staff, placedWithin),
+      core: splitOn(people, p => p.core, placedWithin),
+      tail: splitOn(people, p => !p.core, placedWithin),
       flow: splitOn(people, p => p.flow, placedWithin)
     };
 
@@ -490,7 +514,7 @@
       rules, mix, families,
       capSweep: CAP_SWEEP.map(c => Object.assign({ cap: c, current: c === cap }, at(c))),
       summary: {
-        operational: groups.operational, staff: groups.staff, flow: groups.flow,
+        core: groups.core, tail: groups.tail, flow: groups.flow,
         rules: Math.min(rules.length, cap > 0 ? cap : rules.length),
         overCap: rules.filter(r => r.overCap).length,
         placedShare: within.placedShare, alike: within.alike,
@@ -533,11 +557,12 @@
       return { unavailable: 'no-attributes', people, offered, attributes: [], excluded, ignored, weights, decides };
     }
 
-    worthOf(model, people);
+    const mass = { Title: massOf(people, 'Title'), Department: massOf(people, 'Department') };
+    worthOf(model, people, mass);
     const proposal = propose(people,
       pool(people, attributes, minSize, prefs.alikeFloor, a => cellsOf[a], required, weights), minSize, cap);
     const result = {
-      people, offered, attributes, excluded, ignored, required, weights, decides, minSize, cap,
+      people, offered, attributes, excluded, ignored, required, weights, decides, mass, minSize, cap,
       alikeFloor: prefs.alikeFloor, proposal,
       summary: Object.assign({ people: people.length }, proposal.summary)
     };

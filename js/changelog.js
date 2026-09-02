@@ -18,6 +18,13 @@
 
   const ENTRIES = [
     {
+      version: '2026.9.16', date: '2026-09-02',
+      changes: [
+        'Core vs long tail replaces the staff word list. A word list guesses about one HR vocabulary; headcount is a fact about every one. Job titles are ordered by how many people hold them; the titles that together hold 80% of people are the core — operational by construction — and the rest is the long tail, which counts for half in the proposal because it fits self-service better than rules. The “Staff roles” list in Settings is gone.',
+        'Role fit now reads “46 of 208 job titles hold 80% of people” with the typical title size and the same figure for departments — how concentrated the organisation is, which is what decides how far roles will get it. The placed tile splits core jobs, long tail and last year’s flow; a “long tail” pill marks rules mostly over titles outside the core.'
+      ]
+    },
+    {
       version: '2026.9.15', date: '2026-09-02',
       changes: [
         'Roles from HR now knows what a person is worth to a rule set. Someone who joined, moved or left in the vault’s last year counts double — that is the join, move or leave a rule would have handled, and where roles pay. Someone whose job title or department reads as staff work — HR, finance, IT, communication, projects — counts half: staff roles are project-based and better served by self-service, while operational roles fit rules densely. That is why healthcare models well with roles and government does not.',

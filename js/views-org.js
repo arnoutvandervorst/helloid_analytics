@@ -1397,15 +1397,19 @@
           : T('co.kRulesAll', { lists: U.fmtInt(s.lists) }),
         s.overCap ? { severity: 'medium' } : undefined),
       tile(T('co.kPlaced'), U.fmtPct(s.placedShare, 0),
-        T('co.kPlacedSplit', { op: U.fmtPct(s.operational.placedShare, 0), st: U.fmtPct(s.staff.placedShare, 0),
+        T('co.kPlacedSplit', { core: U.fmtPct(s.core.placedShare, 0), tail: U.fmtPct(s.tail.placedShare, 0),
           fl: U.fmtPct(s.flow.placedShare, 0) }),
         { severity: s.placedShare > 0.8 ? 'good' : s.placedShare > 0.5 ? 'medium' : 'high' }),
       tile(T('co.kAlike'), U.fmtPct(s.alike, 0), T('co.kAlikeSetFoot'),
         { severity: s.alike > 0.6 ? 'good' : s.alike > 0.3 ? 'medium' : 'high' }),
-      /* The assessment headline: how far roles will get this organisation at all. */
-      tile(T('co.kFit'), U.fmtPct(s.people ? s.operational.people / s.people : 0, 0),
-        T('co.kFitFoot', { op: U.fmtInt(s.operational.people), st: U.fmtInt(s.staff.people), fl: U.fmtInt(s.flow.people) }),
-        { severity: s.operational.people >= 0.7 * s.people ? 'good' : s.operational.people >= 0.4 * s.people ? 'medium' : 'high' })
+      /* The assessment headline: how concentrated the jobs are — how far roles will get
+         this organisation at all. */
+      tile(T('co.kFit'), T('co.kFitValue', { k: U.fmtInt(R.mass.Title.coreValues), n: U.fmtInt(R.mass.Title.values) }),
+        T('co.kFitFoot', { typical: U.fmtInt(Math.max(0, R.mass.Title.typical - 1)),
+          kd: U.fmtInt(R.mass.Department.coreValues), nd: U.fmtInt(R.mass.Department.values),
+          tail: U.fmtInt(s.tail.people), fl: U.fmtInt(s.flow.people) }),
+        { severity: R.mass.Title.values && R.mass.Title.coreValues / R.mass.Title.values <= 0.25 ? 'good'
+          : R.mass.Title.values && R.mass.Title.coreValues / R.mass.Title.values <= 0.5 ? 'medium' : 'high' })
     );
 
     /* The knobs the rule set depends on. The smallest group and the cap are shared with
@@ -1561,8 +1565,8 @@
       const list = r.conds.find(c => c.values.length > 1);
       if (list) label.appendChild(el('span', { class: 'pill', style: 'margin-left:6px',
         title: list.labels.join(', '), text: '+' + U.fmtInt(list.values.length - 1) }));
-      if (r.staffShare >= 0.5) label.appendChild(el('span', { class: 'pill warn', style: 'margin-left:6px',
-        title: T('co.pillStaffTip', { pct: U.fmtPct(r.staffShare, 0) }), text: T('co.pillStaff') }));
+      if (r.tailShare >= 0.5) label.appendChild(el('span', { class: 'pill', style: 'margin-left:6px',
+        title: T('co.pillTailTip', { pct: U.fmtPct(r.tailShare, 0) }), text: T('co.pillTail') }));
       if (r.flowShare >= 0.25) label.appendChild(el('span', { class: 'pill', style: 'margin-left:6px',
         title: T('co.pillFlowTip', { pct: U.fmtPct(r.flowShare, 0) }), text: '\u21c4' }));
       const bar = el('div', { class: 'forest-bar' });
