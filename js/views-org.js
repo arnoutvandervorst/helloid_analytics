@@ -1359,6 +1359,145 @@
     ]);
   }
 
+  /**
+   * Roles from HR: the conditions of a rule set, mined from the contracts alone.
+   * Every attribute and pair is scored on the same numbers; the chosen one's cohorts
+   * are the candidate roles, exported as HelloID rules with nothing granted yet.
+   */
+  function cohortsTab(m) {
+    const wrap = el('div', {});
+    let R;
+    try { R = HR.cohorts.build(m); } catch (e) { R = null; }
+    if (!R || R.unavailable) {
+      wrap.appendChild(card(T('co.tab'), null, el('p', { class: 'note', text: T('py.unavailable') })));
+      return wrap;
+    }
+    const s = R.summary;
+    const attrName = a => T('py.attr.' + a) || a;
+    const attrsLabel = attrs => attrs.map(attrName).join(' + ');
+    const rebuild = () => { delete m._cohorts; HR.app.render(); };
+    const setLevels = levels => {
+      const c = HR.config.get();
+      c.cohorts = Object.assign({}, c.cohorts, { levels });
+      HR.config.save(c);
+      rebuild();
+    };
+
+    const tiles = el('div', { class: 'grid g4', style: 'margin-bottom:14px' });
+    tiles.append(
+      tile(T('co.kPlaced'), U.fmtPct(s.placedShare, 0),
+        T('co.kPlacedFoot', { placed: U.fmtInt(s.placed), people: U.fmtInt(s.people) }),
+        { severity: s.placedShare > 0.8 ? 'good' : s.placedShare > 0.5 ? 'medium' : 'high' }),
+      tile(T('co.kRoles'), U.fmtInt(s.cohorts), T('co.kRolesFoot', { attrs: attrsLabel(R.levels) })),
+      tile(T('co.kLeftover'), U.fmtInt(s.leftover), T('co.kLeftoverFoot', { min: U.fmtInt(R.minSize) }),
+        { severity: s.leftover ? 'medium' : 'good' }),
+      tile(T('co.kEconomy'), U.fmtInt(s.rulesFor80), T('co.kEconomyFoot'))
+    );
+    wrap.appendChild(tiles);
+
+    /* The minimum cohort size is the pyramid's, so the two miners agree on what a
+       defendable group is; without access the pyramid's own slider is not on screen. */
+    const out = el('span', { class: 'mono', text: U.fmtInt(R.minSize) });
+    const input = el('input', { type: 'range', min: 1, max: 25, step: 1, value: R.minSize });
+    input.addEventListener('input', e => { out.textContent = U.fmtInt(+e.target.value); });
+    input.addEventListener('change', e => {
+      const c = HR.config.get();
+      c.pyramid = Object.assign({}, c.pyramid, { minSize: +e.target.value });
+      HR.config.save(c);
+      delete m._pyramid;
+      rebuild();
+    });
+    const knobs = el('div', { class: 'slot-actions' }, [
+      el('label', { class: 'inline' }, [document.createTextNode(T('py.minSize')), input, out])
+    ]);
+    if (R.suggestion.join() !== R.levels.join()) {
+      knobs.appendChild(el('button', { class: 'btn sm primary', text: T('py.useSuggested'),
+        onclick: () => setLevels(R.suggestion) }));
+    }
+
+    const isChosen = c => c.attrs.join() === R.levels.join();
+    const isSuggested = c => c.attrs.join() === R.suggestion.join();
+    wrap.appendChild(card(T('co.candTitle'), T('co.candNote'), [
+      knobs,
+      HR.table.make({
+        columns: [
+          { key: 'attrs', label: T('co.cAttrs'), value: c => attrsLabel(c.attrs),
+            render: c => el('span', {}, [
+              el(isChosen(c) ? 'strong' : 'span', { text: attrsLabel(c.attrs) }),
+              isSuggested(c) ? el('span', { class: 'pill', style: 'margin-left:6px', text: T('co.suggested') }) : null,
+              c.follows ? el('span', { class: 'pill', style: 'margin-left:6px',
+                text: T('co.follows', { attr: attrName(c.follows) }) }) : null
+            ].filter(Boolean)) },
+          { key: 'cells', label: T('co.cCells'), num: true, value: c => c.counts.cells, align: 'right' },
+          { key: 'usable', label: T('co.cUsable'), num: true, value: c => c.counts.usable, align: 'right' },
+          { key: 'placed', label: T('co.cPlaced'), num: true, value: c => c.counts.placedShare,
+            render: c => scoreBar(Math.round(c.counts.placedShare * 100)) },
+          { key: 'distinct', label: T('co.cDistinct'), num: true, hint: T('co.cDistinctHint'),
+            value: c => c.counts.distinct, align: 'right', render: c => U.fmtNum(c.counts.distinct, 1) },
+          { key: 'median', label: T('co.cMedian'), num: true, value: c => c.counts.median, align: 'right' },
+          { key: 'economy', label: T('co.cEconomy'), num: true, value: c => c.counts.rulesFor80, align: 'right' },
+          { key: 'score', label: T('co.cScore'), num: true, hint: T('co.cScoreHint'),
+            value: c => c.counts.score, align: 'right', render: c => U.fmtNum(c.counts.score, 1) }
+        ],
+        rows: R.candidates, pageSize: 12, exportName: 'hr-attribute-pairs',
+        initialSort: { key: 'score', dir: -1 },
+        onRowClick: c => setLevels(c.attrs)
+      })
+    ]));
+
+    const roleName = r => r.conds.map(c => c.label || c.value).join(' › ');
+    const condText = r => r.conds.map(c => attrName(c.attr) + ' = ' + (c.label || c.value)).join(' · ');
+    const rolesHead = el('div', { class: 'row', style: 'justify-content:space-between;gap:8px' }, [
+      el('span', { class: 'note', text: T('co.noGrants') }),
+      el('button', { class: 'btn sm', text: T('co.export'), onclick: () => {
+        U.download('hr-roles.csv', HR.cohorts.toRulesCsv(m, R), 'text/csv');
+        HR.usage.exported('hr-roles');
+      } })
+    ]);
+    wrap.appendChild(card(T('co.rolesTitle'), T('co.rolesNote', { attrs: attrsLabel(R.levels) }), [
+      rolesHead,
+      HR.table.make({
+        columns: [
+          { key: 'role', label: T('co.cRole'), value: roleName },
+          { key: 'conds', label: T('co.cConds'), value: condText,
+            render: r => el('span', { class: 'mono', text: condText(r) }) },
+          { key: 'people', label: T('co.cPeople'), num: true, value: r => r.members.length, align: 'right' },
+          { key: 'share', label: T('co.cShare'), num: true, value: r => r.share,
+            render: r => scoreBar(Math.round(r.share * 100)) }
+        ],
+        rows: R.cohorts, pageSize: 25, exportName: 'hr-roles',
+        initialSort: { key: 'people', dir: -1 },
+        search: (r, q) => roleName(r).toLowerCase().includes(q),
+        onRowClick: r => drawerCohort(m, r)
+      })
+    ]));
+    return wrap;
+  }
+
+  function drawerCohort(m, r) {
+    const attrName = a => T('py.attr.' + a) || a;
+    const body = el('div', { class: 'stack' }, [
+      dl(r.conds.map(c => [attrName(c.attr), c.label || c.value])),
+      card(T('py.dWhoTitle'), T('py.dWhoNote', { n: r.members.length }), HR.table.make({
+        columns: [
+          { key: 'person', label: T('py.cPerson'), value: p => p.name,
+            render: p => el('a', { href: '#', text: p.name,
+              onclick: e => { e.preventDefault(); drawerVaultPerson(personRow(m, p.person), m); } }) },
+          { key: 'title', label: T('py.attr.Title'),
+            value: p => p.labels && (p.labels.Title || p.attrs.Title) || '' },
+          { key: 'dept', label: T('py.attr.Department'),
+            value: p => p.labels && (p.labels.Department || p.attrs.Department) || '' }
+        ],
+        rows: r.members, pageSize: 10, exportName: 'role-members',
+        search: (p, q) => p.name.toLowerCase().includes(q)
+      }))
+    ]);
+    openDrawer(el('div', {}, [
+      el('div', { text: r.conds.map(c => c.label || c.value).join(' › ') }),
+      el('span', { class: 'note', text: T('co.dHeadNote', { people: U.fmtInt(r.members.length) }) })
+    ]), body);
+  }
+
   function pyramidView(m, params) {
     const f = document.createDocumentFragment();
     if (!m.vault) {
@@ -1373,13 +1512,27 @@
             onclick: () => HR.app.go('rules') })
         ])
       ]));
-      /* The fallback, in the view that would otherwise be empty. */
-      f.appendChild(proposalsCard(m));
       return f;
     }
 
     const synNote = syntheticVaultNotice(m);
     if (synNote) f.appendChild(synNote);
+
+    /* Without access the pyramid has nothing to explain, but the conditions can still be
+       mined from the contracts: only the HR side is offered, and it says what is missing. */
+    const access = m.hasRecon || (m.granted && !m.granted.empty);
+    if (!access) {
+      f.appendChild(el('div', { class: 'view-head' }, el('div', {}, [
+        el('h1', { text: T('py.title') }),
+        el('p', { text: T('co.leadOnly', { people: U.fmtInt(m.vault.persons.length) }) })
+      ])));
+      const note = partialNotice(['recon']);
+      if (note) f.appendChild(note);
+      f.appendChild(HR.viewkit.tabbed('mining', [
+        { id: 'cohorts', label: T('co.tab'), build: () => cohortsTab(m) }
+      ], params));
+      return f;
+    }
 
     let P;
     try { P = HR.pyramid.build(m); } catch (e) { P = null; }
@@ -1483,7 +1636,7 @@
         const c = HR.config.get();
         c.pyramid = Object.assign({}, c.pyramid, { [key]: +e.target.value });
         HR.config.save(c);
-        delete m._pyramid;
+        delete m._pyramid; delete m._cohorts;
         HR.app.render();
       });
       return el('label', { class: 'inline' }, [document.createTextNode(T(labelKey)), input, out]);
@@ -1513,7 +1666,7 @@
       cfg.mining = cfg.mining || { excluded: [], ruleName: '' };
       const apply = () => {
         HR.config.save();
-        delete m._pyramid; delete m._roles;
+        delete m._pyramid; delete m._roles; delete m._cohorts;
         HR.app.render();
       };
       const list = el('div', { class: 'stack', style: 'gap:6px' });
@@ -1584,6 +1737,7 @@
           if (cd) wrap.appendChild(cd);
           return wrap;
         } },
+      { id: 'cohorts', label: T('co.tab'), build: () => cohortsTab(m) },
       { id: 'journey', label: T('py.tab.journey'), build: () => pyramidJourney(m, P) },
       { id: 'coverage', label: T('py.tab.coverage'), build: () => coverageCard(m, P) || el('div', {}) },
       { id: 'gaps', label: T('py.tab.gaps'), count: P.summary.under + P.summary.isolated,

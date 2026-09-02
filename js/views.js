@@ -110,7 +110,7 @@
     overview: ['recon'], risk: ['recon'], cost: ['recon'],
     accounts: ['recon'], permissions: ['recon'],
     people: ['vault|recon'], org: ['vault'], matching: ['recon', 'vault'],
-    mining: ['vault', 'recon|granted'], rules: ['rules'],
+    mining: ['vault'], rules: ['rules'],
     products: ['products|assignments'], activity: ['granted|history'],
     explain: ['recon'], diff: ['recon'], board: ['recon'],
     conventions: ['recon|vault']

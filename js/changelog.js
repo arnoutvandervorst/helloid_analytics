@@ -18,6 +18,13 @@
 
   const ENTRIES = [
     {
+      version: '2026.9.5', date: '2026-09-02',
+      changes: [
+        'Role mining opens with only the vault loaded. A new “Roles from HR” tab mines the condition half of a rule set from the contracts alone: every attribute and every pair (department, job title, location, …) is scored on how many people it places in a cohort large enough to defend as a rule and how many roles those cohorts really tell apart. The chosen pair’s cohorts are the candidate roles — condition, headcount, members — exported as HelloID business rules with nothing granted yet, so a consultant can draft the skeleton before a target system is connected.',
+        'With a reconciliation loaded the tab sits next to the pyramid and explains why the levels look the way they do; the access side is unchanged.'
+      ]
+    },
+    {
       version: '2026.9.4', date: '2026-09-01',
       changes: [
         'Mined rules now show risk: each entitlement in the rule drawer carries its risk score, and the rule itself gets an aggregate — the riskiest entitlement it grants, the same weakest-link reading as coverage. The mined-rules table has the aggregate as a sortable column, so the risky proposals surface first.'
