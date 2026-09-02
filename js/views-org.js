@@ -1375,7 +1375,7 @@
     }
     const s = R.summary;
     const PR = R.proposal;
-    const attrName = a => T('py.attr.' + a) || a;
+    const attrName = a => /^Org\d+$/.test(a) ? T('co.orgLevel', { n: a.slice(3) }) : (T('py.attr.' + a) || a);
     const attrsLabel = attrs => attrs.map(attrName).join(' + ');
     const listLabel = c => c.labels.length > 1
       ? c.labels.slice(0, 3).join(', ') + (c.labels.length > 3 ? ' +' + (c.labels.length - 3) : '')
@@ -1407,7 +1407,8 @@
       tile(T('co.kFit'), T('co.kFitValue', { k: U.fmtInt(R.mass.Title.coreValues), n: U.fmtInt(R.mass.Title.values) }),
         T('co.kFitFoot', { typical: U.fmtInt(Math.max(0, R.mass.Title.typical - 1)),
           kd: U.fmtInt(R.mass.Department.coreValues), nd: U.fmtInt(R.mass.Department.values),
-          tail: U.fmtInt(s.tail.people), fl: U.fmtInt(s.flow.people) }),
+          tail: U.fmtInt(s.tail.people), fl: U.fmtInt(s.flow.people) }) +
+          (R.levels.length ? ' ' + T('co.kFitOrg', { depth: U.fmtInt(R.levels.length + 1) }) : ''),
         { severity: R.mass.Title.values && R.mass.Title.coreValues / R.mass.Title.values <= 0.25 ? 'good'
           : R.mass.Title.values && R.mass.Title.coreValues / R.mass.Title.values <= 0.5 ? 'medium' : 'high' })
     );
@@ -1474,6 +1475,8 @@
           } },
         { key: 'decides', label: T('co.cDecides'), sortable: false, hint: T('co.cDecidesHint'), value: r => R.weights[r.attr],
           render: r => {
+            /* A hierarchy level follows the department's weight, shared over the levels. */
+            if (/^Org\d+$/.test(r.attr)) return el('span', { class: 'note', text: T('co.orgFollows') });
             const d = R.decides[r.attr] || { value: 1, source: 'default' };
             const sel = el('select', {});
             /* "auto" names what it resolves to, and where that came from. */
@@ -1691,23 +1694,19 @@
     /* Without access the pyramid has nothing to explain, but the conditions can still be
        mined from the contracts: only the HR side is offered, and it says what is missing. */
     const access = m.hasRecon || (m.granted && !m.granted.empty);
-    if (!access) {
+    let P = null;
+    if (access) { try { P = HR.pyramid.build(m); } catch (e) { P = null; } }
+    /* No access, or access that reaches nobody in this vault: only the HR side. */
+    if (!access || !P || P.unavailable) {
       f.appendChild(el('div', { class: 'view-head' }, el('div', {}, [
         el('h1', { text: T('py.title') }),
         el('p', { text: T('co.leadOnly', { people: U.fmtInt(m.vault.persons.length) }) })
       ])));
-      const note = partialNotice(['recon']);
+      const note = access ? el('p', { class: 'note', text: T('py.unavailable') }) : partialNotice(['recon']);
       if (note) f.appendChild(note);
       f.appendChild(HR.viewkit.tabbed('mining', [
         { id: 'cohorts', label: T('co.tab'), build: () => cohortsTab(m) }
       ], params));
-      return f;
-    }
-
-    let P;
-    try { P = HR.pyramid.build(m); } catch (e) { P = null; }
-    if (!P || P.unavailable) {
-      f.appendChild(card(T('py.title'), null, el('p', { class: 'note', text: T('py.unavailable') })));
       return f;
     }
 

@@ -3,6 +3,11 @@
 Versions are CalVer (`YYYY.M.N` — Nth release of that month). This file is
 generated from `js/changelog.js` by `make-changelog.js`; edit there, not here.
 
+## [2026.9.17] — 2026-09-02
+
+- The department hierarchy is now the natural layering of the proposal. Where the vault carries parent links, every level becomes an attribute of its own (department level 1, 2, …): a rule on a branch — “Directie Intramurale Zorg”, 2,092 people — is the generic rule, the leaf department or the job title within it the specialisation, and “builds on” follows membership so a leaf rule sits under its branch. HelloID cannot condition on a branch, so the export spells it out as the “one of” list of every department beneath it. On a real vault six levels deep the top branches surface as the first roots.
+- When a granted or reconciliation export is loaded that reaches nobody in the vault, Role mining now opens the HR side instead of a dead “no attributes” card.
+
 ## [2026.9.16] — 2026-09-02
 
 - Core vs long tail replaces the staff word list. A word list guesses about one HR vocabulary; headcount is a fact about every one. Job titles are ordered by how many people hold them; the titles that together hold 80% of people are the core — operational by construction — and the rest is the long tail, which counts for half in the proposal because it fits self-service better than rules. The “Staff roles” list in Settings is gone.

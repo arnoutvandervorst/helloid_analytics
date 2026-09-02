@@ -47,6 +47,14 @@
    How concentrated the titles are is itself the headline — healthcare puts 80% of its
    people in a few dozen titles, government spreads them over hundreds.
 
+   Where the vault carries the department hierarchy, the hierarchy is the natural
+   layering: a rule on a level-2 unit is a generic rule for the whole branch, a rule
+   on a leaf department the specialisation. Each level becomes an attribute of its own
+   (Org1, Org2, …); a combination holds at most one of them, and in alikeness the
+   levels share the department's weight so the hierarchy counts once. HelloID cannot
+   condition on "under Wijkzorg", but the walker spells it out as a "one of" list of
+   every department beneath — which is exactly what the export writes.
+
    No real access model uses one attribute, so the proposal is built as a set: every
    merged rule from every combination is a candidate, and rules are taken layer by
    layer — every single-attribute rule worth a
@@ -123,6 +131,43 @@
     return Object.fromEntries(Object.keys(d).map(a => [a, d[a].value]));
   }
   const wOf = (weights, a) => (weights && weights[a] !== undefined ? weights[a] : (DECIDES[a] === undefined ? 1 : DECIDES[a]));
+  const isOrg = a => a === 'Department' || /^Org\d+$/.test(a);
+
+  /**
+   * The department hierarchy as attributes: for every person, the ancestors of their
+   * department as Org1 (just under the root), Org2, … Levels are offered when the tree
+   * is hierarchical, the level has two or more values across at least half the people,
+   * and it does not just rename the leaves. Returns the offered level names.
+   */
+  function orgLevels(model, people) {
+    if (!HR.org || !HR.org.tree) return [];
+    const tree = HR.org.tree(model.vault);
+    if (!tree.meta.hierarchical) return [];
+    let maxDepth = 0;
+    for (const p of people) {
+      if (!p.attrs.Department) continue;
+      const node = tree.byId(p.attrs.Department) || tree.byId(p.labels.Department);
+      if (!node) continue;
+      const path = tree.pathOf(node);
+      /* Skip the single root: it is everyone. path[0] = root, last = the leaf itself. */
+      path.slice(1, -1).forEach((n, i) => {
+        const key = 'Org' + (i + 1);
+        p.attrs[key] = n.id; p.labels[key] = n.name; p.byId[key] = !!n.externalId;
+      });
+      maxDepth = Math.max(maxDepth, path.length - 2);
+    }
+    const levels = [];
+    for (let d = 1; d <= maxDepth; d++) {
+      const key = 'Org' + d;
+      const have = people.filter(p => p.attrs[key]);
+      if (have.length < people.length * 0.5) continue;
+      const vals = new Set(have.map(p => p.attrs[key]));
+      const leaves = new Set(have.map(p => p.attrs.Department));
+      if (vals.size < 2 || vals.size === leaves.size) continue;
+      levels.push(key);
+    }
+    return levels;
+  }
 
   /** Share of `members` holding the most common value of `attr` (missing is a value). */
   function purity(members, attr) {
@@ -392,6 +437,8 @@
     const byKey = new Map();
     for (const attrs of subsets(attributes, MAX_ATTRS)) {
       if (!required.every(a => attrs.includes(a))) continue;
+      /* Nested levels imply each other: one org attribute per combination. */
+      if (attrs.filter(isOrg).length > 1) continue;
       const part = partition(people, attrs, minSize);
       const pivot = attrs.slice().sort((a, b) => cellsOf(b) - cellsOf(a))[0];
       const others = attributes.filter(a => !attrs.includes(a));
@@ -479,15 +526,17 @@
     /* What each rule builds on: the widest chosen rule its conditions imply — the
        generic job-title rule under its department-and-title specialisations. The
        hierarchy the pyramid has by construction, read off a set that was chosen flat. */
-    const implies = (r, p) => p.conds.every(pc => {
-      const rc = r.conds.find(c => c.attr === pc.attr);
-      return rc && rc.values.every(v => pc.values.includes(v));
-    });
+    /* Implication by membership rather than by condition text, so a rule on a leaf
+       department sits under the rule on the branch above it. */
+    const memberSets = new Map(rules.map(r => [r, new Set(r.members)]));
+    const implies = (r, p) => { const ps = memberSets.get(p); return r.members.every(m => ps.has(m)); };
     for (const r of rules) {
       r.parent = null;
       for (const p of rules) {
-        if (p === r || p.attrs.length >= r.attrs.length || p.overCap !== r.overCap && p.overCap) continue;
-        if (!implies(r, p)) continue;
+        /* A wider rule with fewer attributes, or — same attributes — a list that contains
+           this rule's people: "Verzorgende IG" builds on "Verzorgende IG or nine others". */
+        if (p === r || p.attrs.length > r.attrs.length || p.overCap !== r.overCap && p.overCap) continue;
+        if (p.members.length <= r.members.length || !implies(r, p)) continue;
         if (!r.parent || p.attrs.length > r.parent.attrs.length ||
             (p.attrs.length === r.parent.attrs.length && p.rank < r.parent.rank)) r.parent = p;
       }
@@ -536,7 +585,8 @@
     const prefs = settings();
 
     const people = HR.pyramid.population(model, model.vault, model.granted);
-    const offered = HR.pyramid.availableAttributes(people);
+    const levels = orgLevels(model, people);
+    const offered = HR.pyramid.availableAttributes(people).concat(levels);
     /* Which attributes take part: what the data offers, minus what describes
        individuals, minus what the user switched off. The list itself is kept so the
        view can show the switches. */
@@ -553,6 +603,9 @@
     const required = prefs.require.filter(a => attributes.includes(a));
     const decides = decidesFor(model);
     const weights = weightsFor(model);
+    /* The hierarchy counts once: the department's weight is shared over its levels. */
+    const orgAttrs = ['Department'].concat(levels);
+    orgAttrs.forEach(a => { weights[a] = weights.Department / orgAttrs.length; });
     if (!attributes.length) {
       return { unavailable: 'no-attributes', people, offered, attributes: [], excluded, ignored, weights, decides };
     }
@@ -562,7 +615,7 @@
     const proposal = propose(people,
       pool(people, attributes, minSize, prefs.alikeFloor, a => cellsOf[a], required, weights), minSize, cap);
     const result = {
-      people, offered, attributes, excluded, ignored, required, weights, decides, mass, minSize, cap,
+      people, offered, attributes, excluded, ignored, required, weights, decides, mass, levels, minSize, cap,
       alikeFloor: prefs.alikeFloor, proposal,
       summary: Object.assign({ people: people.length }, proposal.summary)
     };
@@ -572,7 +625,20 @@
 
   /** HelloID business-rule CSV with the conditions filled in and nothing granted yet. */
   function toRulesCsv(model, R) {
-    const condition = c => c.attr + (c.byId ? '.ExternalId' : '.Name') + ', one of: ' + c.values.join(', ');
+    /* A level above the leaves is not something HelloID can condition on; the walker
+       spells it out as every department beneath that has people. */
+    const tree = R.levels && R.levels.length && HR.org && HR.org.tree ? HR.org.tree(model.vault) : null;
+    const beneath = id => {
+      const node = tree && tree.byId(id);
+      if (!node) return [id];
+      const out = [];
+      const walk = n => { if (n.people.length) out.push(n.externalId || n.name); n.children.forEach(walk); };
+      walk(node);
+      return out;
+    };
+    const condition = c => /^Org\d+$/.test(c.attr)
+      ? 'Department.ExternalId, one of: ' + U.uniq(c.values.flatMap(beneath)).join(', ')
+      : c.attr + (c.byId ? '.ExternalId' : '.Name') + ', one of: ' + c.values.join(', ');
     const name = c => c.labels.length > 1
       ? c.labels.slice(0, 3).join(' / ') + (c.labels.length > 3 ? '…' : '')
       : (c.labels[0] || c.values[0]);
@@ -589,5 +655,5 @@
       'Status', 'Conditions', 'Entitlements']);
   }
 
-  HR.cohorts = { build, toRulesCsv, alikeOf, weightsFor, decidesFor, CAP_SWEEP };
+  HR.cohorts = { build, toRulesCsv, alikeOf, weightsFor, decidesFor, isOrg, CAP_SWEEP };
 })(window.HR);
