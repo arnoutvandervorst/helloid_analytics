@@ -34,14 +34,24 @@
    centre per person — describes individuals, not roles. It is left out of the
    candidates and out of the alikeness measure, and the view says so.
 
-   The cohorts of the chosen attributes are the candidate roles: a condition list and
-   the people it selects, in the same shape the pyramid's condensed rules use, so the
-   day access is loaded the two can be matched on identity. */
+   The chosen attributes then become rules, the way HelloID can hold them:
+
+     merge        sibling cohorts share one rule with a "one of" list as long as the
+                  shared rule is still alike enough — three wards with the same titles
+                  and the same site are one rule, not three. A ward of two joins its
+                  siblings and is placed, where alone it was too small to defend.
+     ladder       with two or more attributes, a wide rule sits under the specific one,
+                  because HelloID rules stack: the department rule catches whoever the
+                  department-and-title rule cannot.
+
+   The rules carry a condition list and the people it selects, in the same shape the
+   pyramid's condensed rules use, so the day access is loaded the two can be matched
+   on identity. */
 (function (HR) {
   'use strict';
 
   const U = HR.util;
-  const SEP = '';
+  const SEP = '';
 
   /* A candidate whose cells add fewer than this share on top of its widest narrower
      candidate is that candidate wearing an extra condition. */
@@ -50,6 +60,10 @@
   const MAX_ATTRS = 3;
   /* An attribute whose own cohorts place fewer people than this describes individuals. */
   const DESCRIBES_BELOW = 0.5;
+  /* Smallest-group sizes the sweep tries. */
+  const SWEEP_SIZES = [3, 5, 8, 10, 15, 20, 25];
+
+  const settings = () => Object.assign({ alikeFloor: 0.5, ladder: true }, HR.config.get().cohorts || {});
 
   /** Share of `members` holding the most common value of `attr` (missing is a value). */
   function purity(members, attr) {
@@ -60,8 +74,30 @@
     return members.length ? top / members.length : 0;
   }
 
+  /* Population purity per attribute, kept per population: the pyramid asks for the
+     alikeness of its own rules against the same people. */
+  const bases = new WeakMap();
+  function baseOf(people, attributes) {
+    let base = bases.get(people);
+    if (!base) { base = new Map(); bases.set(people, base); }
+    for (const a of attributes) if (!base.has(a)) base.set(a, purity(people, a));
+    return base;
+  }
+
+  /**
+   * How much more alike `members` are than everybody, on the attributes not in `fixed`:
+   * the lift of each attribute's purity over its purity across the population, averaged.
+   * Nothing left to compare on means the group agrees on everything there is.
+   */
+  function alikeOf(people, members, fixed, attributes) {
+    const base = baseOf(people, attributes);
+    const rest = attributes.filter(a => !fixed.includes(a) && base.get(a) < 1);
+    if (!rest.length) return 1;
+    return U.sum(rest, a => Math.max(0, (purity(members, a) - base.get(a)) / (1 - base.get(a)))) / rest.length;
+  }
+
   /** Partition people by the values of `attrs`; a person missing any value is unplaced. */
-  function partition(people, attrs, minSize, others, base, cap) {
+  function partition(people, attrs, minSize, attributes, cap) {
     const cells = new Map();
     let unplaced = 0;
     for (const p of people) {
@@ -86,14 +122,7 @@
     const median = sizes.length ? sizes[Math.floor(sizes.length / 2)] : 0;
     const placedShare = people.length ? placed / people.length : 0;
 
-    /* Alike: lift of each other attribute's purity over its purity across everybody,
-       averaged per cohort, then weighted by members over the placed people. */
-    const rest = others.filter(a => !attrs.includes(a) && base.get(a) < 1);
-    for (const c of usable) {
-      c.alike = rest.length
-        ? U.sum(rest, a => Math.max(0, (purity(c.members, a) - base.get(a)) / (1 - base.get(a)))) / rest.length
-        : 1;
-    }
+    for (const c of usable) c.alike = alikeOf(people, c.members, attrs, attributes);
     const alike = placed ? U.sum(within, c => c.members.length * c.alike) / placed : 0;
 
     return {
@@ -116,19 +145,194 @@
     return out.sort((a, b) => a.length - b.length);
   }
 
+  /* ------------------------------------------------------------------ merging */
+
+  /** Per attribute, value → count over the members. */
+  function profileOf(members, others) {
+    const prof = new Map();
+    for (const a of others) {
+      const tally = new Map();
+      for (const p of members) { const v = p.attrs[a] || ''; tally.set(v, (tally.get(v) || 0) + 1); }
+      prof.set(a, tally);
+    }
+    return prof;
+  }
+
+  /** How alike the two groups would be as one rule, from their summed profiles. */
+  function similarity(a, b, others, base) {
+    if (!others.length) return 0;
+    const n = a.members.length + b.members.length;
+    let total = 0;
+    for (const attr of others) {
+      const ta = a.profile.get(attr), tb = b.profile.get(attr);
+      let top = 0;
+      ta.forEach((c, v) => { const m = c + (tb.get(v) || 0); if (m > top) top = m; });
+      tb.forEach((c, v) => { if (!ta.has(v) && c > top) top = c; });
+      const g = base.get(attr);
+      total += g < 1 ? Math.max(0, (top / n - g) / (1 - g)) : 1;
+    }
+    return total / others.length;
+  }
+
+  /** A small max-heap on `sim`, so merging stays n² log n rather than n³. */
+  function heap() {
+    const h = [];
+    const up = i => { for (let p; i > 0 && h[i].sim > h[p = (i - 1) >> 1].sim; i = p) { const t = h[i]; h[i] = h[p]; h[p] = t; } };
+    const down = i => {
+      for (;;) {
+        const l = 2 * i + 1, r = l + 1;
+        let m = i;
+        if (l < h.length && h[l].sim > h[m].sim) m = l;
+        if (r < h.length && h[r].sim > h[m].sim) m = r;
+        if (m === i) return;
+        const t = h[i]; h[i] = h[m]; h[m] = t; i = m;
+      }
+    };
+    return {
+      push: x => { h.push(x); up(h.length - 1); },
+      pop: () => { const top = h[0]; const last = h.pop(); if (h.length) { h[0] = last; down(0); } return top; },
+      get size() { return h.length; }
+    };
+  }
+
+  /**
+   * Merge sibling cells — same conditions except `pivot` — as long as the merged rule
+   * stays at least `floor` alike, greedily most-alike-first, until no pair qualifies.
+   * Small cells take part: a ward of two that joins its siblings is placed, where alone
+   * it was too small to defend. Cells still under the minimum afterwards are left over.
+   */
+  function mergeSimilar(cells, pivot, others, base, floor, minSize) {
+    const contexts = new Map();
+    for (const cell of cells) {
+      const key = cell.conds.filter(c => c.attr !== pivot).map(c => c.value).join(SEP);
+      if (!contexts.has(key)) contexts.set(key, []);
+      contexts.get(key).push(cell);
+    }
+
+    const rules = [];
+    let leftover = 0;
+    contexts.forEach(siblings => {
+      const groups = siblings.map(cell => ({
+        cells: [cell], members: cell.members.slice(), profile: profileOf(cell.members, others), alive: true, v: 0
+      }));
+      if (groups.length > 1 && floor < 1 && others.length) {
+        const q = heap();
+        for (let i = 0; i < groups.length; i++) {
+          for (let j = i + 1; j < groups.length; j++) {
+            const sim = similarity(groups[i], groups[j], others, base);
+            if (sim >= floor) q.push({ a: groups[i], b: groups[j], sim, va: 0, vb: 0 });
+          }
+        }
+        while (q.size) {
+          const top = q.pop();
+          /* A pair scored before either side grew is stale: its score no longer describes
+             the rule the merge would make. */
+          if (!top.a.alive || !top.b.alive || top.a.v !== top.va || top.b.v !== top.vb) continue;
+          const a = top.a, b = top.b;
+          b.alive = false;
+          a.v++;
+          a.cells = a.cells.concat(b.cells);
+          a.members = a.members.concat(b.members);
+          for (const attr of others) {
+            const ta = a.profile.get(attr);
+            b.profile.get(attr).forEach((n, v) => ta.set(v, (ta.get(v) || 0) + n));
+          }
+          for (const g of groups) {
+            if (g === a || !g.alive) continue;
+            const sim = similarity(a, g, others, base);
+            if (sim >= floor) q.push({ a, b: g, sim, va: a.v, vb: g.v });
+          }
+        }
+      }
+      for (const g of groups) {
+        if (!g.alive) continue;
+        if (g.members.length < minSize) { leftover += g.members.length; continue; }
+        const context = g.cells[0].conds.filter(c => c.attr !== pivot);
+        const on = g.cells.map(cell => cell.conds.find(c => c.attr === pivot));
+        rules.push({
+          conds: context.map(c => ({ attr: c.attr, values: [c.value], labels: [c.label], byId: c.byId }))
+            .concat([{ attr: pivot, values: on.map(c => c.value), labels: on.map(c => c.label), byId: on[0].byId }]),
+          members: g.members, from: g.cells.length
+        });
+      }
+    });
+    rules.sort((a, b) => b.members.length - a.members.length);
+    return { rules, leftover };
+  }
+
+  /* --------------------------------------------------------------- the rules */
+
+  /**
+   * The chosen attributes as a rule set: one level per prefix when the ladder is on
+   * (widest attribute first, so the department rule sits under the department-and-title
+   * rule), each level merged along its last attribute, then ranked against the cap.
+   */
+  function rulesFor(people, chosen, attributes, minSize, cap, opts, cellsOf) {
+    const order = opts.ladder && chosen.length > 1
+      ? chosen.slice().sort((a, b) => cellsOf(a) - cellsOf(b))
+      : chosen.slice();
+    const levels = opts.ladder && chosen.length > 1
+      ? order.map((_, i) => order.slice(0, i + 1))
+      : [order];
+
+    const rules = [];
+    let before = 0, leftover = 0;
+    levels.forEach((attrs, i) => {
+      const part = partition(people, attrs, minSize, attributes, 0);
+      const pivot = attrs[attrs.length - 1];
+      const others = attributes.filter(a => !attrs.includes(a));
+      const merged = mergeSimilar(part.cells, pivot, others, baseOf(people, attributes), opts.alikeFloor, minSize);
+      if (i === levels.length - 1) { before = part.counts.cells; leftover = merged.leftover + part.counts.unplaced; }
+      merged.rules.forEach(r => {
+        r.level = i + 1;
+        r.alike = alikeOf(people, r.members, attrs, attributes);
+        r.share = people.length ? r.members.length / people.length : 0;
+        rules.push(r);
+      });
+    });
+
+    /* Wide rules first — they are what places people — then the specific ones. */
+    rules.sort((a, b) => a.level - b.level || b.members.length - a.members.length);
+    rules.forEach((r, i) => { r.rank = i + 1; r.overCap = cap > 0 && r.rank > cap; });
+
+    /* Every person's deepest rule that fits the cap decides where they are placed and
+       how alike they are to the people they share it with. */
+    const deepest = new Map();
+    for (const r of rules) {
+      if (r.overCap) continue;
+      for (const p of r.members) { const d = deepest.get(p); if (!d || r.level > d.level) deepest.set(p, r); }
+    }
+    const placed = deepest.size;
+    let specific = 0, alikeSum = 0;
+    deepest.forEach(r => { if (r.level === levels.length) specific++; alikeSum += r.alike; });
+
+    return {
+      levels, rules,
+      summary: {
+        before, after: rules.length,
+        lists: rules.filter(r => r.conds.some(c => c.values.length > 1)).length,
+        overCap: rules.filter(r => r.overCap).length,
+        placed, placedShare: people.length ? placed / people.length : 0,
+        leftover: people.length - placed,
+        specific, specificShare: placed ? specific / placed : 0,
+        alike: placed ? alikeSum / placed : 0
+      }
+    };
+  }
+
   function build(model, opts) {
     if (model._cohorts && !(opts && opts.force)) return model._cohorts;
     if (!model.vault) return null;
     const cfg = HR.config.get();
     const minSize = (cfg.pyramid && cfg.pyramid.minSize) || 5;
     const cap = HR.pyramid.ruleCap();
+    const prefs = settings();
 
     const people = HR.pyramid.population(model, model.vault, model.granted);
     const offered = HR.pyramid.availableAttributes(people);
-    const base = new Map(offered.map(a => [a, purity(people, a)]));
     const excluded = [];
     const attributes = offered.filter(a => {
-      const share = partition(people, [a], minSize, [], base, 0).counts.placedShare;
+      const share = partition(people, [a], minSize, [], 0).counts.placedShare;
       if (share >= DESCRIBES_BELOW) return true;
       excluded.push({ attr: a, placedShare: share });
       return false;
@@ -138,7 +342,7 @@
     const byKey = new Map();
     const of = attrs => {
       const key = attrs.join(SEP);
-      if (!byKey.has(key)) byKey.set(key, partition(people, attrs, minSize, attributes, base, cap));
+      if (!byKey.has(key)) byKey.set(key, partition(people, attrs, minSize, attributes, cap));
       return byKey.get(key);
     };
     const candidates = subsets(attributes, MAX_ATTRS).map(attrs => {
@@ -165,40 +369,50 @@
       b.counts.score - a.counts.score ||
       b.counts.usable - a.counts.usable);
     const suggestion = candidates[0].attrs;
-    const stored = (cfg.cohorts && cfg.cohorts.levels || []).filter(a => attributes.includes(a));
+    const stored = (prefs.levels || []).filter(a => attributes.includes(a));
     const levels = stored.length ? stored : suggestion;
     const chosen = candidates.find(c => c.attrs.join() === levels.join()) || of(levels);
 
-    const cohorts = chosen.usable.map(c => ({
-      conds: c.conds, members: c.members, alike: c.alike, rank: c.rank,
-      overCap: cap > 0 && c.rank > cap,
-      share: people.length ? c.members.length / people.length : 0
-    }));
+    const cellsOf = a => of([a]).counts.cells;
+    const set = rulesFor(people, levels, attributes, minSize, cap, prefs, cellsOf);
 
     const result = {
-      people, attributes, excluded, candidates, suggestion, levels, chosen, cohorts, minSize, cap,
-      summary: {
-        people: people.length,
-        cohorts: cohorts.length,
-        placed: chosen.counts.placed,
-        placedShare: chosen.counts.placedShare,
-        leftover: chosen.counts.leftover,
-        alike: chosen.counts.alike,
-        overCap: chosen.counts.overCap
-      }
+      people, attributes, excluded, candidates, suggestion, levels, chosen, minSize, cap,
+      alikeFloor: prefs.alikeFloor, ladder: prefs.ladder && levels.length > 1,
+      rules: set.rules, ruleLevels: set.levels,
+      summary: Object.assign({ people: people.length }, set.summary)
     };
     model._cohorts = result;
     return result;
   }
 
+  /** What the smallest group costs: the chosen attributes at every size the sweep tries. */
+  function sweep(model) {
+    if (model._cohortsSweep) return model._cohortsSweep;
+    const R = build(model);
+    if (!R || R.unavailable) return [];
+    const prefs = settings();
+    const cellsOf = a => partition(R.people, [a], 1, [], 0).counts.cells;
+    const rows = U.uniq(SWEEP_SIZES.concat([R.minSize])).sort((a, b) => a - b).map(minSize => {
+      const set = minSize === R.minSize ? { summary: R.summary }
+        : rulesFor(R.people, R.levels, R.attributes, minSize, R.cap, prefs, cellsOf);
+      return Object.assign({ minSize, current: minSize === R.minSize }, set.summary);
+    });
+    model._cohortsSweep = rows;
+    return rows;
+  }
+
   /** HelloID business-rule CSV with the conditions filled in and nothing granted yet. */
-  function toRulesCsv(model, cohorts) {
-    const condition = c => c.attr + (c.byId ? '.ExternalId' : '.Name') + ', one of: ' + c.value;
-    const rows = cohorts.cohorts.map(r => ({
-      Name: HR.mine.ruleName('Rol', r.conds.map(c => c.label || c.value).join(' / ')),
+  function toRulesCsv(model, R) {
+    const condition = c => c.attr + (c.byId ? '.ExternalId' : '.Name') + ', one of: ' + c.values.join(', ');
+    const name = c => c.labels.length > 1
+      ? c.labels.slice(0, 3).join(' / ') + (c.labels.length > 3 ? '…' : '')
+      : (c.labels[0] || c.values[0]);
+    const rows = R.rules.slice().sort((a, b) => a.rank - b.rank).map(r => ({
+      Name: HR.mine.ruleName('Rol', r.conds.map(name).join(' + ')),
       EntitlementCount: 0,
       PersonsLatestEvaluation: r.members.length,
-      Categories: 'HR cohort',
+      Categories: 'HR cohort' + (R.ladder ? '|Level ' + r.level : '') + (r.overCap ? '|Over rule cap' : ''),
       Status: 'proposal',
       Conditions: r.conds.map(condition).join('|'),
       Entitlements: ''
@@ -207,5 +421,5 @@
       'Status', 'Conditions', 'Entitlements']);
   }
 
-  HR.cohorts = { build, toRulesCsv };
+  HR.cohorts = { build, sweep, toRulesCsv, alikeOf, SWEEP_SIZES };
 })(window.HR);

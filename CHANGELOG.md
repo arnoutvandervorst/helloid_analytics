@@ -3,6 +3,13 @@
 Versions are CalVer (`YYYY.M.N` — Nth release of that month). This file is
 generated from `js/changelog.js` by `make-changelog.js`; edit there, not here.
 
+## [2026.9.7] — 2026-09-02
+
+- Roles from HR now fits the organisation into HelloID’s rule cap. Sibling groups merge into one rule with a “one of” list as long as the merged rule stays alike enough (slider, default 50%): three wards with the same titles and site are one rule, and a ward of two is placed by joining its siblings instead of being left over. On a real vault, 374 departments became 85 rules placing everyone.
+- With two or more attributes the rules stack the way HelloID applies them: the wide rule (department) sits under the specific one (department + job title) and catches whoever the specific rule cannot. A “Specific” tile says how many placed people get the specific rule.
+- A “What the smallest group costs” table shows rules, over-cap, placed, alike and specific at every smallest-group size; click a row to use it. The rule cap has a slider here too (up to 1,000 — it is HelloID’s limit, not the tool’s), shared with the pyramid.
+- The export writes list conditions in HelloID’s own “one of: a, b, c” form, with the level and over-cap state in the categories column.
+
 ## [2026.9.6] — 2026-09-02
 
 - Roles from HR now scores on alikeness. A role is a group of people who are roughly alike, so every candidate is scored on the people it places in defendable cohorts × how much more the members of those cohorts resemble each other on every other attribute than everybody does. A rule for everybody scores zero by construction; more cohorts is more specific, not more expensive.

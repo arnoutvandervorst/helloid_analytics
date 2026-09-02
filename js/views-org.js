@@ -1361,8 +1361,9 @@
 
   /**
    * Roles from HR: the conditions of a rule set, mined from the contracts alone.
-   * Every attribute and pair is scored on the same numbers; the chosen one's cohorts
-   * are the candidate roles, exported as HelloID rules with nothing granted yet.
+   * Every attribute, pair and triple is scored on the same numbers; the chosen one's
+   * cohorts become rules — merged into "one of" lists where they stay alike, stacked
+   * wide-under-specific — and export as HelloID rules with nothing granted yet.
    */
   function cohortsTab(m) {
     const wrap = el('div', {});
@@ -1375,46 +1376,67 @@
     const s = R.summary;
     const attrName = a => T('py.attr.' + a) || a;
     const attrsLabel = attrs => attrs.map(attrName).join(' + ');
-    const rebuild = () => { delete m._cohorts; HR.app.render(); };
-    const setLevels = levels => {
+    const rebuild = () => { delete m._cohorts; delete m._cohortsSweep; HR.app.render(); };
+    const saveCohorts = patch => {
       const c = HR.config.get();
-      c.cohorts = Object.assign({}, c.cohorts, { levels });
+      c.cohorts = Object.assign({}, c.cohorts, patch);
       HR.config.save(c);
       rebuild();
     };
+    const setLevels = levels => saveCohorts({ levels });
 
     const tiles = el('div', { class: 'grid g4', style: 'margin-bottom:14px' });
     tiles.append(
       tile(T('co.kPlaced'), U.fmtPct(s.placedShare, 0),
-        T('co.kPlacedFoot', { placed: U.fmtInt(s.placed), people: U.fmtInt(s.people) }),
+        T('co.kPlacedFoot', { placed: U.fmtInt(s.placed), people: U.fmtInt(s.people), leftover: U.fmtInt(s.leftover) }),
         { severity: s.placedShare > 0.8 ? 'good' : s.placedShare > 0.5 ? 'medium' : 'high' }),
-      tile(T('co.kRoles'), U.fmtInt(s.cohorts),
+      tile(T('co.kRoles'), U.fmtInt(s.after),
         s.overCap
           ? T('py.kRulesOver', { over: U.fmtInt(s.overCap), cap: U.fmtInt(R.cap) })
-          : T('co.kRolesFoot', { attrs: attrsLabel(R.levels) }),
+          : T('co.kRolesFoot', { before: U.fmtInt(s.before), attrs: attrsLabel(R.levels) }),
         s.overCap ? { severity: 'medium' } : undefined),
       tile(T('co.kAlike'), U.fmtPct(s.alike, 0), T('co.kAlikeFoot'),
         { severity: s.alike > 0.6 ? 'good' : s.alike > 0.3 ? 'medium' : 'high' }),
-      tile(T('co.kLeftover'), U.fmtInt(s.leftover), T('co.kLeftoverFoot', { min: U.fmtInt(R.minSize) }),
-        { severity: s.leftover ? 'medium' : 'good' })
+      tile(T('co.kSpecific'), U.fmtPct(s.specificShare, 0),
+        R.ladder ? T('co.kSpecificFoot', { attrs: attrsLabel(R.ruleLevels[R.ruleLevels.length - 1]) }) : T('co.kSpecificFlat'),
+        R.ladder ? { severity: s.specificShare > 0.6 ? 'good' : s.specificShare > 0.3 ? 'medium' : 'high' } : undefined)
     );
     wrap.appendChild(tiles);
 
-    /* The minimum cohort size is the pyramid's, so the two miners agree on what a
-       defendable group is; without access the pyramid's own slider is not on screen. */
-    const out = el('span', { class: 'mono', text: U.fmtInt(R.minSize) });
-    const input = el('input', { type: 'range', min: 1, max: 25, step: 1, value: R.minSize });
-    input.addEventListener('input', e => { out.textContent = U.fmtInt(+e.target.value); });
-    input.addEventListener('change', e => {
-      const c = HR.config.get();
-      c.pyramid = Object.assign({}, c.pyramid, { minSize: +e.target.value });
-      HR.config.save(c);
-      delete m._pyramid;
-      rebuild();
-    });
+    /* The knobs the rule set depends on. The smallest group and the cap are shared with
+       the pyramid — the two miners must agree on what a defendable group is and how
+       many rules HelloID holds; without access the pyramid's own controls are not on
+       screen. */
+    const slider = (labelKey, value, min, max, step, format, onChange) => {
+      const out = el('span', { class: 'mono', text: format(value) });
+      const input = el('input', { type: 'range', min: min, max: max, step: step, value: value });
+      input.addEventListener('input', e => { out.textContent = format(+e.target.value); });
+      input.addEventListener('change', e => onChange(+e.target.value));
+      return el('label', { class: 'inline' }, [document.createTextNode(T(labelKey)), input, out]);
+    };
     const knobs = el('div', { class: 'slot-actions' }, [
-      el('label', { class: 'inline' }, [document.createTextNode(T('py.minSize')), input, out])
+      slider('py.minSize', R.minSize, 1, 25, 1, v => U.fmtInt(v), v => {
+        const c = HR.config.get();
+        c.pyramid = Object.assign({}, c.pyramid, { minSize: v });
+        HR.config.save(c);
+        delete m._pyramid;
+        rebuild();
+      }),
+      slider('py.hyCap', R.cap || 0, 0, 1000, 10, v => v ? U.fmtInt(v) : T('co.noCap'), v => {
+        const c = HR.config.get();
+        c.mining = Object.assign({}, c.mining, { ruleCap: v });
+        HR.config.save(c);
+        delete m._pyramid;
+        rebuild();
+      }),
+      slider('co.floor', R.alikeFloor, 0.3, 1, 0.05, v => U.fmtPct(v, 0), v => saveCohorts({ alikeFloor: v }))
     ]);
+    if (R.levels.length > 1) {
+      const ladder = el('input', { type: 'checkbox' });
+      ladder.checked = R.ladder;
+      ladder.onchange = () => saveCohorts({ ladder: ladder.checked });
+      knobs.appendChild(el('label', { class: 'inline' }, [ladder, document.createTextNode(T('co.ladder'))]));
+    }
     if (R.suggestion.join() !== R.levels.join()) {
       knobs.appendChild(el('button', { class: 'btn sm primary', text: T('py.useSuggested'),
         onclick: () => setLevels(R.suggestion) }));
@@ -1428,6 +1450,7 @@
       : T('co.candNote');
     wrap.appendChild(card(T('co.candTitle'), candNote, [
       knobs,
+      el('p', { class: 'note', text: T('co.knobsNote') }),
       HR.table.make({
         columns: [
           { key: 'attrs', label: T('co.cAttrs'), value: c => attrsLabel(c.attrs),
@@ -1455,8 +1478,44 @@
       })
     ]));
 
-    const roleName = r => r.conds.map(c => c.label || c.value).join(' › ');
-    const condText = r => r.conds.map(c => attrName(c.attr) + ' = ' + (c.label || c.value)).join(' · ');
+    /* What the smallest group costs, for the chosen attributes. */
+    let SW = [];
+    try { SW = HR.cohorts.sweep(m); } catch (e) { SW = []; }
+    if (SW.length) {
+      wrap.appendChild(card(T('co.sweepTitle'), T('co.sweepNote', { attrs: attrsLabel(R.levels) }), HR.table.make({
+        columns: [
+          { key: 'minSize', label: T('co.cSweepSize'), num: true, value: r => r.minSize, align: 'right',
+            render: r => el(r.current ? 'strong' : 'span', { class: 'mono', text: U.fmtInt(r.minSize) }) },
+          { key: 'after', label: T('co.kRoles'), num: true, value: r => r.after, align: 'right' },
+          { key: 'overCap', label: T('co.cOverCap'), num: true, value: r => r.overCap, align: 'right',
+            render: r => r.overCap
+              ? el('span', { class: 'sev medium', text: U.fmtInt(r.overCap) })
+              : el('span', { class: 'note', text: '0' }) },
+          { key: 'placed', label: T('co.cPlaced'), num: true, value: r => r.placedShare,
+            render: r => scoreBar(Math.round(r.placedShare * 100)) },
+          { key: 'alike', label: T('co.cAlike'), num: true, value: r => r.alike,
+            render: r => scoreBar(Math.round(r.alike * 100)) },
+          { key: 'specific', label: T('co.kSpecific'), num: true, value: r => r.specificShare,
+            render: r => scoreBar(Math.round(r.specificShare * 100)) }
+        ],
+        rows: SW, pageSize: 10, exportName: 'hr-smallest-group',
+        initialSort: { key: 'minSize', dir: 1 },
+        onRowClick: r => {
+          const c = HR.config.get();
+          c.pyramid = Object.assign({}, c.pyramid, { minSize: r.minSize });
+          HR.config.save(c);
+          delete m._pyramid;
+          rebuild();
+        }
+      })));
+    }
+
+    const listLabel = c => c.labels.length > 1
+      ? c.labels.slice(0, 3).join(', ') + (c.labels.length > 3 ? ' +' + (c.labels.length - 3) : '')
+      : (c.labels[0] || c.values[0]);
+    const roleName = r => r.conds.map(listLabel).join(' › ');
+    const condText = r => r.conds.map(c => attrName(c.attr) + ' ' +
+      (c.values.length > 1 ? T('co.oneOf') + ' ' : '= ') + listLabel(c)).join(' · ');
     const rolesHead = el('div', { class: 'row', style: 'justify-content:space-between;gap:8px' }, [
       el('span', { class: 'note', text: T('co.noGrants') }),
       el('button', { class: 'btn sm', text: T('co.export'), onclick: () => {
@@ -1464,26 +1523,33 @@
         HR.usage.exported('hr-roles');
       } })
     ]);
-    wrap.appendChild(card(T('co.rolesTitle'), T('co.rolesNote', { attrs: attrsLabel(R.levels) }), [
+    const columns = [
+      { key: 'rank', label: T('py.cRank'), num: true, value: r => r.rank, align: 'right',
+        render: r => r.overCap
+          ? el('span', { class: 'pill warn', title: T('py.rankOverCap'), text: String(r.rank) })
+          : el('span', { class: 'mono', text: String(r.rank) }) },
+      R.ladder ? { key: 'level', label: T('co.cLevel'), num: true, value: r => r.level, align: 'right',
+        render: r => el('span', { class: 'mono', text: 'L' + r.level }) } : null,
+      { key: 'role', label: T('co.cRole'), value: roleName },
+      { key: 'conds', label: T('co.cConds'), value: condText,
+        render: r => el('span', { class: 'mono', text: condText(r) }) },
+      { key: 'from', label: T('co.cFrom'), num: true, hint: T('co.cFromHint'), value: r => r.from, align: 'right',
+        render: r => r.from > 1 ? el('span', { text: U.fmtInt(r.from) }) : el('span', { class: 'note', text: '—' }) },
+      { key: 'people', label: T('co.cPeople'), num: true, value: r => r.members.length, align: 'right' },
+      { key: 'share', label: T('co.cShare'), num: true, value: r => r.share,
+        render: r => scoreBar(Math.round(r.share * 100)) },
+      { key: 'alike', label: T('co.cAlike'), num: true, hint: T('co.cAlikeHint'),
+        value: r => r.alike, render: r => scoreBar(Math.round(r.alike * 100)) }
+    ].filter(Boolean);
+    wrap.appendChild(card(T('co.rolesTitle'),
+      T('co.rolesNote', { before: U.fmtInt(s.before), after: U.fmtInt(s.after), lists: U.fmtInt(s.lists) }), [
       rolesHead,
       HR.table.make({
-        columns: [
-          { key: 'rank', label: T('py.cRank'), num: true, value: r => r.rank, align: 'right',
-            render: r => r.overCap
-              ? el('span', { class: 'pill warn', title: T('py.rankOverCap'), text: String(r.rank) })
-              : el('span', { class: 'mono', text: String(r.rank) }) },
-          { key: 'role', label: T('co.cRole'), value: roleName },
-          { key: 'conds', label: T('co.cConds'), value: condText,
-            render: r => el('span', { class: 'mono', text: condText(r) }) },
-          { key: 'people', label: T('co.cPeople'), num: true, value: r => r.members.length, align: 'right' },
-          { key: 'share', label: T('co.cShare'), num: true, value: r => r.share,
-            render: r => scoreBar(Math.round(r.share * 100)) },
-          { key: 'alike', label: T('co.cAlike'), num: true, hint: T('co.cAlikeHint'),
-            value: r => r.alike, render: r => scoreBar(Math.round(r.alike * 100)) }
-        ],
-        rows: R.cohorts, pageSize: 25, exportName: 'hr-roles',
+        columns,
+        rows: R.rules, pageSize: 25, exportName: 'hr-roles',
         initialSort: { key: 'rank', dir: 1 },
-        search: (r, q) => roleName(r).toLowerCase().includes(q),
+        search: (r, q) => roleName(r).toLowerCase().includes(q) ||
+          r.conds.some(c => c.labels.some(l => String(l).toLowerCase().includes(q))),
         onRowClick: r => drawerCohort(m, r)
       })
     ]));
@@ -1493,7 +1559,10 @@
   function drawerCohort(m, r) {
     const attrName = a => T('py.attr.' + a) || a;
     const body = el('div', { class: 'stack' }, [
-      dl(r.conds.map(c => [attrName(c.attr), c.label || c.value])),
+      dl(r.conds.map(c => [attrName(c.attr), c.values.length > 1
+        ? el('span', {}, c.labels.map(l => el('span', { class: 'pill', style: 'margin:2px 4px 2px 0', text: l })))
+        : (c.labels[0] || c.values[0])])
+        .concat([[T('co.cAlike'), scoreBar(Math.round(r.alike * 100))]])),
       card(T('py.dWhoTitle'), T('py.dWhoNote', { n: r.members.length }), HR.table.make({
         columns: [
           { key: 'person', label: T('py.cPerson'), value: p => p.name,
@@ -1509,7 +1578,9 @@
       }))
     ]);
     openDrawer(el('div', {}, [
-      el('div', { text: r.conds.map(c => c.label || c.value).join(' › ') }),
+      el('div', { text: r.conds.map(c => c.labels.length > 1
+        ? c.labels.slice(0, 3).join(', ') + (c.labels.length > 3 ? ' +' + (c.labels.length - 3) : '')
+        : (c.labels[0] || c.values[0])).join(' › ') }),
       el('span', { class: 'note', text: T('co.dHeadNote', { people: U.fmtInt(r.members.length) }) })
     ]), body);
   }
