@@ -16,11 +16,16 @@
      placed       people who land in a cohort of at least the minimum size — counted
                   over the largest cohorts that fit HelloID's rule cap, because a rule
                   set that needs 260 rules is judged on the 100 it can actually have
-     alike        how much more the members of a cohort resemble each other, on the
-                  attributes the cohort does not fix, than everybody does: 0 for a rule
-                  for everyone, 1 for a cohort that agrees on everything else. Measured
-                  as lift over the population, so an attribute nobody shares anywhere
-                  (a cost centre per person) neither helps nor drags.
+     alike        how much of what decides access the rule pins down. Every attribute
+                  carries a weight for how much it decides access — a job title most,
+                  a department or team a fair amount, a location or contract type a
+                  little. An attribute the rule conditions on counts in full; one it
+                  leaves open counts by how much more the members agree on it than
+                  everybody does (lift over the population). So a job-title rule is
+                  alike across a hundred departments, because the title is the job;
+                  a department rule is alike only if its people share a title too; a
+                  rule for everyone is 0. An attribute nobody shares anywhere (a cost
+                  centre per person) neither helps nor drags.
      score        placed × alike — as specific as the data allows while the cohorts
                   stay large enough to defend and few enough to fit
 
@@ -76,9 +81,20 @@
   /* A rule must add at least this many "people made fully alike" — a quarter of a
      smallest group — or it is not worth a slot. */
   const MIN_GAIN_PER_SIZE = 0.25;
+  /* A "one of" list that selects at least this share of the people its other conditions
+     already select is that wider rule with a pointless list: it becomes the wider rule. */
+  const GENERAL_ABOVE = 0.9;
 
-  const settings = () => Object.assign({ alikeFloor: 0.5, ladder: true, ignore: [], require: [] },
+  const settings = () => Object.assign({ alikeFloor: 0.5, ladder: true, ignore: [], require: [], weight: {} },
     HR.config.get().cohorts || {});
+  /* How much each attribute decides access, by default: the job is what a role is,
+     the department or team is where it is done, the rest is scope. Editable. */
+  const DECIDES = { Title: 3, Team: 2, Department: 2, Division: 1, Employer: 1, Location: 1,
+    CostCenter: 1, ContractType: 1 };
+  const weightOf = a => {
+    const w = settings().weight[a];
+    return w === undefined || w === null ? (DECIDES[a] === undefined ? 1 : DECIDES[a]) : +w;
+  };
 
   /** Share of `members` holding the most common value of `attr` (missing is a value). */
   function purity(members, attr) {
@@ -100,15 +116,18 @@
   }
 
   /**
-   * How much more alike `members` are than everybody, on the attributes not in `fixed`:
-   * the lift of each attribute's purity over its purity across the population, averaged.
-   * Nothing left to compare on means the group agrees on everything there is.
+   * How much of what decides access the rule pins down: each attribute's weight, in
+   * full when the rule conditions on it, by the members' lift over the population when
+   * it leaves it open. Attributes everybody shares carry no information and are left
+   * out; nothing to weigh means the group agrees on everything there is.
    */
   function alikeOf(people, members, fixed, attributes) {
     const base = baseOf(people, attributes);
-    const rest = attributes.filter(a => !fixed.includes(a) && base.get(a) < 1);
-    if (!rest.length) return 1;
-    return U.sum(rest, a => Math.max(0, (purity(members, a) - base.get(a)) / (1 - base.get(a)))) / rest.length;
+    const counted = attributes.filter(a => fixed.includes(a) || base.get(a) < 1);
+    const total = U.sum(counted, weightOf);
+    if (!total) return 1;
+    return U.sum(counted, a => weightOf(a) * (fixed.includes(a) ? 1
+      : Math.max(0, (purity(members, a) - base.get(a)) / (1 - base.get(a))))) / total;
   }
 
   /** Partition people by the values of `attrs`; a person missing any value is unplaced. */
@@ -173,20 +192,24 @@
     return prof;
   }
 
-  /** How alike the two groups would be as one rule, from their summed profiles. */
-  function similarity(a, b, others, base) {
-    if (!others.length) return 0;
+  /** How alike the two groups would be as one rule, from their summed profiles —
+      the same weighing as alikeOf. The pivot is not fixed by a list: a list of every
+      title fixes nothing, so it counts by its lift like an open attribute. */
+  function similarity(a, b, fixed, others, base) {
     const n = a.members.length + b.members.length;
-    let total = 0;
+    let total = U.sum(fixed, weightOf), weight = total;
     for (const attr of others) {
+      const g = base.get(attr);
+      if (g >= 1) continue;
       const ta = a.profile.get(attr), tb = b.profile.get(attr);
       let top = 0;
       ta.forEach((c, v) => { const m = c + (tb.get(v) || 0); if (m > top) top = m; });
       tb.forEach((c, v) => { if (!ta.has(v) && c > top) top = c; });
-      const g = base.get(attr);
-      total += g < 1 ? Math.max(0, (top / n - g) / (1 - g)) : 1;
+      const w = weightOf(attr);
+      weight += w;
+      total += w * Math.max(0, (top / n - g) / (1 - g));
     }
-    return total / others.length;
+    return weight ? total / weight : 1;
   }
 
   /** A small max-heap on `sim`, so merging stays n² log n rather than n³. */
@@ -217,7 +240,7 @@
    * Small cells take part: a ward of two that joins its siblings is placed, where alone
    * it was too small to defend. Cells still under the minimum afterwards are left over.
    */
-  function mergeSimilar(cells, pivot, others, base, floor, minSize) {
+  function mergeSimilar(cells, fixed, pivot, others, base, floor, minSize) {
     const contexts = new Map();
     for (const cell of cells) {
       const key = cell.conds.filter(c => c.attr !== pivot).map(c => c.value).join(SEP);
@@ -228,14 +251,17 @@
     const rules = [];
     let leftover = 0;
     contexts.forEach(siblings => {
+      const contextPeople = U.sum(siblings, c => c.members.length);
+      const open = others.concat([pivot]);
+      const context = fixed.filter(a => a !== pivot);
       const groups = siblings.map(cell => ({
-        cells: [cell], members: cell.members.slice(), profile: profileOf(cell.members, others), alive: true, v: 0
+        cells: [cell], members: cell.members.slice(), profile: profileOf(cell.members, open), alive: true, v: 0
       }));
-      if (groups.length > 1 && floor < 1 && others.length) {
+      if (groups.length > 1 && floor < 1) {
         const q = heap();
         for (let i = 0; i < groups.length; i++) {
           for (let j = i + 1; j < groups.length; j++) {
-            const sim = similarity(groups[i], groups[j], others, base);
+            const sim = similarity(groups[i], groups[j], context, open, base);
             if (sim >= floor) q.push({ a: groups[i], b: groups[j], sim, va: 0, vb: 0 });
           }
         }
@@ -249,13 +275,13 @@
           a.v++;
           a.cells = a.cells.concat(b.cells);
           a.members = a.members.concat(b.members);
-          for (const attr of others) {
+          for (const attr of open) {
             const ta = a.profile.get(attr);
             b.profile.get(attr).forEach((n, v) => ta.set(v, (ta.get(v) || 0) + n));
           }
           for (const g of groups) {
             if (g === a || !g.alive) continue;
-            const sim = similarity(a, g, others, base);
+            const sim = similarity(a, g, context, open, base);
             if (sim >= floor) q.push({ a, b: g, sim, va: a.v, vb: g.v });
           }
         }
@@ -263,13 +289,26 @@
       for (const g of groups) {
         if (!g.alive) continue;
         if (g.members.length < minSize) { leftover += g.members.length; continue; }
-        const context = g.cells[0].conds.filter(c => c.attr !== pivot);
+        const contextConds = g.cells[0].conds.filter(c => c.attr !== pivot);
+        /* "Helpende in one of 73 departments" is Helpende; a list that selects nearly
+           everyone its context selects is the context rule, the few cells it left out
+           included — "except these five" is not a rule. With no context it would be a
+           rule for everybody, which says nothing. */
+        if (g.members.length >= GENERAL_ABOVE * contextPeople) {
+          if (!contextConds.length) continue;
+          rules.push({
+            conds: contextConds.map(c => ({ attr: c.attr, values: [c.value], labels: [c.label], byId: c.byId })),
+            members: siblings.flatMap(c => c.members), from: g.cells.length, generalised: true
+          });
+          continue;
+        }
         const on = g.cells.map(cell => cell.conds.find(c => c.attr === pivot));
-        rules.push({
-          conds: context.map(c => ({ attr: c.attr, values: [c.value], labels: [c.label], byId: c.byId }))
-            .concat([{ attr: pivot, values: on.map(c => c.value), labels: on.map(c => c.label), byId: on[0].byId }]),
-          members: g.members, from: g.cells.length
-        });
+        /* Conditions in the attribute order of the level, so identical rules read and
+           key the same whichever attribute was the pivot. */
+        const conds = contextConds.map(c => ({ attr: c.attr, values: [c.value], labels: [c.label], byId: c.byId }))
+          .concat([{ attr: pivot, values: on.map(c => c.value), labels: on.map(c => c.label), byId: on[0].byId }]);
+        conds.sort((x, y) => fixed.indexOf(x.attr) - fixed.indexOf(y.attr));
+        rules.push({ conds, members: g.members, from: g.cells.length });
       }
     });
     rules.sort((a, b) => b.members.length - a.members.length);
@@ -297,11 +336,13 @@
       const part = partition(people, attrs, minSize, attributes, 0);
       const pivot = attrs[attrs.length - 1];
       const others = attributes.filter(a => !attrs.includes(a));
-      const merged = mergeSimilar(part.cells, pivot, others, baseOf(people, attributes), opts.alikeFloor, minSize);
+      const merged = mergeSimilar(part.cells, attrs, pivot, others, baseOf(people, attributes), opts.alikeFloor, minSize);
       if (i === levels.length - 1) { before = part.counts.cells; leftover = merged.leftover + part.counts.unplaced; }
       merged.rules.forEach(r => {
+        /* On a ladder the generalised rule is the level above, already there. */
+        if (r.generalised && i > 0) return;
         r.level = i + 1;
-        r.alike = alikeOf(people, r.members, attrs, attributes);
+        r.alike = alikeOf(people, r.members, fixedOf(r), attributes);
         r.share = people.length ? r.members.length / people.length : 0;
         rules.push(r);
       });
@@ -341,26 +382,38 @@
    * combination merges along its most fragmented attribute, the axis where "one of"
    * lists buy the most.
    */
+  /** The attributes a rule really fixes: one value, not a list. */
+  const fixedOf = r => r.conds.filter(c => c.values.length === 1).map(c => c.attr);
+
+  /** Identity of a rule: its attributes and, per attribute, its sorted value list. */
+  const ruleKey = r => r.conds.map(c => c.attr + '=' + c.values.slice().sort().join(SEPX)).sort().join('|');
+  const SEPX = '\u001e';
+
   function pool(people, attributes, minSize, floor, cellsOf, required) {
-    const out = [];
+    const byKey = new Map();
     for (const attrs of subsets(attributes, MAX_ATTRS)) {
       if (!required.every(a => attrs.includes(a))) continue;
-      /* A rule that is not itself at least the floor alike is not a role, however many
-         people it would place: 449 people at 10% alike is a department list, not a
-         job. The floor that governs merging governs candidacy too. */
       const part = partition(people, attrs, minSize, attributes, 0);
       const pivot = attrs.slice().sort((a, b) => cellsOf(b) - cellsOf(a))[0];
       const others = attributes.filter(a => !attrs.includes(a));
-      const merged = mergeSimilar(part.cells, pivot, others, baseOf(people, attributes), floor, minSize);
+      const merged = mergeSimilar(part.cells, attrs, pivot, others, baseOf(people, attributes), floor, minSize);
       merged.rules.forEach(r => {
-        r.attrs = attrs;
-        r.alike = alikeOf(people, r.members, attrs, attributes);
-        if (r.alike < floor) return;
+        /* A generalised rule has fewer attributes than the combination that produced it. */
+        r.attrs = r.conds.map(c => c.attr);
+        if (!required.every(a => r.attrs.includes(a))) return;
+        r.alike = alikeOf(people, r.members, fixedOf(r), attributes);
+        /* A single-attribute rule is a root: it holds the generic permissions, and its
+           alikeness is what the rules built on it improve. Anything more specific must
+           itself clear the floor — 449 people at 10% alike is not a role. A root that
+           is not alike at all is a rule for everybody. */
+        if (r.attrs.length > 1 ? r.alike < floor : r.alike <= 0) return;
         r.share = people.length ? r.members.length / people.length : 0;
-        out.push(r);
+        const key = ruleKey(r);
+        const seen = byKey.get(key);
+        if (!seen || r.from > seen.from) byKey.set(key, r);
       });
     }
-    return out;
+    return Array.from(byKey.values());
   }
 
   /**
@@ -407,14 +460,42 @@
     rules.forEach(r => { if (r.overCap) return; const k = r.attrs.join(SEP); mixMap.set(k, (mixMap.get(k) || 0) + 1); });
     const mix = Array.from(mixMap.entries()).map(([k, count]) => ({ attrs: k.split(SEP), count }))
       .sort((a, b) => b.count - a.count);
+
+    /* What each rule builds on: the widest chosen rule its conditions imply — the
+       generic job-title rule under its department-and-title specialisations. The
+       hierarchy the pyramid has by construction, read off a set that was chosen flat. */
+    const implies = (r, p) => p.conds.every(pc => {
+      const rc = r.conds.find(c => c.attr === pc.attr);
+      return rc && rc.values.every(v => pc.values.includes(v));
+    });
+    for (const r of rules) {
+      r.parent = null;
+      for (const p of rules) {
+        if (p === r || p.attrs.length >= r.attrs.length || p.overCap !== r.overCap && p.overCap) continue;
+        if (!implies(r, p)) continue;
+        if (!r.parent || p.attrs.length > r.parent.attrs.length ||
+            (p.attrs.length === r.parent.attrs.length && p.rank < r.parent.rank)) r.parent = p;
+      }
+    }
+    for (const r of rules) {
+      let root = r; while (root.parent) root = root.parent;
+      r.root = root;
+      r.depth = 0; for (let p = r.parent; p; p = p.parent) r.depth++;
+    }
+    const families = rules.filter(r => !r.parent && !r.overCap)
+      .map(root => ({ root, under: rules.filter(r => r.root === root && r !== root && !r.overCap).length }))
+      .sort((a, b) => b.root.members.length - a.root.members.length);
+
     return {
-      rules, mix,
+      rules, mix, families,
       capSweep: CAP_SWEEP.map(c => Object.assign({ cap: c, current: c === cap }, at(c))),
       summary: {
         rules: Math.min(rules.length, cap > 0 ? cap : rules.length),
         overCap: rules.filter(r => r.overCap).length,
         placedShare: within.placedShare, alike: within.alike,
         lists: rules.filter(r => !r.overCap && r.conds.some(c => c.values.length > 1)).length,
+        roots: families.length,
+        under: U.sum(families, f => f.under),
         candidates: candidates.length
       }
     };
@@ -486,6 +567,7 @@
 
     const result = {
       people, offered, attributes, excluded, ignored, required, candidates, suggestion, levels, chosen, minSize, cap,
+      weights: Object.fromEntries(offered.map(a => [a, weightOf(a)])),
       alikeFloor: prefs.alikeFloor, ladder: prefs.ladder && levels.length > 1,
       rules: set.rules, ruleLevels: set.levels, proposal,
       summary: Object.assign({ people: people.length }, set.summary)
@@ -531,5 +613,5 @@
       'Status', 'Conditions', 'Entitlements']);
   }
 
-  HR.cohorts = { build, sweep, toRulesCsv, alikeOf, SWEEP_SIZES, CAP_SWEEP };
+  HR.cohorts = { build, sweep, toRulesCsv, alikeOf, weightOf, SWEEP_SIZES, CAP_SWEEP };
 })(window.HR);

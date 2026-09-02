@@ -3,6 +3,13 @@
 Versions are CalVer (`YYYY.M.N` — Nth release of that month). This file is
 generated from `js/changelog.js` by `make-changelog.js`; edit there, not here.
 
+## [2026.9.11] — 2026-09-02
+
+- The proposed rule set is now the pyramid without the access side: a generic job-title rule holding the basic permissions, and under it the department, location or contract-type rules that add the specific ones. Each rule shows what it builds on, and the table reads as a forest — root, then the rules on top of it.
+- Alikeness now knows that a job title is the job. Every attribute carries a weight for how much it decides access (job title most, department and team much, the rest a little — editable per attribute in the Attributes table): an attribute a rule conditions on counts in full, an open one by how much more its people agree on it than everyone does. A “one of” list does not fix its attribute; it counts by its lift, so a list of every title is not a title rule.
+- A list that covers nearly every value in its context collapses to the wider rule — “Helpende in one of 73 departments” is Helpende. Single-attribute roots may sit below the alike floor; only rules on two or more attributes must clear it.
+- On a real vault the proposal at a cap of 100 now reads: Verzorgende IG (509 people) with six specialisations, Helpende (456) with four, Woonzorgassistent, Helpende plus — 95% of people placed, 100% at a cap of 500.
+
 ## [2026.9.10] — 2026-09-02
 
 - A proposed rule must itself be at least the alike floor. Gain is counted in people, so a job-title rule covering 449 people at 10% alike used to win a slot early — it placed many people from nothing. That is a department list, not a role; the floor that governs merging now governs candidacy too.

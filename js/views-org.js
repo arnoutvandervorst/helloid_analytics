@@ -1413,7 +1413,10 @@
       tile(T('co.kAlike'), U.fmtPct(ps.alike, 0), T('co.kAlikeSetFoot'),
         { severity: ps.alike > 0.6 ? 'good' : ps.alike > 0.3 ? 'medium' : 'high' }),
       tile(T('co.kMix'), PR.mix.length ? String(PR.mix.length) : '—',
-        PR.mix.length ? PR.mix.map(x => attrsLabel(x.attrs) + ' ' + U.fmtInt(x.count)).join(' · ') : T('co.kMixNone'))
+        PR.mix.length
+          ? PR.mix.map(x => attrsLabel(x.attrs) + ' ' + U.fmtInt(x.count)).join(' · ') + ' — ' +
+            T('co.kFamilies', { n: U.fmtInt(ps.roots), m: U.fmtInt(ps.under) })
+          : T('co.kMixNone'))
     );
 
     /* Attribute switches: what may condition a rule, and what must. */
@@ -1446,6 +1449,18 @@
               saveCohorts({ require });
             };
             return cb;
+          } },
+        { key: 'decides', label: T('co.cDecides'), sortable: false, hint: T('co.cDecidesHint'), value: r => R.weights[r.attr],
+          render: r => {
+            const sel = el('select', {});
+            [0, 1, 2, 3].forEach(n => sel.appendChild(el('option', { value: String(n), text: T('co.decides.' + n),
+              selected: R.weights[r.attr] === n })));
+            sel.disabled = !!r.out;
+            sel.onchange = () => {
+              const weight = Object.assign({}, (HR.config.get().cohorts || {}).weight, { [r.attr]: +sel.value });
+              saveCohorts({ weight });
+            };
+            return sel;
           } }
       ],
       rows: attrRows, pageSize: 20, exportName: 'hr-attributes'
@@ -1539,7 +1554,16 @@
       HR.table.make({
         columns: [
           rankCol,
-          { key: 'attrs', label: T('co.cAttrs'), value: r => attrsLabel(r.attrs) },
+          { key: 'family', label: T('co.cFamily'), num: true, hint: T('co.cFamilyHint'),
+            /* Root's rank, then depth, then own rank: the table reads as a forest. */
+            value: r => r.root.rank * 1e6 + r.depth * 1e3 + (r.rank % 1000),
+            render: r => el('span', { class: 'mono', text: r.parent ? '\u21b3' + ' '.repeat(r.depth) : String(r.rank) }) },
+          { key: 'attrs', label: T('co.cAttrs'), value: r => attrsLabel(r.attrs),
+            render: r => el(r.parent ? 'span' : 'strong', { text: attrsLabel(r.attrs) }) },
+          { key: 'parent', label: T('co.cBuildsOn'), value: r => r.parent ? r.parent.rank : 0,
+            render: r => r.parent
+              ? el('span', { text: '#' + r.parent.rank + ' ' + roleName(r.parent) })
+              : el('span', { class: 'note', text: '\u2014' }) },
           { key: 'conds', label: T('co.cConds'), value: condText,
             render: r => el('span', { class: 'mono', text: condText(r) }) },
           { key: 'from', label: T('co.cFrom'), num: true, hint: T('co.cFromHint'), value: r => r.from, align: 'right',
@@ -1553,7 +1577,7 @@
             render: r => el('span', { class: 'mono', text: U.fmtNum(r.gain, 1) }) }
         ],
         rows: PR.rules, pageSize: 25, exportName: 'hr-proposal',
-        initialSort: { key: 'rank', dir: 1 },
+        initialSort: { key: 'family', dir: 1 },
         search: searchRule,
         onRowClick: r => drawerCohort(m, r)
       })
@@ -1682,7 +1706,10 @@
       dl(r.conds.map(c => [attrName(c.attr), c.values.length > 1
         ? el('span', {}, c.labels.map(l => el('span', { class: 'pill', style: 'margin:2px 4px 2px 0', text: l })))
         : (c.labels[0] || c.values[0])])
-        .concat([[T('co.cAlike'), scoreBar(Math.round(r.alike * 100))]])),
+        .concat([[T('co.cAlike'), scoreBar(Math.round(r.alike * 100))]])
+        .concat(r.parent ? [[T('co.cBuildsOn'), '#' + r.parent.rank + ' ' + r.parent.conds.map(c => c.labels.length > 1
+          ? c.labels.slice(0, 3).join(', ') + (c.labels.length > 3 ? ' +' + (c.labels.length - 3) : '')
+          : (c.labels[0] || c.values[0])).join(' › ')]] : [])),
       card(T('py.dWhoTitle'), T('py.dWhoNote', { n: r.members.length }), HR.table.make({
         columns: [
           { key: 'person', label: T('py.cPerson'), value: p => p.name,
