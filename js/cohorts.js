@@ -44,6 +44,15 @@
                   because HelloID rules stack: the department rule catches whoever the
                   department-and-title rule cannot.
 
+   No real access model uses one attribute, so the proposal is built as a set rather
+   than picked as a combination: every merged rule from every combination is a
+   candidate, and rules are taken one at a time by how much more alike they make the
+   people they cover than the rules already taken do. A wide rule that places many
+   people from nothing wins early; a specific rule that lifts a department's nurses
+   from "alike as a department" to "alike as nurses" follows; what the mix ends up
+   being — titles here, department-and-title there, department underneath — is what
+   the data supports, and the cap decides where it stops.
+
    The rules carry a condition list and the people it selects, in the same shape the
    pyramid's condensed rules use, so the day access is loaded the two can be matched
    on identity. */
@@ -51,7 +60,7 @@
   'use strict';
 
   const U = HR.util;
-  const SEP = '';
+  const SEP = '\u001f';
 
   /* A candidate whose cells add fewer than this share on top of its widest narrower
      candidate is that candidate wearing an extra condition. */
@@ -62,8 +71,14 @@
   const DESCRIBES_BELOW = 0.5;
   /* Smallest-group sizes the sweep tries. */
   const SWEEP_SIZES = [3, 5, 8, 10, 15, 20, 25];
+  /* Rule caps the proposal is read off at. */
+  const CAP_SWEEP = [50, 100, 200, 500, 1000];
+  /* A rule must add at least this many "people made fully alike" — a quarter of a
+     smallest group — or it is not worth a slot. */
+  const MIN_GAIN_PER_SIZE = 0.25;
 
-  const settings = () => Object.assign({ alikeFloor: 0.5, ladder: true }, HR.config.get().cohorts || {});
+  const settings = () => Object.assign({ alikeFloor: 0.5, ladder: true, ignore: [], require: [] },
+    HR.config.get().cohorts || {});
 
   /** Share of `members` holding the most common value of `attr` (missing is a value). */
   function purity(members, attr) {
@@ -191,6 +206,7 @@
     return {
       push: x => { h.push(x); up(h.length - 1); },
       pop: () => { const top = h[0]; const last = h.pop(); if (h.length) { h[0] = last; down(0); } return top; },
+      peek: () => h[0],
       get size() { return h.length; }
     };
   }
@@ -320,6 +336,86 @@
     };
   }
 
+  /**
+   * Every merged rule from every combination, as candidates for the proposal. Each
+   * combination merges along its most fragmented attribute, the axis where "one of"
+   * lists buy the most.
+   */
+  function pool(people, attributes, minSize, floor, cellsOf, required) {
+    const out = [];
+    for (const attrs of subsets(attributes, MAX_ATTRS)) {
+      if (!required.every(a => attrs.includes(a))) continue;
+      const part = partition(people, attrs, minSize, attributes, 0);
+      const pivot = attrs.slice().sort((a, b) => cellsOf(b) - cellsOf(a))[0];
+      const others = attributes.filter(a => !attrs.includes(a));
+      const merged = mergeSimilar(part.cells, pivot, others, baseOf(people, attributes), floor, minSize);
+      merged.rules.forEach(r => {
+        r.attrs = attrs;
+        r.alike = alikeOf(people, r.members, attrs, attributes);
+        r.share = people.length ? r.members.length / people.length : 0;
+        out.push(r);
+      });
+    }
+    return out;
+  }
+
+  /**
+   * The proposed rule set: greedy on the gain in alikeness, where every person counts
+   * for the most alike rule that covers them and an unplaced person counts for nothing.
+   * Lazy — a candidate's gain only shrinks as rules are taken, so a stale top entry is
+   * re-scored and re-inserted rather than everything re-scored on every pick.
+   */
+  function propose(people, candidates, minSize, cap) {
+    const current = new Map();
+    const gainOf = r => { let g = 0; for (const p of r.members) g += Math.max(0, r.alike - (current.get(p) || 0)); return g; };
+    const q = heap();
+    candidates.forEach(r => { r.rank = 0; r.overCap = false; q.push({ r, sim: gainOf(r), v: 0 }); });
+
+    const minGain = minSize * MIN_GAIN_PER_SIZE;
+    const limit = Math.max(cap, CAP_SWEEP[CAP_SWEEP.length - 1]);
+    const rules = [];
+    const trail = [];
+    let objective = 0;
+    let taken = 0;
+    while (q.size && rules.length < limit) {
+      const top = q.pop();
+      const gain = gainOf(top.r);
+      if (gain < minGain) { if (top.v === taken) break; continue; }
+      /* Scored before the last pick and now beaten by the next entry: re-insert. */
+      if (top.v !== taken && q.size && gain < q.peek().sim) { q.push({ r: top.r, sim: gain, v: taken }); continue; }
+      const r = top.r;
+      let fresh = 0;
+      for (const p of r.members) {
+        const was = current.get(p) || 0;
+        if (r.alike > was) { if (!was) fresh++; current.set(p, r.alike); }
+      }
+      taken++;
+      objective += gain;
+      r.rank = taken; r.gain = gain; r.newPlaced = fresh; r.overCap = cap > 0 && taken > cap;
+      rules.push(r);
+      trail.push({ rank: taken, placedShare: people.length ? current.size / people.length : 0,
+        alike: people.length ? objective / people.length : 0 });
+    }
+
+    const at = n => trail[Math.min(n, trail.length) - 1] || { rank: 0, placedShare: 0, alike: 0 };
+    const within = cap > 0 ? at(cap) : at(trail.length);
+    const mixMap = new Map();
+    rules.forEach(r => { if (r.overCap) return; const k = r.attrs.join(SEP); mixMap.set(k, (mixMap.get(k) || 0) + 1); });
+    const mix = Array.from(mixMap.entries()).map(([k, count]) => ({ attrs: k.split(SEP), count }))
+      .sort((a, b) => b.count - a.count);
+    return {
+      rules, mix,
+      capSweep: CAP_SWEEP.map(c => Object.assign({ cap: c, current: c === cap }, at(c))),
+      summary: {
+        rules: Math.min(rules.length, cap > 0 ? cap : rules.length),
+        overCap: rules.filter(r => r.overCap).length,
+        placedShare: within.placedShare, alike: within.alike,
+        lists: rules.filter(r => !r.overCap && r.conds.some(c => c.values.length > 1)).length,
+        candidates: candidates.length
+      }
+    };
+  }
+
   function build(model, opts) {
     if (model._cohorts && !(opts && opts.force)) return model._cohorts;
     if (!model.vault) return null;
@@ -330,14 +426,21 @@
 
     const people = HR.pyramid.population(model, model.vault, model.granted);
     const offered = HR.pyramid.availableAttributes(people);
+    /* Which attributes take part: what the data offers, minus what describes
+       individuals, minus what the user switched off. The list itself is kept so the
+       view can show the switches. */
     const excluded = [];
+    const ignored = [];
     const attributes = offered.filter(a => {
       const share = partition(people, [a], minSize, [], 0).counts.placedShare;
-      if (share >= DESCRIBES_BELOW) return true;
-      excluded.push({ attr: a, placedShare: share });
-      return false;
+      if (share < DESCRIBES_BELOW) { excluded.push({ attr: a, placedShare: share }); return false; }
+      if (prefs.ignore.includes(a)) { ignored.push(a); return false; }
+      return true;
     });
-    if (!attributes.length) return { unavailable: 'no-attributes', people, attributes: [], candidates: [], excluded };
+    const required = prefs.require.filter(a => attributes.includes(a));
+    if (!attributes.length) {
+      return { unavailable: 'no-attributes', people, offered, attributes: [], candidates: [], excluded, ignored };
+    }
 
     const byKey = new Map();
     const of = attrs => {
@@ -375,11 +478,12 @@
 
     const cellsOf = a => of([a]).counts.cells;
     const set = rulesFor(people, levels, attributes, minSize, cap, prefs, cellsOf);
+    const proposal = propose(people, pool(people, attributes, minSize, prefs.alikeFloor, cellsOf, required), minSize, cap);
 
     const result = {
-      people, attributes, excluded, candidates, suggestion, levels, chosen, minSize, cap,
+      people, offered, attributes, excluded, ignored, required, candidates, suggestion, levels, chosen, minSize, cap,
       alikeFloor: prefs.alikeFloor, ladder: prefs.ladder && levels.length > 1,
-      rules: set.rules, ruleLevels: set.levels,
+      rules: set.rules, ruleLevels: set.levels, proposal,
       summary: Object.assign({ people: people.length }, set.summary)
     };
     model._cohorts = result;
@@ -403,16 +507,18 @@
   }
 
   /** HelloID business-rule CSV with the conditions filled in and nothing granted yet. */
-  function toRulesCsv(model, R) {
+  function toRulesCsv(model, R, set) {
     const condition = c => c.attr + (c.byId ? '.ExternalId' : '.Name') + ', one of: ' + c.values.join(', ');
     const name = c => c.labels.length > 1
       ? c.labels.slice(0, 3).join(' / ') + (c.labels.length > 3 ? '…' : '')
       : (c.labels[0] || c.values[0]);
-    const rows = R.rules.slice().sort((a, b) => a.rank - b.rank).map(r => ({
+    const proposal = !!set;
+    const rows = (set || R.rules).slice().sort((a, b) => a.rank - b.rank).map(r => ({
       Name: HR.mine.ruleName('Rol', r.conds.map(name).join(' + ')),
       EntitlementCount: 0,
       PersonsLatestEvaluation: r.members.length,
-      Categories: 'HR cohort' + (R.ladder ? '|Level ' + r.level : '') + (r.overCap ? '|Over rule cap' : ''),
+      Categories: (proposal ? 'HR proposal|' + r.attrs.join(' + ') : 'HR cohort' + (R.ladder ? '|Level ' + r.level : '')) +
+        (r.overCap ? '|Over rule cap' : ''),
       Status: 'proposal',
       Conditions: r.conds.map(condition).join('|'),
       Entitlements: ''
@@ -421,5 +527,5 @@
       'Status', 'Conditions', 'Entitlements']);
   }
 
-  HR.cohorts = { build, sweep, toRulesCsv, alikeOf, SWEEP_SIZES };
+  HR.cohorts = { build, sweep, toRulesCsv, alikeOf, SWEEP_SIZES, CAP_SWEEP };
 })(window.HR);

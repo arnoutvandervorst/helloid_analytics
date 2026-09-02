@@ -1385,9 +1385,95 @@
       rebuild();
     };
     const setLevels = levels => saveCohorts({ levels });
+    const listLabel = c => c.labels.length > 1
+      ? c.labels.slice(0, 3).join(', ') + (c.labels.length > 3 ? ' +' + (c.labels.length - 3) : '')
+      : (c.labels[0] || c.values[0]);
+    const roleName = r => r.conds.map(listLabel).join(' › ');
+    const condText = r => r.conds.map(c => attrName(c.attr) + ' ' +
+      (c.values.length > 1 ? T('co.oneOf') + ' ' : '= ') + listLabel(c)).join(' · ');
+    const rankCol = { key: 'rank', label: T('py.cRank'), num: true, value: r => r.rank, align: 'right',
+      render: r => r.overCap
+        ? el('span', { class: 'pill warn', title: T('py.rankOverCap'), text: String(r.rank) })
+        : el('span', { class: 'mono', text: String(r.rank) }) };
+    const searchRule = (r, q) => roleName(r).toLowerCase().includes(q) ||
+      r.conds.some(c => c.labels.some(l => String(l).toLowerCase().includes(q)));
 
-    const tiles = el('div', { class: 'grid g4', style: 'margin-bottom:14px' });
-    tiles.append(
+    /* ---- the proposal: a rule set, not an attribute ---- */
+    const PR = R.proposal, ps = PR.summary;
+    const pTiles = el('div', { class: 'grid g4', style: 'margin-bottom:14px' });
+    pTiles.append(
+      tile(T('co.kRoles'), R.cap ? T('co.kRulesOfCap', { n: U.fmtInt(ps.rules), cap: U.fmtInt(R.cap) }) : U.fmtInt(ps.rules),
+        ps.overCap
+          ? T('co.kRulesMore', { over: U.fmtInt(ps.overCap), lists: U.fmtInt(ps.lists) })
+          : T('co.kRulesAll', { lists: U.fmtInt(ps.lists) }),
+        ps.overCap ? { severity: 'medium' } : undefined),
+      tile(T('co.kPlaced'), U.fmtPct(ps.placedShare, 0),
+        T('co.kPlacedSetFoot', { placed: U.fmtInt(Math.round(ps.placedShare * s.people)), people: U.fmtInt(s.people) }),
+        { severity: ps.placedShare > 0.8 ? 'good' : ps.placedShare > 0.5 ? 'medium' : 'high' }),
+      tile(T('co.kAlike'), U.fmtPct(ps.alike, 0), T('co.kAlikeSetFoot'),
+        { severity: ps.alike > 0.6 ? 'good' : ps.alike > 0.3 ? 'medium' : 'high' }),
+      tile(T('co.kMix'), PR.mix.length ? String(PR.mix.length) : '—',
+        PR.mix.length ? PR.mix.map(x => attrsLabel(x.attrs) + ' ' + U.fmtInt(x.count)).join(' · ') : T('co.kMixNone'))
+    );
+
+    /* Attribute switches: what may condition a rule, and what must. */
+    const attrRows = R.offered.map(a => {
+      const out = R.excluded.find(x => x.attr === a);
+      return { attr: a, out, used: R.attributes.includes(a), required: R.required.includes(a) };
+    });
+    const attrTable = HR.table.make({
+      columns: [
+        { key: 'attr', label: T('co.cAttrs'), value: r => attrName(r.attr),
+          render: r => r.out
+            ? el('span', { class: 'note', text: attrName(r.attr) + ' — ' + T('co.attrOut', { pct: U.fmtPct(r.out.placedShare, 0) }) })
+            : el('span', { text: attrName(r.attr) }) },
+        { key: 'use', label: T('co.cUse'), sortable: false, value: r => r.used ? 1 : 0,
+          render: r => {
+            const cb = el('input', { type: 'checkbox' });
+            cb.checked = r.used; cb.disabled = !!r.out;
+            cb.onchange = () => {
+              const ignore = R.offered.filter(x => x === r.attr ? !cb.checked : (R.ignored.includes(x)));
+              saveCohorts({ ignore, require: R.required.filter(x => ignore.indexOf(x) < 0) });
+            };
+            return cb;
+          } },
+        { key: 'require', label: T('co.cRequire'), sortable: false, hint: T('co.cRequireHint'), value: r => r.required ? 1 : 0,
+          render: r => {
+            const cb = el('input', { type: 'checkbox' });
+            cb.checked = r.required; cb.disabled = !r.used;
+            cb.onchange = () => {
+              const require = R.attributes.filter(x => x === r.attr ? cb.checked : R.required.includes(x));
+              saveCohorts({ require });
+            };
+            return cb;
+          } }
+      ],
+      rows: attrRows, pageSize: 20, exportName: 'hr-attributes'
+    });
+
+    const capTable = HR.table.make({
+      columns: [
+        { key: 'cap', label: T('co.cCap'), num: true, value: r => r.cap, align: 'right',
+          render: r => el(r.current ? 'strong' : 'span', { class: 'mono', text: U.fmtInt(r.cap) }) },
+        { key: 'rank', label: T('co.kRoles'), num: true, value: r => r.rank, align: 'right' },
+        { key: 'placed', label: T('co.cPlaced'), num: true, value: r => r.placedShare,
+          render: r => scoreBar(Math.round(r.placedShare * 100)) },
+        { key: 'alike', label: T('co.cAlike'), num: true, value: r => r.alike,
+          render: r => scoreBar(Math.round(r.alike * 100)) }
+      ],
+      rows: PR.capSweep, pageSize: 10, exportName: 'hr-rule-cap',
+      initialSort: { key: 'cap', dir: 1 },
+      onRowClick: r => {
+        const c = HR.config.get();
+        c.mining = Object.assign({}, c.mining, { ruleCap: r.cap });
+        HR.config.save(c);
+        delete m._pyramid;
+        rebuild();
+      }
+    });
+
+    const oldTiles = el('div', { class: 'grid g4', style: 'margin-bottom:14px' });
+    oldTiles.append(
       tile(T('co.kPlaced'), U.fmtPct(s.placedShare, 0),
         T('co.kPlacedFoot', { placed: U.fmtInt(s.placed), people: U.fmtInt(s.people), leftover: U.fmtInt(s.leftover) }),
         { severity: s.placedShare > 0.8 ? 'good' : s.placedShare > 0.5 ? 'medium' : 'high' }),
@@ -1402,7 +1488,6 @@
         R.ladder ? T('co.kSpecificFoot', { attrs: attrsLabel(R.ruleLevels[R.ruleLevels.length - 1]) }) : T('co.kSpecificFlat'),
         R.ladder ? { severity: s.specificShare > 0.6 ? 'good' : s.specificShare > 0.3 ? 'medium' : 'high' } : undefined)
     );
-    wrap.appendChild(tiles);
 
     /* The knobs the rule set depends on. The smallest group and the cap are shared with
        the pyramid — the two miners must agree on what a defendable group is and how
@@ -1432,14 +1517,58 @@
       }),
       slider('co.floor', R.alikeFloor, 0.3, 1, 0.05, v => U.fmtPct(v, 0), v => saveCohorts({ alikeFloor: v }))
     ]);
+
+    /* The proposal card: tiles, the knobs everything depends on, the attribute switches,
+       what the cap costs, and the rules themselves. */
+    const pHead = el('div', { class: 'row', style: 'justify-content:space-between;gap:8px' }, [
+      el('span', { class: 'note', text: T('co.noGrants') }),
+      el('button', { class: 'btn sm', text: T('co.exportProposal'), onclick: () => {
+        U.download('hr-proposal.csv', HR.cohorts.toRulesCsv(m, R, PR.rules), 'text/csv');
+        HR.usage.exported('hr-proposal');
+      } })
+    ]);
+    wrap.appendChild(card(T('co.proposalTitle'), T('co.proposalNote'), [
+      pTiles,
+      knobs,
+      el('p', { class: 'note', text: T('co.knobsNote') }),
+      el('div', { class: 'grid g2', style: 'gap:14px;margin:10px 0' }, [
+        el('div', {}, [el('h3', { text: T('co.attrsTitle') }), el('p', { class: 'note', text: T('co.attrsNote') }), attrTable]),
+        el('div', {}, [el('h3', { text: T('co.capSweepTitle') }), el('p', { class: 'note', text: T('co.capSweepNote') }), capTable])
+      ]),
+      pHead,
+      HR.table.make({
+        columns: [
+          rankCol,
+          { key: 'attrs', label: T('co.cAttrs'), value: r => attrsLabel(r.attrs) },
+          { key: 'conds', label: T('co.cConds'), value: condText,
+            render: r => el('span', { class: 'mono', text: condText(r) }) },
+          { key: 'from', label: T('co.cFrom'), num: true, hint: T('co.cFromHint'), value: r => r.from, align: 'right',
+            render: r => r.from > 1 ? el('span', { text: U.fmtInt(r.from) }) : el('span', { class: 'note', text: '—' }) },
+          { key: 'people', label: T('co.cPeople'), num: true, value: r => r.members.length, align: 'right' },
+          { key: 'new', label: T('co.cNew'), num: true, hint: T('co.cNewHint'), value: r => r.newPlaced, align: 'right',
+            render: r => r.newPlaced ? el('span', { text: U.fmtInt(r.newPlaced) }) : el('span', { class: 'note', text: '0' }) },
+          { key: 'alike', label: T('co.cAlike'), num: true, hint: T('co.cAlikeHint'),
+            value: r => r.alike, render: r => scoreBar(Math.round(r.alike * 100)) },
+          { key: 'gain', label: T('co.cGain'), num: true, hint: T('co.cGainHint'), value: r => r.gain, align: 'right',
+            render: r => el('span', { class: 'mono', text: U.fmtNum(r.gain, 1) }) }
+        ],
+        rows: PR.rules, pageSize: 25, exportName: 'hr-proposal',
+        initialSort: { key: 'rank', dir: 1 },
+        search: searchRule,
+        onRowClick: r => drawerCohort(m, r)
+      })
+    ]));
+
+    /* ---- exploring one combination: what each attribute set does on its own ---- */
+    const exploreKnobs = el('div', { class: 'slot-actions' });
     if (R.levels.length > 1) {
       const ladder = el('input', { type: 'checkbox' });
       ladder.checked = R.ladder;
       ladder.onchange = () => saveCohorts({ ladder: ladder.checked });
-      knobs.appendChild(el('label', { class: 'inline' }, [ladder, document.createTextNode(T('co.ladder'))]));
+      exploreKnobs.appendChild(el('label', { class: 'inline' }, [ladder, document.createTextNode(T('co.ladder'))]));
     }
     if (R.suggestion.join() !== R.levels.join()) {
-      knobs.appendChild(el('button', { class: 'btn sm primary', text: T('py.useSuggested'),
+      exploreKnobs.appendChild(el('button', { class: 'btn sm primary', text: T('py.useSuggested'),
         onclick: () => setLevels(R.suggestion) }));
     }
 
@@ -1450,8 +1579,8 @@
           attrs: R.excluded.map(x => attrName(x.attr) + ' (' + U.fmtPct(x.placedShare, 0) + ')').join(', ') })
       : T('co.candNote');
     wrap.appendChild(card(T('co.candTitle'), candNote, [
-      knobs,
-      el('p', { class: 'note', text: T('co.knobsNote') }),
+      oldTiles,
+      exploreKnobs,
       HR.table.make({
         columns: [
           { key: 'attrs', label: T('co.cAttrs'), value: c => attrsLabel(c.attrs),
@@ -1511,12 +1640,6 @@
       })));
     }
 
-    const listLabel = c => c.labels.length > 1
-      ? c.labels.slice(0, 3).join(', ') + (c.labels.length > 3 ? ' +' + (c.labels.length - 3) : '')
-      : (c.labels[0] || c.values[0]);
-    const roleName = r => r.conds.map(listLabel).join(' › ');
-    const condText = r => r.conds.map(c => attrName(c.attr) + ' ' +
-      (c.values.length > 1 ? T('co.oneOf') + ' ' : '= ') + listLabel(c)).join(' · ');
     const rolesHead = el('div', { class: 'row', style: 'justify-content:space-between;gap:8px' }, [
       el('span', { class: 'note', text: T('co.noGrants') }),
       el('button', { class: 'btn sm', text: T('co.export'), onclick: () => {
@@ -1525,10 +1648,7 @@
       } })
     ]);
     const columns = [
-      { key: 'rank', label: T('py.cRank'), num: true, value: r => r.rank, align: 'right',
-        render: r => r.overCap
-          ? el('span', { class: 'pill warn', title: T('py.rankOverCap'), text: String(r.rank) })
-          : el('span', { class: 'mono', text: String(r.rank) }) },
+      rankCol,
       R.ladder ? { key: 'level', label: T('co.cLevel'), num: true, value: r => r.level, align: 'right',
         render: r => el('span', { class: 'mono', text: 'L' + r.level }) } : null,
       { key: 'role', label: T('co.cRole'), value: roleName },
@@ -1542,15 +1662,14 @@
       { key: 'alike', label: T('co.cAlike'), num: true, hint: T('co.cAlikeHint'),
         value: r => r.alike, render: r => scoreBar(Math.round(r.alike * 100)) }
     ].filter(Boolean);
-    wrap.appendChild(card(T('co.rolesTitle'),
+    wrap.appendChild(card(T('co.exploreTitle', { attrs: attrsLabel(R.levels) }),
       T('co.rolesNote', { before: U.fmtInt(s.before), after: U.fmtInt(s.after), lists: U.fmtInt(s.lists) }), [
       rolesHead,
       HR.table.make({
         columns,
         rows: R.rules, pageSize: 25, exportName: 'hr-roles',
         initialSort: { key: 'rank', dir: 1 },
-        search: (r, q) => roleName(r).toLowerCase().includes(q) ||
-          r.conds.some(c => c.labels.some(l => String(l).toLowerCase().includes(q))),
+        search: searchRule,
         onRowClick: r => drawerCohort(m, r)
       })
     ]));

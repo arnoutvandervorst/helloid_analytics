@@ -18,6 +18,15 @@
 
   const ENTRIES = [
     {
+      version: '2026.9.9', date: '2026-09-02',
+      changes: [
+        'Roles from HR now proposes a rule set instead of ranking attributes. No access model uses one attribute, so every merged rule from every combination is a candidate and rules are taken one at a time by how much more alike they make the people they cover than the rules already taken do: wide rules place, specific rules sharpen, and the mix — job titles here, department and title there, department underneath — is what the data supports. On a real vault the set within a cap of 100 places 99% of people; a “What the cap costs” table reads the same proposal off at 50, 100, 200, 500 and 1,000.',
+        'Two switches per attribute: “Use” (a cost centre per person is switched off by the data itself) and “In every rule” (insist on job title, the way an RBAC model would). The proposal, the candidates and the alikeness measure all follow the switches.',
+        'Export the proposed rules as HelloID business rules; the categories column names each rule’s attributes.',
+        'Fixed: cohort keys were joined without a separator since 2026.9.7, so two different value combinations could in theory land in one group.'
+      ]
+    },
+    {
       version: '2026.9.8', date: '2026-09-02',
       changes: [
         'The pyramid now uses alikeness too. When two attributes explain the same access and govern equally sensitive entitlements, the one whose groups are more alike on everything else wins the level; the suggestion note says how alike the deepest groups are.',
