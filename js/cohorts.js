@@ -70,14 +70,43 @@
 
   const settings = () => Object.assign({ alikeFloor: 0.5, ignore: [], require: [], weight: {} },
     HR.config.get().cohorts || {});
-  /* How much each attribute decides access, by default: the job is what a role is,
-     the department or team is where it is done, the rest is scope. Editable. */
+  /* How much each attribute decides access when nothing can be measured: the job is
+     what a role is, the department or team is where it is done, the rest is scope. */
   const DECIDES = { Title: 3, Team: 2, Department: 2, Division: 1, Employer: 1, Location: 1,
     CostCenter: 1, ContractType: 1 };
-  const weightOf = a => {
-    const w = settings().weight[a];
-    return w === undefined || w === null ? (DECIDES[a] === undefined ? 1 : DECIDES[a]) : +w;
-  };
+
+  /**
+   * How much each attribute decides access, with where the number came from. A value
+   * the user set wins; with a reconciliation loaded the rest is measured — how much of
+   * the granted access rules on that attribute alone explain, scaled so the best
+   * attribute is 3 and anything that explains something is at least 1; without access
+   * the defaults stand. Cached on the model with the rest of the mining.
+   */
+  function decidesFor(model, opts) {
+    const auto = !!(opts && opts.auto);             // what the value would be without the user's setting
+    if (model && model._decides && !auto) return model._decides;
+    const set = auto ? {} : settings().weight;
+    const measured = model && (model.hasRecon || (model.granted && !model.granted.empty)) && HR.pyramid.explains
+      ? HR.pyramid.explains(model) : null;
+    const top = measured ? Math.max.apply(null, Object.values(measured.gains).concat([0])) : 0;
+    const out = {};
+    for (const a of Object.keys(HR.pyramid.ATTRIBUTES)) {
+      const w = set[a];
+      if (w !== undefined && w !== null && w !== '') out[a] = { value: +w, source: 'manual' };
+      else if (measured && measured.gains[a] !== undefined) {
+        const gain = measured.gains[a];
+        out[a] = { value: top > 0 && gain > 0 ? Math.max(1, Math.round(3 * gain / top)) : 0, source: 'measured', gain };
+      } else out[a] = { value: DECIDES[a] === undefined ? 1 : DECIDES[a], source: 'default' };
+    }
+    if (model && !auto) model._decides = out;
+    return out;
+  }
+  /** The weights alone: attr → number. */
+  function weightsFor(model) {
+    const d = decidesFor(model);
+    return Object.fromEntries(Object.keys(d).map(a => [a, d[a].value]));
+  }
+  const wOf = (weights, a) => (weights && weights[a] !== undefined ? weights[a] : (DECIDES[a] === undefined ? 1 : DECIDES[a]));
 
   /** Share of `members` holding the most common value of `attr` (missing is a value). */
   function purity(members, attr) {
@@ -104,12 +133,13 @@
    * it leaves it open. Attributes everybody shares carry no information and are left
    * out; nothing to weigh means the group agrees on everything there is.
    */
-  function alikeOf(people, members, fixed, attributes) {
+  function alikeOf(people, members, fixed, attributes, weights) {
+    const w = weights || weightsFor(null);
     const base = baseOf(people, attributes);
     const counted = attributes.filter(a => fixed.includes(a) || base.get(a) < 1);
-    const total = U.sum(counted, weightOf);
+    const total = U.sum(counted, a => wOf(w, a));
     if (!total) return 1;
-    return U.sum(counted, a => weightOf(a) * (fixed.includes(a) ? 1
+    return U.sum(counted, a => wOf(w, a) * (fixed.includes(a) ? 1
       : Math.max(0, (purity(members, a) - base.get(a)) / (1 - base.get(a))))) / total;
   }
 
@@ -162,9 +192,9 @@
   /** How alike the two groups would be as one rule, from their summed profiles —
       the same weighing as alikeOf. The pivot is not fixed by a list: a list of every
       title fixes nothing, so it counts by its lift like an open attribute. */
-  function similarity(a, b, fixed, others, base) {
+  function similarity(a, b, fixed, others, base, weights) {
     const n = a.members.length + b.members.length;
-    let total = U.sum(fixed, weightOf), weight = total;
+    let total = U.sum(fixed, x => wOf(weights, x)), weight = total;
     for (const attr of others) {
       const g = base.get(attr);
       if (g >= 1) continue;
@@ -172,7 +202,7 @@
       let top = 0;
       ta.forEach((c, v) => { const m = c + (tb.get(v) || 0); if (m > top) top = m; });
       tb.forEach((c, v) => { if (!ta.has(v) && c > top) top = c; });
-      const w = weightOf(attr);
+      const w = wOf(weights, attr);
       weight += w;
       total += w * Math.max(0, (top / n - g) / (1 - g));
     }
@@ -207,7 +237,7 @@
    * Small cells take part: a ward of two that joins its siblings is placed, where alone
    * it was too small to defend. Cells still under the minimum afterwards are left over.
    */
-  function mergeSimilar(cells, fixed, pivot, others, base, floor, minSize) {
+  function mergeSimilar(cells, fixed, pivot, others, base, floor, minSize, weights) {
     const contexts = new Map();
     for (const cell of cells) {
       const key = cell.conds.filter(c => c.attr !== pivot).map(c => c.value).join(SEP);
@@ -228,7 +258,7 @@
         const q = heap();
         for (let i = 0; i < groups.length; i++) {
           for (let j = i + 1; j < groups.length; j++) {
-            const sim = similarity(groups[i], groups[j], context, open, base);
+            const sim = similarity(groups[i], groups[j], context, open, base, weights);
             if (sim >= floor) q.push({ a: groups[i], b: groups[j], sim, va: 0, vb: 0 });
           }
         }
@@ -248,7 +278,7 @@
           }
           for (const g of groups) {
             if (g === a || !g.alive) continue;
-            const sim = similarity(a, g, context, open, base);
+            const sim = similarity(a, g, context, open, base, weights);
             if (sim >= floor) q.push({ a, b: g, sim, va: a.v, vb: g.v });
           }
         }
@@ -294,19 +324,19 @@
   const ruleKey = r => r.conds.map(c => c.attr + '=' + c.values.slice().sort().join(SEPX)).sort().join('|');
   const SEPX = '\u001e';
 
-  function pool(people, attributes, minSize, floor, cellsOf, required) {
+  function pool(people, attributes, minSize, floor, cellsOf, required, weights) {
     const byKey = new Map();
     for (const attrs of subsets(attributes, MAX_ATTRS)) {
       if (!required.every(a => attrs.includes(a))) continue;
       const part = partition(people, attrs, minSize);
       const pivot = attrs.slice().sort((a, b) => cellsOf(b) - cellsOf(a))[0];
       const others = attributes.filter(a => !attrs.includes(a));
-      const merged = mergeSimilar(part.cells, attrs, pivot, others, baseOf(people, attributes), floor, minSize);
+      const merged = mergeSimilar(part.cells, attrs, pivot, others, baseOf(people, attributes), floor, minSize, weights);
       merged.rules.forEach(r => {
         /* A generalised rule has fewer attributes than the combination that produced it. */
         r.attrs = r.conds.map(c => c.attr);
         if (!required.every(a => r.attrs.includes(a))) return;
-        r.alike = alikeOf(people, r.members, fixedOf(r), attributes);
+        r.alike = alikeOf(people, r.members, fixedOf(r), attributes, weights);
         /* A single-attribute rule is a root: it holds the generic permissions, and its
            alikeness is what the rules built on it improve. Anything more specific must
            itself clear the floor — 449 people at 10% alike is not a role. A root that
@@ -416,6 +446,7 @@
   function build(model, opts) {
     if (model._cohorts && !(opts && opts.force)) return model._cohorts;
     if (!model.vault) return null;
+    if (opts && opts.force) delete model._decides;
     const cfg = HR.config.get();
     const minSize = (cfg.pyramid && cfg.pyramid.minSize) || 5;
     const cap = HR.pyramid.ruleCap();
@@ -437,15 +468,16 @@
       return true;
     });
     const required = prefs.require.filter(a => attributes.includes(a));
-    const weights = Object.fromEntries(offered.map(a => [a, weightOf(a)]));
+    const decides = decidesFor(model);
+    const weights = weightsFor(model);
     if (!attributes.length) {
-      return { unavailable: 'no-attributes', people, offered, attributes: [], excluded, ignored, weights };
+      return { unavailable: 'no-attributes', people, offered, attributes: [], excluded, ignored, weights, decides };
     }
 
     const proposal = propose(people,
-      pool(people, attributes, minSize, prefs.alikeFloor, a => cellsOf[a], required), minSize, cap);
+      pool(people, attributes, minSize, prefs.alikeFloor, a => cellsOf[a], required, weights), minSize, cap);
     const result = {
-      people, offered, attributes, excluded, ignored, required, weights, minSize, cap,
+      people, offered, attributes, excluded, ignored, required, weights, decides, minSize, cap,
       alikeFloor: prefs.alikeFloor, proposal,
       summary: Object.assign({ people: people.length }, proposal.summary)
     };
@@ -472,5 +504,5 @@
       'Status', 'Conditions', 'Entitlements']);
   }
 
-  HR.cohorts = { build, toRulesCsv, alikeOf, weightOf, CAP_SWEEP };
+  HR.cohorts = { build, toRulesCsv, alikeOf, weightsFor, decidesFor, CAP_SWEEP };
 })(window.HR);

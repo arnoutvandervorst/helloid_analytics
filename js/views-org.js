@@ -1225,7 +1225,7 @@
         const c = HR.config.get();
         c.pyramid = Object.assign({}, c.pyramid, { baselineThreshold: +e.target.value });
         HR.config.save(c);
-        delete m._pyramid;
+        delete m._pyramid; delete m._explains; delete m._decides;
         HR.app.render();
       });
       return el('label', { class: 'inline' }, [document.createTextNode(T('py.blThreshold')), input, out]);
@@ -1381,7 +1381,7 @@
       ? c.labels.slice(0, 3).join(', ') + (c.labels.length > 3 ? ' +' + (c.labels.length - 3) : '')
       : (c.labels[0] || c.values[0]);
     const roleName = r => r.conds.map(listLabel).join(' › ');
-    const rebuild = () => { delete m._cohorts; HR.app.render(); };
+    const rebuild = () => { delete m._cohorts; delete m._decides; HR.app.render(); };
     const saveCohorts = patch => {
       const c = HR.config.get();
       c.cohorts = Object.assign({}, c.cohorts, patch);
@@ -1424,14 +1424,14 @@
         const c = HR.config.get();
         c.pyramid = Object.assign({}, c.pyramid, { minSize: v });
         HR.config.save(c);
-        delete m._pyramid;
+        delete m._pyramid; delete m._explains; delete m._decides;
         rebuild();
       }),
       slider('py.hyCap', R.cap || 0, 0, 1000, 10, v => v ? U.fmtInt(v) : T('co.noCap'), v => {
         const c = HR.config.get();
         c.mining = Object.assign({}, c.mining, { ruleCap: v });
         HR.config.save(c);
-        delete m._pyramid;
+        delete m._pyramid; delete m._explains; delete m._decides;
         rebuild();
       }),
       slider('co.floor', R.alikeFloor, 0.3, 1, 0.05, v => U.fmtPct(v, 0), v => saveCohorts({ alikeFloor: v }))
@@ -1470,12 +1470,20 @@
           } },
         { key: 'decides', label: T('co.cDecides'), sortable: false, hint: T('co.cDecidesHint'), value: r => R.weights[r.attr],
           render: r => {
+            const d = R.decides[r.attr] || { value: 1, source: 'default' };
             const sel = el('select', {});
+            /* "auto" names what it resolves to, and where that came from. */
+            const autoValue = d.source === 'manual' ? HR.cohorts.decidesFor(m, { auto: true })[r.attr] : d;
+            sel.appendChild(el('option', { value: '', text: T('co.decides.auto', {
+              what: T('co.decides.' + autoValue.value) + ' (' + T('co.src.' + autoValue.source) + ')' }),
+              selected: d.source !== 'manual' }));
             [0, 1, 2, 3].forEach(n => sel.appendChild(el('option', { value: String(n), text: T('co.decides.' + n),
-              selected: R.weights[r.attr] === n })));
+              selected: d.source === 'manual' && d.value === n })));
             sel.disabled = !!r.out;
+            if (d.source === 'measured') sel.title = T('co.decidesMeasured', { gain: U.fmtPct(d.gain, 1) });
             sel.onchange = () => {
-              const weight = Object.assign({}, (HR.config.get().cohorts || {}).weight, { [r.attr]: +sel.value });
+              const weight = Object.assign({}, (HR.config.get().cohorts || {}).weight);
+              if (sel.value === '') delete weight[r.attr]; else weight[r.attr] = +sel.value;
               saveCohorts({ weight });
             };
             return sel;
@@ -1500,7 +1508,7 @@
         const c = HR.config.get();
         c.mining = Object.assign({}, c.mining, { ruleCap: r.cap });
         HR.config.save(c);
-        delete m._pyramid;
+        delete m._pyramid; delete m._explains; delete m._decides;
         rebuild();
       }
     });
@@ -1605,7 +1613,9 @@
       knobs,
       el('p', { class: 'note', text: T('co.knobsNote') }),
       el('div', { class: 'grid g2', style: 'gap:14px;margin:10px 0' }, [
-        el('div', {}, [el('h3', { text: T('co.attrsTitle') }), el('p', { class: 'note', text: T('co.attrsNote') }), attrTable]),
+        el('div', {}, [el('h3', { text: T('co.attrsTitle') }),
+          el('p', { class: 'note', text: T('co.attrsNote') + (Object.values(R.decides).some(d => d.source === 'measured') ? ' ' + T('co.attrsMeasured') : '') }),
+          attrTable]),
         el('div', {}, [el('h3', { text: T('co.capSweepTitle') }), el('p', { class: 'note', text: T('co.capSweepNote') }), capTable])
       ]),
       pyramid,
@@ -1745,7 +1755,7 @@
       const c = HR.config.get();
       c.pyramid = Object.assign({}, c.pyramid, { levels });
       HR.config.save(c);
-      delete m._pyramid;
+      delete m._pyramid; delete m._explains; delete m._decides;
       HR.app.render();
     };
     P.levels.forEach((attr, i) => {
@@ -1786,7 +1796,7 @@
         const c = HR.config.get();
         c.pyramid = Object.assign({}, c.pyramid, { [key]: +e.target.value });
         HR.config.save(c);
-        delete m._pyramid; delete m._cohorts;
+        delete m._pyramid; delete m._explains; delete m._decides; delete m._cohorts;
         HR.app.render();
       });
       return el('label', { class: 'inline' }, [document.createTextNode(T(labelKey)), input, out]);
@@ -1817,7 +1827,7 @@
       cfg.mining = cfg.mining || { excluded: [], ruleName: '' };
       const apply = () => {
         HR.config.save();
-        delete m._pyramid; delete m._roles; delete m._cohorts;
+        delete m._pyramid; delete m._explains; delete m._decides; delete m._roles; delete m._cohorts;
         HR.app.render();
       };
       const list = el('div', { class: 'stack', style: 'gap:6px' });
@@ -1942,7 +1952,7 @@
         grants: r.grants,
         entitlements: r.grants.length,
         /* How alike the members are on the attributes the condition leaves open. */
-        alike: HR.cohorts.alikeOf(P.people, r.members, r.conds.map(c => c.attr), P.attributes),
+        alike: HR.cohorts.alikeOf(P.people, r.members, r.conds.map(c => c.attr), P.attributes, HR.cohorts.weightsFor(m)),
         /* The weakest entitlement in the rule decides how safe the rule is. */
         minCoverage: Math.min.apply(null, r.grants.map(g => g.coverage)),
         missing: new Set(r.grants.flatMap(g => g.missing)).size,

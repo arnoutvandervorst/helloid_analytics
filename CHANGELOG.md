@@ -3,6 +3,11 @@
 Versions are CalVer (`YYYY.M.N` — Nth release of that month). This file is
 generated from `js/changelog.js` by `make-changelog.js`; edit there, not here.
 
+## [2026.9.14] — 2026-09-02
+
+- “Decides access” is measured once a reconciliation is loaded: how much of the granted access rules on each attribute alone explain, scaled so the strongest attribute counts most. Without access the defaults stand (job title most, department and team much, the rest a little). The Attributes table shows “auto — most (measured)” with the share explained on hover; picking a value overrules it, “auto” hands it back.
+- The pyramid’s alike tie-break and the mined rules’ Alike column use the same weights, so the HR-side proposal and the access-side miner read alikeness on one scale.
+
 ## [2026.9.13] — 2026-09-02
 
 - Roles from HR is one card now, drawn instead of tabulated: a pyramid strip shows the layers the cap reaches — one attribute, two, three — with the rules and people in each and where the cap cuts; below it a forest of bars, one block per generic rule with its specialisations indented under it, bar length for people and tone for how alike they are. Click a bar for its people; search filters the blocks.

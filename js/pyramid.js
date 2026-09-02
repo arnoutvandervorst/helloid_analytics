@@ -343,7 +343,7 @@
         .filter(n => n.level === levels.length && n.members.length >= opts.minSize);
       const placed = U.sum(leaves, n => n.members.length);
       stats.alike = placed && HR.cohorts
-        ? U.sum(leaves, n => n.members.length * HR.cohorts.alikeOf(people, n.members, levels, candidates)) / placed
+        ? U.sum(leaves, n => n.members.length * HR.cohorts.alikeOf(people, n.members, levels, candidates, opts.weights)) / placed
         : 0;
       return stats;
     };
@@ -372,6 +372,26 @@
       levels: chosen, coverage: current.coverage, weightedCoverage: current.weightedCoverage,
       alike: current.alike, base, steps
     };
+  }
+
+  /**
+   * How much of the granted access each attribute explains on its own: the coverage of
+   * rules on that one attribute, over what everyone-rules already explain. This is the
+   * first step of suggestLevels, kept per attribute, and it is what "decides access"
+   * means when it can be measured rather than assumed.
+   */
+  function explains(model) {
+    if (model._explains) return model._explains;
+    const cfg = Object.assign({ threshold: 0.9, minSize: 5 }, (HR.config.get().pyramid || {}));
+    const people = withAccess(population(model, model.vault, model.granted));
+    const attributes = availableAttributes(people);
+    const opts = { threshold: cfg.threshold, minSize: cfg.minSize, weight: () => 1 };
+    const coverage = levels => account(people, mine(people, levels, opts), null, opts).coverage;
+    const base = people.length ? coverage([]) : 0;
+    const gains = {};
+    attributes.forEach(a => { gains[a] = Math.max(0, coverage([a]) - base); });
+    model._explains = { base, gains, people: people.length };
+    return model._explains;
   }
 
   /**
@@ -669,7 +689,8 @@
     }
 
     const suggestion = suggestLevels(people, attributes,
-      { maxLevels: cfg.maxLevels, threshold: cfg.threshold, minSize: cfg.minSize, weight });
+      { maxLevels: cfg.maxLevels, threshold: cfg.threshold, minSize: cfg.minSize, weight,
+        weights: HR.cohorts ? HR.cohorts.weightsFor(model) : null });
     const levels = (cfg.levels && cfg.levels.length ? cfg.levels : suggestion.levels)
       .filter(a => attributes.includes(a));
 
@@ -1159,7 +1180,7 @@
       'Status', 'Conditions', 'Entitlements']);
   }
 
-  HR.pyramid = { build, mine, account, suggestLevels, mineCombos, population, greedy,
+  HR.pyramid = { build, mine, account, suggestLevels, mineCombos, population, greedy, explains,
     sweep, baseline, condense, condensedOf, condenseGreedy, condensedToRulesCsv,
     rankForCap, ruleCap, availableAttributes, toRulesCsv, greedyToRulesCsv, ATTRIBUTES };
 })(window.HR);
