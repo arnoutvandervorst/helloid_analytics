@@ -345,6 +345,9 @@
     const out = [];
     for (const attrs of subsets(attributes, MAX_ATTRS)) {
       if (!required.every(a => attrs.includes(a))) continue;
+      /* A rule that is not itself at least the floor alike is not a role, however many
+         people it would place: 449 people at 10% alike is a department list, not a
+         job. The floor that governs merging governs candidacy too. */
       const part = partition(people, attrs, minSize, attributes, 0);
       const pivot = attrs.slice().sort((a, b) => cellsOf(b) - cellsOf(a))[0];
       const others = attributes.filter(a => !attrs.includes(a));
@@ -352,6 +355,7 @@
       merged.rules.forEach(r => {
         r.attrs = attrs;
         r.alike = alikeOf(people, r.members, attrs, attributes);
+        if (r.alike < floor) return;
         r.share = people.length ? r.members.length / people.length : 0;
         out.push(r);
       });

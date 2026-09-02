@@ -3,6 +3,10 @@
 Versions are CalVer (`YYYY.M.N` — Nth release of that month). This file is
 generated from `js/changelog.js` by `make-changelog.js`; edit there, not here.
 
+## [2026.9.10] — 2026-09-02
+
+- A proposed rule must itself be at least the alike floor. Gain is counted in people, so a job-title rule covering 449 people at 10% alike used to win a slot early — it placed many people from nothing. That is a department list, not a role; the floor that governs merging now governs candidacy too.
+
 ## [2026.9.9] — 2026-09-02
 
 - Roles from HR now proposes a rule set instead of ranking attributes. No access model uses one attribute, so every merged rule from every combination is a candidate and rules are taken one at a time by how much more alike they make the people they cover than the rules already taken do: wide rules place, specific rules sharpen, and the mix — job titles here, department and title there, department underneath — is what the data supports. On a real vault the set within a cap of 100 places 99% of people; a “What the cap costs” table reads the same proposal off at 50, 100, 200, 500 and 1,000.
