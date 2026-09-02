@@ -18,6 +18,14 @@
 
   const ENTRIES = [
     {
+      version: '2026.9.15', date: '2026-09-02',
+      changes: [
+        'Roles from HR now knows what a person is worth to a rule set. Someone who joined, moved or left in the vault’s last year counts double — that is the join, move or leave a rule would have handled, and where roles pay. Someone whose job title or department reads as staff work — HR, finance, IT, communication, projects — counts half: staff roles are project-based and better served by self-service, while operational roles fit rules densely. That is why healthcare models well with roles and government does not.',
+        'A “Role fit” tile leads with the share of operational people — the assessment headline before any mining — and the placed tile splits operational, staff and last year’s flow. In the forest a “staff” pill marks rules mostly over staff roles and ⇄ marks rules over people with recent flow.',
+        'The staff words are a third recognition list in Settings › Classification (“Staff roles”), editable like the other two, with live counts; Dutch compounds match on containment for longer tokens (kwaliteitsadviseur).'
+      ]
+    },
+    {
       version: '2026.9.14', date: '2026-09-02',
       changes: [
         '“Decides access” is measured once a reconciliation is loaded: how much of the granted access rules on each attribute alone explain, scaled so the strongest attribute counts most. Without access the defaults stand (job title most, department and team much, the rest a little). The Attributes table shows “auto — most (measured)” with the share explained on hover; picking a value overrules it, “auto” hands it back.',

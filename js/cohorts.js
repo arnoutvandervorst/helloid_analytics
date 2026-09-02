@@ -37,6 +37,14 @@
                   and the same site are one rule, not three. A ward of two joins its
                   siblings and is placed, where alone it was too small to defend.
 
+   Not every person is worth the same slot. A person who joined, moved or left in the
+   last year counts double — that is the join, move or leave a rule would have handled,
+   and where a rule set pays. A person whose job or department is staff work — HR,
+   finance, IT, communication, projects — counts half: staff roles are project-based
+   and better served by self-service, while operational roles fit rules densely. That
+   is why healthcare models well with roles and government does not. The staff words
+   are an editable list like the other recognition vocabularies.
+
    No real access model uses one attribute, so the proposal is built as a set: every
    merged rule from every combination is a candidate, and rules are taken layer by
    layer — every single-attribute rule worth a
@@ -67,8 +75,12 @@
   /* A "one of" list that selects at least this share of the people its other conditions
      already select is that wider rule with a pointless list: it becomes the wider rule. */
   const GENERAL_ABOVE = 0.9;
+  /* What a person is worth to the objective: staff work counts half, a join, move or
+     leave in the last year doubles. Overridable through cfg.cohorts.worth. */
+  const WORTH = { staff: 0.5, flow: 2 };
+  const DAY = 86400000;
 
-  const settings = () => Object.assign({ alikeFloor: 0.5, ignore: [], require: [], weight: {} },
+  const settings = () => Object.assign({ alikeFloor: 0.5, ignore: [], require: [], weight: {}, worth: {} },
     HR.config.get().cohorts || {});
   /* How much each attribute decides access when nothing can be measured: the job is
      what a role is, the department or team is where it is done, the rest is scope. */
@@ -313,6 +325,34 @@
   }
 
   /**
+   * What each person is worth to the objective, written onto the population: staff
+   * or operational (job title or department against the staff word list), and whether
+   * they joined, moved or left within the last year.
+   */
+  function worthOf(model, people) {
+    const worth = Object.assign({}, WORTH, settings().worth);
+    /* "Last year" counts from the vault's own horizon — the latest contract start that
+       is not in the future — so an export from a while ago still shows its flow. Starts
+       are facts; end dates are often plans, so they do not set the horizon. */
+    const today = new Date();
+    let now = null;
+    for (const person of model.vault.persons) for (const c of person.contracts) {
+      if (c.startDate && c.startDate <= today && (!now || c.startDate > now)) now = c.startDate;
+    }
+    now = now || today;
+    const recent = d => d && (now - d) / DAY <= 365 && (now - d) >= -1;
+    const moved = new Set();
+    if (HR.workforce && HR.workforce.moves) {
+      HR.workforce.moves(model.vault, now).forEach(mv => { if (mv.daysAgo >= 0 && mv.daysAgo <= 365) moved.add(mv.person); });
+    }
+    for (const p of people) {
+      p.staff = HR.hints.staffFor(p.labels.Title, p.labels.Department);
+      p.flow = recent(p.person.firstStart) || recent(p.person.lastEnd) || moved.has(p.person);
+      p.worth = (p.staff ? worth.staff : 1) * (p.flow ? worth.flow : 1);
+    }
+  }
+
+  /**
    * Every merged rule from every combination, as candidates for the proposal. Each
    * combination merges along its most fragmented attribute, the axis where "one of"
    * lists buy the most.
@@ -343,6 +383,8 @@
            is not alike at all is a rule for everybody. */
         if (r.attrs.length > 1 ? r.alike < floor : r.alike <= 0) return;
         r.share = people.length ? r.members.length / people.length : 0;
+        r.staffShare = U.sum(r.members, p => p.staff ? 1 : 0) / r.members.length;
+        r.flowShare = U.sum(r.members, p => p.flow ? 1 : 0) / r.members.length;
         const key = ruleKey(r);
         const seen = byKey.get(key);
         if (!seen || r.from > seen.from) byKey.set(key, r);
@@ -357,9 +399,16 @@
    * Lazy — a candidate's gain only shrinks as rules are taken, so a stale top entry is
    * re-scored and re-inserted rather than everything re-scored on every pick.
    */
+  const splitOn = (people, pick, placed) => {
+    const group = people.filter(pick);
+    const n = group.filter(p => placed.has(p)).length;
+    return { people: group.length, placed: n, placedShare: group.length ? n / group.length : 0 };
+  };
+
   function propose(people, candidates, minSize, cap) {
     const current = new Map();
-    const gainOf = r => { let g = 0; for (const p of r.members) g += Math.max(0, r.alike - (current.get(p) || 0)); return g; };
+    /* Gain in people-alike, each person weighed by what they are worth. */
+    const gainOf = r => { let g = 0; for (const p of r.members) g += (p.worth || 1) * Math.max(0, r.alike - (current.get(p) || 0)); return g; };
     candidates.forEach(r => { r.rank = 0; r.overCap = false; });
 
     const minGain = minSize * MIN_GAIN_PER_SIZE;
@@ -385,10 +434,10 @@
         let fresh = 0;
         for (const p of r.members) {
           const was = current.get(p) || 0;
-          if (r.alike > was) { if (!was) fresh++; current.set(p, r.alike); }
+          /* The objective stays unweighted, so "alike" keeps its meaning as a mean. */
+          if (r.alike > was) { if (!was) fresh++; objective += r.alike - was; current.set(p, r.alike); }
         }
         taken++;
-        objective += gain;
         r.rank = taken; r.gain = gain; r.newPlaced = fresh; r.overCap = cap > 0 && taken > cap;
         rules.push(r);
         trail.push({ rank: taken, placedShare: people.length ? current.size / people.length : 0,
@@ -428,10 +477,20 @@
       .map(root => ({ root, under: rules.filter(r => r.root === root && r !== root && !r.overCap).length }))
       .sort((a, b) => b.root.members.length - a.root.members.length);
 
+    /* Who is placed, by what they are worth: operational vs staff, and recent flow. */
+    const placedWithin = new Map();
+    rules.forEach(r => { if (!r.overCap) r.members.forEach(p => placedWithin.set(p, 1)); });
+    const groups = {
+      operational: splitOn(people, p => !p.staff, placedWithin),
+      staff: splitOn(people, p => p.staff, placedWithin),
+      flow: splitOn(people, p => p.flow, placedWithin)
+    };
+
     return {
       rules, mix, families,
       capSweep: CAP_SWEEP.map(c => Object.assign({ cap: c, current: c === cap }, at(c))),
       summary: {
+        operational: groups.operational, staff: groups.staff, flow: groups.flow,
         rules: Math.min(rules.length, cap > 0 ? cap : rules.length),
         overCap: rules.filter(r => r.overCap).length,
         placedShare: within.placedShare, alike: within.alike,
@@ -474,6 +533,7 @@
       return { unavailable: 'no-attributes', people, offered, attributes: [], excluded, ignored, weights, decides };
     }
 
+    worthOf(model, people);
     const proposal = propose(people,
       pool(people, attributes, minSize, prefs.alikeFloor, a => cellsOf[a], required, weights), minSize, cap);
     const result = {

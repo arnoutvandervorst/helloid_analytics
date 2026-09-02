@@ -1397,15 +1397,15 @@
           : T('co.kRulesAll', { lists: U.fmtInt(s.lists) }),
         s.overCap ? { severity: 'medium' } : undefined),
       tile(T('co.kPlaced'), U.fmtPct(s.placedShare, 0),
-        T('co.kPlacedSetFoot', { placed: U.fmtInt(Math.round(s.placedShare * s.people)), people: U.fmtInt(s.people) }),
+        T('co.kPlacedSplit', { op: U.fmtPct(s.operational.placedShare, 0), st: U.fmtPct(s.staff.placedShare, 0),
+          fl: U.fmtPct(s.flow.placedShare, 0) }),
         { severity: s.placedShare > 0.8 ? 'good' : s.placedShare > 0.5 ? 'medium' : 'high' }),
       tile(T('co.kAlike'), U.fmtPct(s.alike, 0), T('co.kAlikeSetFoot'),
         { severity: s.alike > 0.6 ? 'good' : s.alike > 0.3 ? 'medium' : 'high' }),
-      tile(T('co.kMix'), PR.mix.length ? String(PR.mix.length) : '—',
-        PR.mix.length
-          ? PR.mix.map(x => attrsLabel(x.attrs) + ' ' + U.fmtInt(x.count)).join(' · ') + ' — ' +
-            T('co.kFamilies', { n: U.fmtInt(s.roots), m: U.fmtInt(s.under) })
-          : T('co.kMixNone'))
+      /* The assessment headline: how far roles will get this organisation at all. */
+      tile(T('co.kFit'), U.fmtPct(s.people ? s.operational.people / s.people : 0, 0),
+        T('co.kFitFoot', { op: U.fmtInt(s.operational.people), st: U.fmtInt(s.staff.people), fl: U.fmtInt(s.flow.people) }),
+        { severity: s.operational.people >= 0.7 * s.people ? 'good' : s.operational.people >= 0.4 * s.people ? 'medium' : 'high' })
     );
 
     /* The knobs the rule set depends on. The smallest group and the cap are shared with
@@ -1561,6 +1561,10 @@
       const list = r.conds.find(c => c.values.length > 1);
       if (list) label.appendChild(el('span', { class: 'pill', style: 'margin-left:6px',
         title: list.labels.join(', '), text: '+' + U.fmtInt(list.values.length - 1) }));
+      if (r.staffShare >= 0.5) label.appendChild(el('span', { class: 'pill warn', style: 'margin-left:6px',
+        title: T('co.pillStaffTip', { pct: U.fmtPct(r.staffShare, 0) }), text: T('co.pillStaff') }));
+      if (r.flowShare >= 0.25) label.appendChild(el('span', { class: 'pill', style: 'margin-left:6px',
+        title: T('co.pillFlowTip', { pct: U.fmtPct(r.flowShare, 0) }), text: '\u21c4' }));
       const bar = el('div', { class: 'forest-bar' });
       bar.style.width = (r.members.length / biggest * 85) + '%';
       bar.style.opacity = String(0.35 + 0.65 * r.alike);
@@ -1614,7 +1618,9 @@
       el('p', { class: 'note', text: T('co.knobsNote') }),
       el('div', { class: 'grid g2', style: 'gap:14px;margin:10px 0' }, [
         el('div', {}, [el('h3', { text: T('co.attrsTitle') }),
-          el('p', { class: 'note', text: T('co.attrsNote') + (Object.values(R.decides).some(d => d.source === 'measured') ? ' ' + T('co.attrsMeasured') : '') }),
+          el('p', { class: 'note', text: T('co.attrsNote') + (Object.values(R.decides).some(d => d.source === 'measured') ? ' ' + T('co.attrsMeasured') : '') +
+            (PR.mix.length ? ' ' + T('co.mixNote', { mix: PR.mix.map(x => attrsLabel(x.attrs) + ' ' + U.fmtInt(x.count)).join(' · '),
+              n: U.fmtInt(s.roots), m: U.fmtInt(s.under) }) : '') }),
           attrTable]),
         el('div', {}, [el('h3', { text: T('co.capSweepTitle') }), el('p', { class: 'note', text: T('co.capSweepNote') }), capTable])
       ]),
