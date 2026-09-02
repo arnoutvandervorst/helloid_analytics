@@ -3,6 +3,10 @@
 Versions are CalVer (`YYYY.M.N` — Nth release of that month). This file is
 generated from `js/changelog.js` by `make-changelog.js`; edit there, not here.
 
+## [2026.9.12] — 2026-09-02
+
+- The rule cap is now a depth budget spent from the top of the pyramid. Proposed rules are taken layer by layer — every single-attribute rule worth a slot first, then the two-attribute rules that add something on top of them, then three — so a cap of 100 gives every job title its generic rule before any of them gets a department-specific one, instead of spending the slots on one title’s every corner.
+
 ## [2026.9.11] — 2026-09-02
 
 - The proposed rule set is now the pyramid without the access side: a generic job-title rule holding the basic permissions, and under it the department, location or contract-type rules that add the specific ones. Each rule shows what it builds on, and the table reads as a forest — root, then the rules on top of it.

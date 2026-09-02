@@ -51,12 +51,12 @@
 
    No real access model uses one attribute, so the proposal is built as a set rather
    than picked as a combination: every merged rule from every combination is a
-   candidate, and rules are taken one at a time by how much more alike they make the
-   people they cover than the rules already taken do. A wide rule that places many
-   people from nothing wins early; a specific rule that lifts a department's nurses
-   from "alike as a department" to "alike as nurses" follows; what the mix ends up
-   being — titles here, department-and-title there, department underneath — is what
-   the data supports, and the cap decides where it stops.
+   candidate, and rules are taken layer by layer — every single-attribute rule worth a
+   slot first, then the two-attribute rules that add something on top of them, then
+   three — each by how much more alike it makes the people it covers than the rules
+   already taken do. The cap is a depth budget spent from the top of that pyramid:
+   what the mix ends up being — titles here, department-and-title there, department
+   underneath — is what the data supports, and the cap decides how far down it goes.
 
    The rules carry a condition list and the people it selects, in the same shape the
    pyramid's condensed rules use, so the day access is loaded the two can be matched
@@ -425,8 +425,7 @@
   function propose(people, candidates, minSize, cap) {
     const current = new Map();
     const gainOf = r => { let g = 0; for (const p of r.members) g += Math.max(0, r.alike - (current.get(p) || 0)); return g; };
-    const q = heap();
-    candidates.forEach(r => { r.rank = 0; r.overCap = false; q.push({ r, sim: gainOf(r), v: 0 }); });
+    candidates.forEach(r => { r.rank = 0; r.overCap = false; });
 
     const minGain = minSize * MIN_GAIN_PER_SIZE;
     const limit = Math.max(cap, CAP_SWEEP[CAP_SWEEP.length - 1]);
@@ -434,24 +433,32 @@
     const trail = [];
     let objective = 0;
     let taken = 0;
-    while (q.size && rules.length < limit) {
-      const top = q.pop();
-      const gain = gainOf(top.r);
-      if (gain < minGain) { if (top.v === taken) break; continue; }
-      /* Scored before the last pick and now beaten by the next entry: re-insert. */
-      if (top.v !== taken && q.size && gain < q.peek().sim) { q.push({ r: top.r, sim: gain, v: taken }); continue; }
-      const r = top.r;
-      let fresh = 0;
-      for (const p of r.members) {
-        const was = current.get(p) || 0;
-        if (r.alike > was) { if (!was) fresh++; current.set(p, r.alike); }
+    /* Layer by layer, the top of the pyramid first: every single-attribute rule worth a
+       slot, then the two-attribute rules that add something on top of them, then three.
+       The cap is a depth budget spent from the top — it cuts drill-down evenly instead
+       of spending its slots on one job title's every corner. Within a layer, by gain. */
+    for (let depth = 1; depth <= MAX_ATTRS && rules.length < limit; depth++) {
+      const q = heap();
+      candidates.forEach(r => { if (r.attrs.length === depth) q.push({ r, sim: gainOf(r), v: taken }); });
+      while (q.size && rules.length < limit) {
+        const top = q.pop();
+        const gain = gainOf(top.r);
+        if (gain < minGain) { if (top.v === taken) break; continue; }
+        /* Scored before the last pick and now beaten by the next entry: re-insert. */
+        if (top.v !== taken && q.size && gain < q.peek().sim) { q.push({ r: top.r, sim: gain, v: taken }); continue; }
+        const r = top.r;
+        let fresh = 0;
+        for (const p of r.members) {
+          const was = current.get(p) || 0;
+          if (r.alike > was) { if (!was) fresh++; current.set(p, r.alike); }
+        }
+        taken++;
+        objective += gain;
+        r.rank = taken; r.gain = gain; r.newPlaced = fresh; r.overCap = cap > 0 && taken > cap;
+        rules.push(r);
+        trail.push({ rank: taken, placedShare: people.length ? current.size / people.length : 0,
+          alike: people.length ? objective / people.length : 0 });
       }
-      taken++;
-      objective += gain;
-      r.rank = taken; r.gain = gain; r.newPlaced = fresh; r.overCap = cap > 0 && taken > cap;
-      rules.push(r);
-      trail.push({ rank: taken, placedShare: people.length ? current.size / people.length : 0,
-        alike: people.length ? objective / people.length : 0 });
     }
 
     const at = n => trail[Math.min(n, trail.length) - 1] || { rank: 0, placedShare: 0, alike: 0 };
