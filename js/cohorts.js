@@ -7,14 +7,12 @@
    consultant can draft the rule skeleton from that before a single target system is
    connected. Entitlements attach later, on aggregate, once the reconciliation arrives.
 
-   That last step is what the score has to serve. Entitlements only attach cleanly to a
-   cohort whose members are alike enough to share access, so a rule for everybody places
-   everyone and says nothing, and a rule set is worth more the more specific it is. So
-   every single attribute, every pair and every triple is scored on two numbers, both
-   shown, so the ranking is something a reader can argue with:
+   That last step is what the proposal has to serve. Entitlements only attach cleanly
+   to a group whose members are alike enough to share access, so a rule for everybody
+   places everyone and says nothing, and a rule set is worth more the more specific it
+   is. Two numbers carry that:
 
-     placed       people who land in a cohort of at least the minimum size — counted
-                  over the largest cohorts that fit HelloID's rule cap, because a rule
+     placed       people under at least one rule that fits HelloID's rule cap — a rule
                   set that needs 260 rules is judged on the 100 it can actually have
      alike        how much of what decides access the rule pins down. Every attribute
                   carries a weight for how much it decides access — a job title most,
@@ -26,32 +24,22 @@
                   a department rule is alike only if its people share a title too; a
                   rule for everyone is 0. An attribute nobody shares anywhere (a cost
                   centre per person) neither helps nor drags.
-     score        placed × alike — as specific as the data allows while the cohorts
-                  stay large enough to defend and few enough to fit
 
-   Rule count is not a cost. More cohorts is more specific; the only limit is the cap,
-   and it enters the score only through the people the cohorts past it cannot place.
-
-     follows      a candidate whose extra attribute barely splits a narrower one: a team
-                  nested inside its department adds a condition and no information
-
+   Rule count is not a cost. More rules is more specific; the only limit is the cap.
    An attribute that cannot group even half the people at the minimum size — a cost
-   centre per person — describes individuals, not roles. It is left out of the
-   candidates and out of the alikeness measure, and the view says so.
+   centre per person — describes individuals, not roles. It is left out of the rules
+   and out of the alikeness measure, and the view says so.
 
-   The chosen attributes then become rules, the way HelloID can hold them:
+   Groups become rules the way HelloID can hold them:
 
-     merge        sibling cohorts share one rule with a "one of" list as long as the
+     merge        sibling groups share one rule with a "one of" list as long as the
                   shared rule is still alike enough — three wards with the same titles
                   and the same site are one rule, not three. A ward of two joins its
                   siblings and is placed, where alone it was too small to defend.
-     ladder       with two or more attributes, a wide rule sits under the specific one,
-                  because HelloID rules stack: the department rule catches whoever the
-                  department-and-title rule cannot.
 
-   No real access model uses one attribute, so the proposal is built as a set rather
-   than picked as a combination: every merged rule from every combination is a
-   candidate, and rules are taken layer by layer — every single-attribute rule worth a
+   No real access model uses one attribute, so the proposal is built as a set: every
+   merged rule from every combination is a candidate, and rules are taken layer by
+   layer — every single-attribute rule worth a
    slot first, then the two-attribute rules that add something on top of them, then
    three — each by how much more alike it makes the people it covers than the rules
    already taken do. The cap is a depth budget spent from the top of that pyramid:
@@ -67,15 +55,10 @@
   const U = HR.util;
   const SEP = '\u001f';
 
-  /* A candidate whose cells add fewer than this share on top of its widest narrower
-     candidate is that candidate wearing an extra condition. */
-  const FOLLOWS_BELOW = 0.1;
-  /* Up to this many attributes per candidate. */
+  /* Up to this many attributes per rule. */
   const MAX_ATTRS = 3;
   /* An attribute whose own cohorts place fewer people than this describes individuals. */
   const DESCRIBES_BELOW = 0.5;
-  /* Smallest-group sizes the sweep tries. */
-  const SWEEP_SIZES = [3, 5, 8, 10, 15, 20, 25];
   /* Rule caps the proposal is read off at. */
   const CAP_SWEEP = [50, 100, 200, 500, 1000];
   /* A rule must add at least this many "people made fully alike" — a quarter of a
@@ -85,7 +68,7 @@
      already select is that wider rule with a pointless list: it becomes the wider rule. */
   const GENERAL_ABOVE = 0.9;
 
-  const settings = () => Object.assign({ alikeFloor: 0.5, ladder: true, ignore: [], require: [], weight: {} },
+  const settings = () => Object.assign({ alikeFloor: 0.5, ignore: [], require: [], weight: {} },
     HR.config.get().cohorts || {});
   /* How much each attribute decides access, by default: the job is what a role is,
      the department or team is where it is done, the rest is scope. Editable. */
@@ -131,7 +114,7 @@
   }
 
   /** Partition people by the values of `attrs`; a person missing any value is unplaced. */
-  function partition(people, attrs, minSize, attributes, cap) {
+  function partition(people, attrs, minSize) {
     const cells = new Map();
     let unplaced = 0;
     for (const p of people) {
@@ -147,24 +130,8 @@
       cell.members.push(p);
     }
     const all = Array.from(cells.values()).sort((a, b) => b.members.length - a.members.length);
-    const usable = all.filter(c => c.members.length >= minSize);
-    usable.forEach((c, i) => { c.rank = i + 1; });
-    /* Largest first, so what fits under the cap is the best the cap allows. */
-    const within = cap > 0 ? usable.slice(0, cap) : usable;
-    const placed = U.sum(within, c => c.members.length);
-    const sizes = within.map(c => c.members.length);
-    const median = sizes.length ? sizes[Math.floor(sizes.length / 2)] : 0;
-    const placedShare = people.length ? placed / people.length : 0;
-
-    for (const c of usable) c.alike = alikeOf(people, c.members, attrs, attributes);
-    const alike = placed ? U.sum(within, c => c.members.length * c.alike) / placed : 0;
-
-    return {
-      attrs, cells: all, usable,
-      counts: { cells: all.length, usable: usable.length, overCap: usable.length - within.length,
-        placed, unplaced, placedShare, leftover: people.length - placed, median, alike,
-        score: placedShare * alike }
-    };
+    const placed = U.sum(all.filter(c => c.members.length >= minSize), c => c.members.length);
+    return { attrs, cells: all, unplaced, placedShare: people.length ? placed / people.length : 0 };
   }
 
   /** Every subset of `items` with 1..k members, smaller subsets first. */
@@ -315,68 +282,6 @@
     return { rules, leftover };
   }
 
-  /* --------------------------------------------------------------- the rules */
-
-  /**
-   * The chosen attributes as a rule set: one level per prefix when the ladder is on
-   * (widest attribute first, so the department rule sits under the department-and-title
-   * rule), each level merged along its last attribute, then ranked against the cap.
-   */
-  function rulesFor(people, chosen, attributes, minSize, cap, opts, cellsOf) {
-    const order = opts.ladder && chosen.length > 1
-      ? chosen.slice().sort((a, b) => cellsOf(a) - cellsOf(b))
-      : chosen.slice();
-    const levels = opts.ladder && chosen.length > 1
-      ? order.map((_, i) => order.slice(0, i + 1))
-      : [order];
-
-    const rules = [];
-    let before = 0, leftover = 0;
-    levels.forEach((attrs, i) => {
-      const part = partition(people, attrs, minSize, attributes, 0);
-      const pivot = attrs[attrs.length - 1];
-      const others = attributes.filter(a => !attrs.includes(a));
-      const merged = mergeSimilar(part.cells, attrs, pivot, others, baseOf(people, attributes), opts.alikeFloor, minSize);
-      if (i === levels.length - 1) { before = part.counts.cells; leftover = merged.leftover + part.counts.unplaced; }
-      merged.rules.forEach(r => {
-        /* On a ladder the generalised rule is the level above, already there. */
-        if (r.generalised && i > 0) return;
-        r.level = i + 1;
-        r.alike = alikeOf(people, r.members, fixedOf(r), attributes);
-        r.share = people.length ? r.members.length / people.length : 0;
-        rules.push(r);
-      });
-    });
-
-    /* Wide rules first — they are what places people — then the specific ones. */
-    rules.sort((a, b) => a.level - b.level || b.members.length - a.members.length);
-    rules.forEach((r, i) => { r.rank = i + 1; r.overCap = cap > 0 && r.rank > cap; });
-
-    /* Every person's deepest rule that fits the cap decides where they are placed and
-       how alike they are to the people they share it with. */
-    const deepest = new Map();
-    for (const r of rules) {
-      if (r.overCap) continue;
-      for (const p of r.members) { const d = deepest.get(p); if (!d || r.level > d.level) deepest.set(p, r); }
-    }
-    const placed = deepest.size;
-    let specific = 0, alikeSum = 0;
-    deepest.forEach(r => { if (r.level === levels.length) specific++; alikeSum += r.alike; });
-
-    return {
-      levels, rules,
-      summary: {
-        before, after: rules.length,
-        lists: rules.filter(r => r.conds.some(c => c.values.length > 1)).length,
-        overCap: rules.filter(r => r.overCap).length,
-        placed, placedShare: people.length ? placed / people.length : 0,
-        leftover: people.length - placed,
-        specific, specificShare: placed ? specific / placed : 0,
-        alike: placed ? alikeSum / placed : 0
-      }
-    };
-  }
-
   /**
    * Every merged rule from every combination, as candidates for the proposal. Each
    * combination merges along its most fragmented attribute, the axis where "one of"
@@ -393,7 +298,7 @@
     const byKey = new Map();
     for (const attrs of subsets(attributes, MAX_ATTRS)) {
       if (!required.every(a => attrs.includes(a))) continue;
-      const part = partition(people, attrs, minSize, attributes, 0);
+      const part = partition(people, attrs, minSize);
       const pivot = attrs.slice().sort((a, b) => cellsOf(b) - cellsOf(a))[0];
       const others = attributes.filter(a => !attrs.includes(a));
       const merged = mergeSimilar(part.cells, attrs, pivot, others, baseOf(people, attributes), floor, minSize);
@@ -523,95 +428,42 @@
        view can show the switches. */
     const excluded = [];
     const ignored = [];
+    const cellsOf = {};
     const attributes = offered.filter(a => {
-      const share = partition(people, [a], minSize, [], 0).counts.placedShare;
-      if (share < DESCRIBES_BELOW) { excluded.push({ attr: a, placedShare: share }); return false; }
+      const part = partition(people, [a], minSize);
+      cellsOf[a] = part.cells.length;
+      if (part.placedShare < DESCRIBES_BELOW) { excluded.push({ attr: a, placedShare: part.placedShare }); return false; }
       if (prefs.ignore.includes(a)) { ignored.push(a); return false; }
       return true;
     });
     const required = prefs.require.filter(a => attributes.includes(a));
+    const weights = Object.fromEntries(offered.map(a => [a, weightOf(a)]));
     if (!attributes.length) {
-      return { unavailable: 'no-attributes', people, offered, attributes: [], candidates: [], excluded, ignored };
+      return { unavailable: 'no-attributes', people, offered, attributes: [], excluded, ignored, weights };
     }
 
-    const byKey = new Map();
-    const of = attrs => {
-      const key = attrs.join(SEP);
-      if (!byKey.has(key)) byKey.set(key, partition(people, attrs, minSize, attributes, cap));
-      return byKey.get(key);
-    };
-    const candidates = subsets(attributes, MAX_ATTRS).map(attrs => {
-      const c = of(attrs);
-      if (attrs.length > 1) {
-        /* The widest narrower candidate: drop one attribute at a time and keep the one
-           with the most cells. Measured on all cells, not usable ones — nesting is a
-           fact about the data, not about the minimum size. */
-        let wider = null;
-        attrs.forEach((_, i) => {
-          const sub = of(attrs.filter((__, j) => j !== i));
-          if (!wider || sub.counts.cells > wider.counts.cells) wider = sub;
-        });
-        c.counts.adds = c.counts.cells - wider.counts.cells;
-        if (c.counts.adds <= wider.counts.cells * FOLLOWS_BELOW) c.follows = wider.attrs;
-      }
-      return c;
-    });
-
-    /* Highest score first; among equals, the more specific; a candidate that only
-       follows a narrower one sorts below it. */
-    candidates.sort((a, b) =>
-      (a.follows ? 1 : 0) - (b.follows ? 1 : 0) ||
-      b.counts.score - a.counts.score ||
-      b.counts.usable - a.counts.usable);
-    const suggestion = candidates[0].attrs;
-    const stored = (prefs.levels || []).filter(a => attributes.includes(a));
-    const levels = stored.length ? stored : suggestion;
-    const chosen = candidates.find(c => c.attrs.join() === levels.join()) || of(levels);
-
-    const cellsOf = a => of([a]).counts.cells;
-    const set = rulesFor(people, levels, attributes, minSize, cap, prefs, cellsOf);
-    const proposal = propose(people, pool(people, attributes, minSize, prefs.alikeFloor, cellsOf, required), minSize, cap);
-
+    const proposal = propose(people,
+      pool(people, attributes, minSize, prefs.alikeFloor, a => cellsOf[a], required), minSize, cap);
     const result = {
-      people, offered, attributes, excluded, ignored, required, candidates, suggestion, levels, chosen, minSize, cap,
-      weights: Object.fromEntries(offered.map(a => [a, weightOf(a)])),
-      alikeFloor: prefs.alikeFloor, ladder: prefs.ladder && levels.length > 1,
-      rules: set.rules, ruleLevels: set.levels, proposal,
-      summary: Object.assign({ people: people.length }, set.summary)
+      people, offered, attributes, excluded, ignored, required, weights, minSize, cap,
+      alikeFloor: prefs.alikeFloor, proposal,
+      summary: Object.assign({ people: people.length }, proposal.summary)
     };
     model._cohorts = result;
     return result;
   }
 
-  /** What the smallest group costs: the chosen attributes at every size the sweep tries. */
-  function sweep(model) {
-    if (model._cohortsSweep) return model._cohortsSweep;
-    const R = build(model);
-    if (!R || R.unavailable) return [];
-    const prefs = settings();
-    const cellsOf = a => partition(R.people, [a], 1, [], 0).counts.cells;
-    const rows = U.uniq(SWEEP_SIZES.concat([R.minSize])).sort((a, b) => a - b).map(minSize => {
-      const set = minSize === R.minSize ? { summary: R.summary }
-        : rulesFor(R.people, R.levels, R.attributes, minSize, R.cap, prefs, cellsOf);
-      return Object.assign({ minSize, current: minSize === R.minSize }, set.summary);
-    });
-    model._cohortsSweep = rows;
-    return rows;
-  }
-
   /** HelloID business-rule CSV with the conditions filled in and nothing granted yet. */
-  function toRulesCsv(model, R, set) {
+  function toRulesCsv(model, R) {
     const condition = c => c.attr + (c.byId ? '.ExternalId' : '.Name') + ', one of: ' + c.values.join(', ');
     const name = c => c.labels.length > 1
       ? c.labels.slice(0, 3).join(' / ') + (c.labels.length > 3 ? '…' : '')
       : (c.labels[0] || c.values[0]);
-    const proposal = !!set;
-    const rows = (set || R.rules).slice().sort((a, b) => a.rank - b.rank).map(r => ({
+    const rows = R.proposal.rules.slice().sort((a, b) => a.rank - b.rank).map(r => ({
       Name: HR.mine.ruleName('Rol', r.conds.map(name).join(' + ')),
       EntitlementCount: 0,
       PersonsLatestEvaluation: r.members.length,
-      Categories: (proposal ? 'HR proposal|' + r.attrs.join(' + ') : 'HR cohort' + (R.ladder ? '|Level ' + r.level : '')) +
-        (r.overCap ? '|Over rule cap' : ''),
+      Categories: 'HR proposal|' + r.attrs.join(' + ') + (r.overCap ? '|Over rule cap' : ''),
       Status: 'proposal',
       Conditions: r.conds.map(condition).join('|'),
       Entitlements: ''
@@ -620,5 +472,5 @@
       'Status', 'Conditions', 'Entitlements']);
   }
 
-  HR.cohorts = { build, sweep, toRulesCsv, alikeOf, weightOf, SWEEP_SIZES, CAP_SWEEP };
+  HR.cohorts = { build, toRulesCsv, alikeOf, weightOf, CAP_SWEEP };
 })(window.HR);

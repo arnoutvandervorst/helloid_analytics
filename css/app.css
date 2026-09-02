@@ -572,6 +572,22 @@ table.board-tbl .owner-cell { border-bottom: 1px solid #e3e2dc; min-width: 90px;
 .pyr-foot { align-self: stretch; text-align: center; margin-top: 6px; }
 @media (max-width: 720px) { .pyr-band, .pyr-across { width: 100% !important; } }
 
+/* Roles from HR: a block per root rule, its specialisations indented under it.
+   Bar length is people, tone is how alike they are. */
+.forest { display: flex; flex-direction: column; gap: 14px; margin-top: 10px; }
+.forest-family { display: flex; flex-direction: column; gap: 3px; padding: 6px 0; border-top: 1px solid var(--border); }
+.forest-row { display: grid; grid-template-columns: minmax(180px, 32%) 1fr; gap: 10px; align-items: center; cursor: pointer; font-size: 12px; }
+.forest-row:hover .forest-bar { filter: brightness(1.15); }
+.forest-row.child { font-size: 11px; }
+.forest-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.forest-row:not(.child) .forest-label { font-weight: 600; }
+.forest-track { display: flex; align-items: center; min-width: 0; }
+.forest-bar { height: 18px; border-radius: 4px; background: var(--series-1); flex: none; min-width: 2px; }
+.forest-row.child .forest-bar { background: var(--series-2); height: 12px; }
+.forest-meta { font-family: var(--mono); font-size: 11px; color: var(--text-secondary); margin-left: 8px; white-space: nowrap; }
+.forest-past { padding-left: 18px; font-size: 11px; }
+@media (max-width: 720px) { .forest-row { grid-template-columns: 40% 1fr; } }
+
 /* A rule's conditions: one per line, attribute and field as a chip, value in mono. */
 .cond-list { border-collapse: collapse; width: 100%; }
 .cond-list td { padding: 3px 8px 3px 0; vertical-align: baseline; font-size: 12px; }

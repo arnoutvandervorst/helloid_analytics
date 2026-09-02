@@ -3,6 +3,11 @@
 Versions are CalVer (`YYYY.M.N` — Nth release of that month). This file is
 generated from `js/changelog.js` by `make-changelog.js`; edit there, not here.
 
+## [2026.9.13] — 2026-09-02
+
+- Roles from HR is one card now, drawn instead of tabulated: a pyramid strip shows the layers the cap reaches — one attribute, two, three — with the rules and people in each and where the cap cuts; below it a forest of bars, one block per generic rule with its specialisations indented under it, bar length for people and tone for how alike they are. Click a bar for its people; search filters the blocks.
+- The exploratory cards — each combination on its own, the smallest-group sweep, exploring one combination — are gone; the proposal made them redundant. The tiles, the smallest-group / cap / alike sliders, the attribute switches, the cap-cost table and the export stay.
+
 ## [2026.9.12] — 2026-09-02
 
 - The rule cap is now a depth budget spent from the top of the pyramid. Proposed rules are taken layer by layer — every single-attribute rule worth a slot first, then the two-attribute rules that add something on top of them, then three — so a cap of 100 gives every job title its generic rule before any of them gets a department-specific one, instead of spending the slots on one title’s every corner.
