@@ -566,7 +566,7 @@
             ptb.appendChild(el('tr', {}, [
               el('td', { class: 'nowrap', text: T('po.sev.' + r.severity) }),
               el('td', {}, el('strong', { text: T('po.p.' + r.def.id) })),
-              el('td', { class: 'nowrap', text: refs }),
+              el('td', { text: refs }),
               el('td', { class: 'num nowrap', text: pct ? U.fmtNum(r.value, 1) + '%' : U.fmtInt(r.value) }),
               el('td', { class: 'num nowrap', text: (r.def.dir === 'max' ? '≤ ' : '≥ ') +
                 (pct ? U.fmtNum(r.threshold, 1) + '%' : U.fmtInt(r.threshold)) }),
@@ -576,6 +576,9 @@
               el('td', { text: r.owner || '' }),
               el('td', { class: 'nowrap', text: r.due || '' })
             ]));
+            /* The evidence sentence spans the row: how this measurement backs the articles. */
+            const ev = HR.frameworks.evidenceOf(r.def);
+            if (ev) ptb.appendChild(el('tr', { class: 'sub' }, el('td', { colspan: '8', class: 'why', text: ev })));
           });
         pt.appendChild(ptb);
         const sevLine = order.map(sev => T('po.sev.' + sev) + ' ' + ps.bySeverity[sev].passed + '/' + ps.bySeverity[sev].of).join(' \u00b7 ');
@@ -618,6 +621,21 @@
           .concat(m.comparison ? [el('li', { text: T('bd.method6') })] : [])),
         el('p', { class: 'footnote', text: T('bd.methodFoot') })
       ]));
+
+      /* ============ appendix — the articles behind the references ============ */
+      if (HR.views.policyShowRefs && HR.views.policyShowRefs() && pol.summary.evaluated) {
+        const used = HR.frameworks.usedRefs(pol.rows.filter(r => r.applicable && r.on).map(r => r.def));
+        paper.appendChild(page([
+          el('h2', { class: 'sheet-h', text: T('bd.secFrameworks') }),
+          el('p', { class: 'lead', text: T('bd.fwLead') }),
+          el('dl', { class: 'fw-appendix' }, used.flatMap(r => [
+            el('dt', {}, [el('span', { class: 'mono', text: r.label + ' ' + r.ref + ' \u2014 ' }), el('strong', { text: r.title }),
+              el('span', { class: 'fw-tag', text: T(r.official ? 'po.fwOfficial' : 'po.fwDescribed') })]),
+            el('dd', { text: r.about })
+          ])),
+          el('p', { class: 'footnote', text: T('bd.fwFoot', { sources: Object.values(HR.frameworks.META).map(x => x.label + ': ' + x.source).join(' \u00b7 ') }) })
+        ]));
+      }
     }
 
     paint();
@@ -653,6 +671,7 @@
         duplicates: c.hidden.duplicates.monthly, manual: c.hidden.manual.monthly, shelfware: c.hidden.trueup.shelfware } : null },
       compliance: { score: pol.summary.score, passed: pol.summary.passed, evaluated: pol.summary.evaluated, bySeverity: pol.summary.bySeverity,
         controls: pol.rows.filter(r => r.applicable && r.on).map(r => ({ id: r.def.id, severity: r.severity, refs: r.def.refs || {},
+          refTitles: HR.frameworks.refsOf(r.def).map(x => ({ framework: x.fw, ref: x.ref, title: x.title })), evidence: HR.frameworks.evidenceOf(r.def),
           value: r.value, threshold: r.threshold, dir: r.def.dir, unit: r.def.unit, status: r.status, owner: r.owner || null, due: r.due || null,
           exception: r.exception || null })) },
       findings: m.findings.map(f => ({ id: f.id, severity: f.severity, count: f.count, openSince: st.findingsSeen && st.findingsSeen[f.id] ? new Date(st.findingsSeen[f.id].first).toISOString() : null })),

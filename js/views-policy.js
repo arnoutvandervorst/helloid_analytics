@@ -46,8 +46,29 @@
   }
 
   const fwLabel = { nis2: 'NIS2', iso27001: 'ISO 27001', bio: 'BIO' };
-  const refPills = def => Object.keys(def.refs || {}).map(fw =>
-    el('span', { class: 'pill mono', title: T('po.fw.' + fw), text: fwLabel[fw] + ' ' + def.refs[fw] }));
+  const refPills = (def, onclick) => Object.keys(def.refs || {}).map(fw =>
+    el('button', { class: 'pill mono' + (onclick ? ' clickable' : ''), title: T('po.fw.' + fw), text: fwLabel[fw] + ' ' + def.refs[fw], onclick }));
+
+  /* "Show framework references" is a reading preference, kept per browser. */
+  const SHOW_REFS = 'policy.showRefs';
+  const showRefs = () => { try { return localStorage.getItem(SHOW_REFS) === '1'; } catch (e) { return false; } };
+  const setShowRefs = on => { try { localStorage.setItem(SHOW_REFS, on ? '1' : '0'); } catch (e) { /* private window */ } };
+
+  /** What the articles ask and how this control evidences them. */
+  function refsBlock(def) {
+    const ev = HR.frameworks.evidenceOf(def);
+    return el('div', { class: 'ctl-fwtext' }, [
+      ev ? el('p', {}, [el('strong', { text: T('po.fwEvidence') + ' ' }), document.createTextNode(ev)]) : null
+    ].concat(HR.frameworks.refsOf(def).map(r => el('div', { class: 'fw-ref' }, [
+      el('div', { class: 'row', style: 'gap:8px;align-items:center;flex-wrap:wrap' }, [
+        el('span', { class: 'mono', text: r.label + ' ' + r.ref }),
+        el('strong', { text: r.title }),
+        el('span', { class: 'fw-tag', text: T(r.official ? 'po.fwOfficial' : 'po.fwDescribed') }),
+        r.source ? el('a', { href: r.source, target: '_blank', rel: 'noopener noreferrer', class: 'note', text: T('po.fwSource') }) : null
+      ].filter(Boolean)),
+      el('p', { class: 'fw-about', text: r.about })
+    ]))).filter(Boolean));
+  }
 
   /* Accepting a failing control as a known risk: until when, by whom, why. */
   function exceptionForm(m, row) {
@@ -89,8 +110,11 @@
         el('strong', { text: T('po.p.' + id) })
       ]),
       el('p', { class: 'note ctl-desc', text: T('po.p.' + id + '.d') }),
-      el('div', { class: 'ctl-refs' }, refPills(row.def))
+      el('div', { class: 'ctl-refs' }, refPills(row.def, () => { block.hidden = !block.hidden; }))
     ]);
+    const block = refsBlock(row.def);
+    block.hidden = !showRefs();
+    what.appendChild(block);
     if (!row.applicable) {
       what.appendChild(el('p', { class: 'note', text: T('po.needsNote', { list: row.missing.map(n => T('po.need.' + n)).join(', ') }) }));
     }
@@ -190,6 +214,8 @@
     return ev.rows.map(r => ({
       id: r.def.id, control: T('po.p.' + r.def.id), severity: r.severity || r.def.severity || '',
       nis2: (r.def.refs || {}).nis2 || '', iso27001: (r.def.refs || {}).iso27001 || '', bio: (r.def.refs || {}).bio || '',
+      refTitles: HR.frameworks.refsOf(r.def).map(x => x.label + ' ' + x.ref + ' ' + x.title).join('; '),
+      evidence: HR.frameworks.evidenceOf(r.def),
       value: r.applicable ? (r.def.unit === 'pct' ? U.fmtNum(r.value, 1) + '%' : U.fmtInt(r.value)) : '',
       limit: fmtLimit(r), status: r.applicable ? (r.on ? r.status : 'off') : 'waiting',
       owner: r.owner || '', due: r.due || '',
@@ -236,6 +262,8 @@
       [['', T('c.all')]].concat(HR.policy.FRAMEWORKS.map(k => [k, fwLabel[k]])).map(([k, label]) =>
         el('button', { class: 'btn sm' + (fw === k ? ' primary' : ''), text: label,
           onclick: () => HR.app.go('policies', { fw: k }) })));
+    chips.appendChild(el('button', { class: 'btn sm' + (showRefs() ? ' primary' : ''), text: T(showRefs() ? 'po.hideRefs' : 'po.showRefs'),
+      onclick: () => { setShowRefs(!showRefs()); HR.app.render(); } }));
     chips.appendChild(el('span', { class: 'spacer' }));
     chips.appendChild(el('button', { class: 'btn sm', text: T('po.exportScorecard'), onclick: () => {
       U.download('compliance-scorecard.csv', U.toCSV(scorecardRows(ev)), 'text/csv;charset=utf-8');
@@ -261,4 +289,5 @@
   }
 
   HR.views.policies = policiesView;
+  HR.views.policyShowRefs = showRefs;
 })(window.HR);

@@ -482,6 +482,8 @@ table.board-tbl th {
 table.board-tbl td { padding: 8px; border-bottom: 1px solid #e3e2dc; vertical-align: top; line-height: 1.45; }
 table.board-tbl .why { color: #6b6a66; font-size: 11.5px; margin-top: 2px; }
 table.board-tbl .owner-cell { border-bottom: 1px solid #e3e2dc; min-width: 90px; }
+table.board-tbl tr:has(+ tr.sub) td { border-bottom: 0; padding-bottom: 2px; }
+table.board-tbl tr.sub td { padding-top: 0; font-size: 11px; color: #6b6a66; }
 table.board-tbl td.mono { font-family: var(--mono, ui-monospace, monospace); font-size: 11px; }
 /* sign-off: three ruled lines a pen can use */
 .sheet > .why { font-size: 11px; color: #6b6a66; margin: 0; }
@@ -511,6 +513,19 @@ table.board-tbl td.mono { font-family: var(--mono, ui-monospace, monospace); fon
   table.board-tbl tr { break-inside: avoid; page-break-inside: avoid; }
 }
 
+/* the articles behind a control's references, folded under the description */
+.ctl-fwtext { margin: 8px 0 4px; padding: 6px 0 2px 12px; border-left: 2px solid var(--border-strong); font-size: 12.5px; }
+.ctl-fwtext p { margin: 0 0 6px; }
+.ctl-fwtext .fw-ref { margin: 6px 0; }
+.ctl-fwtext .fw-about { margin: 2px 0 0; color: var(--text-secondary); line-height: 1.5; max-width: 72em; }
+.fw-tag { font-size: 10.5px; padding: 1px 6px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); white-space: nowrap; }
+button.pill { background: none; font: inherit; font-size: 11px; line-height: inherit; }
+.pill.clickable { cursor: pointer; }
+.pill.clickable:hover { border-color: var(--accent, #4a7cf6); }
+.sheet .fw-appendix { display: grid; grid-template-columns: 1fr; gap: 2px 0; font-size: 12.5px; margin: 0; }
+.sheet .fw-appendix dt { margin-top: 10px; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.sheet .fw-appendix dd { margin: 2px 0 0; color: #26251f; line-height: 1.5; }
+.sheet .fw-tag { border-color: #c3c2b7; color: #6b6a66; }
 .sod-why { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 10px 0 6px; font-size: 12.5px; }
 .sod-why dt { color: var(--text-primary); }
 .sod-why dd { margin: 0; color: var(--text-secondary); }

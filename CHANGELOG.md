@@ -3,6 +3,11 @@
 Versions are CalVer (`YYYY.M.N` — Nth release of that month). This file is
 generated from `js/changelog.js` by `make-changelog.js`; edit there, not here.
 
+## [2026.9.27] — 2026-09-03
+
+- The framework references explain themselves. Click a NIS2 / ISO 27001 / BIO pill on Compliance (or “Show framework references” for all) and the control unfolds two things: how this KPI evidences the articles — one sentence per control tying the measurement to what the articles ask — and, per article, its title and what it requires. NIS2 article 21(2)(i) is quoted verbatim from the Directive in English and Dutch; ISO 27001 and BIO controls are described in our own words and labelled so, because their text is licensed, with a link to the official source.
+- The board report’s policy page prints the evidence sentence under every control, and gains an appendix with the referenced articles when the “show references” preference is on; the scorecard CSV/JSON and the pack JSON carry the article titles and the evidence.
+
 ## [2026.9.26] — 2026-09-03
 
 - Toxic combinations say what is toxic. Each pair carries the reason it is a pair (an external with admin rights escapes the leaver process; one account administering two domains is one point of full compromise; raising and approving a purchase is the classic fraud path) — shown under the pair list, editable per pair under Settings › Classification. Every violation row now says what made each side match: the category, the word in the permission name, or the account type. The account drawer lists the pairs an account breaks with the same explanation.
