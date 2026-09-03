@@ -85,6 +85,10 @@
   /* A "one of" list that selects at least this share of the people its other conditions
      already select is that wider rule with a pointless list: it becomes the wider rule. */
   const GENERAL_ABOVE = 0.9;
+  /* Merging is pairwise, so a context of 500 sibling cells would score 125,000 pairs and
+     re-score on every merge. Beyond this many siblings only the largest seed the merge;
+     the rest attach to the most alike group afterwards, one pass each. */
+  const MERGE_SEEDS = 150;
   /* What a person is worth to the objective: the long tail counts half, a join, move
      or leave in the last year doubles. Overridable through cfg.cohorts.worth. */
   const WORTH = { tail: 0.5, flow: 2 };
@@ -239,30 +243,42 @@
 
   /* ------------------------------------------------------------------ merging */
 
-  /** Per attribute, value → count over the members. */
+  /** Per attribute, value → count over the members, with the largest count kept. */
   function profileOf(members, others) {
     const prof = new Map();
     for (const a of others) {
       const tally = new Map();
       for (const p of members) { const v = p.attrs[a] || ''; tally.set(v, (tally.get(v) || 0) + 1); }
+      let top = 0; tally.forEach(n => { if (n > top) top = n; });
+      tally.top = top;
       prof.set(a, tally);
     }
     return prof;
   }
 
+  /** Add profile `b` into `a`, keeping the tops current. */
+  function absorb(a, b, open) {
+    for (const attr of open) {
+      const ta = a.profile.get(attr), tb = b.profile.get(attr);
+      tb.forEach((n, v) => { const m = (ta.get(v) || 0) + n; ta.set(v, m); if (m > ta.top) ta.top = m; });
+    }
+  }
+
   /** How alike the two groups would be as one rule, from their summed profiles —
       the same weighing as alikeOf. The pivot is not fixed by a list: a list of every
-      title fixes nothing, so it counts by its lift like an open attribute. */
+      title fixes nothing, so it counts by its lift like an open attribute. The top of
+      the sum is found by walking only the smaller tally: a value absent from it can
+      do no better than the larger tally's own top. */
   function similarity(a, b, fixed, others, base, weights) {
     const n = a.members.length + b.members.length;
     let total = U.sum(fixed, x => wOf(weights, x)), weight = total;
     for (const attr of others) {
       const g = base.get(attr);
       if (g >= 1) continue;
-      const ta = a.profile.get(attr), tb = b.profile.get(attr);
-      let top = 0;
+      let ta = a.profile.get(attr), tb = b.profile.get(attr);
+      if (ta.size > tb.size) { const t = ta; ta = tb; tb = t; }
+      let top = tb.top;
       ta.forEach((c, v) => { const m = c + (tb.get(v) || 0); if (m > top) top = m; });
-      tb.forEach((c, v) => { if (!ta.has(v) && c > top) top = c; });
       const w = wOf(weights, attr);
       weight += w;
       total += w * Math.max(0, (top / n - g) / (1 - g));
@@ -312,9 +328,18 @@
       const contextPeople = U.sum(siblings, c => c.members.length);
       const open = others.concat([pivot]);
       const context = fixed.filter(a => a !== pivot);
-      const groups = siblings.map(cell => ({
+      const all = siblings.map(cell => ({
         cells: [cell], members: cell.members.slice(), profile: profileOf(cell.members, open), alive: true, v: 0
-      }));
+      })).sort((x, y) => y.members.length - x.members.length);
+      const groups = all.slice(0, MERGE_SEEDS);
+      const rest = all.slice(MERGE_SEEDS);
+      const merge = (a, b) => {
+        b.alive = false;
+        a.v++;
+        a.cells = a.cells.concat(b.cells);
+        a.members = a.members.concat(b.members);
+        absorb(a, b, open);
+      };
       if (groups.length > 1 && floor < 1) {
         const q = heap();
         for (let i = 0; i < groups.length; i++) {
@@ -328,21 +353,25 @@
           /* A pair scored before either side grew is stale: its score no longer describes
              the rule the merge would make. */
           if (!top.a.alive || !top.b.alive || top.a.v !== top.va || top.b.v !== top.vb) continue;
-          const a = top.a, b = top.b;
-          b.alive = false;
-          a.v++;
-          a.cells = a.cells.concat(b.cells);
-          a.members = a.members.concat(b.members);
-          for (const attr of open) {
-            const ta = a.profile.get(attr);
-            b.profile.get(attr).forEach((n, v) => ta.set(v, (ta.get(v) || 0) + n));
-          }
+          const a = top.a;
+          merge(a, top.b);
           for (const g of groups) {
             if (g === a || !g.alive) continue;
             const sim = similarity(a, g, context, open, base, weights);
             if (sim >= floor) q.push({ a, b: g, sim, va: a.v, vb: g.v });
           }
         }
+      }
+      /* The small cells past the seed limit: each joins the group it is most alike
+         with, if that group stays above the floor. */
+      for (const cell of rest) {
+        let best = null, bestSim = floor;
+        if (floor < 1) for (const g of groups) {
+          if (!g.alive) continue;
+          const sim = similarity(g, cell, context, open, base, weights);
+          if (sim >= bestSim) { best = g; bestSim = sim; }
+        }
+        if (best) merge(best, cell); else groups.push(cell);
       }
       for (const g of groups) {
         if (!g.alive) continue;

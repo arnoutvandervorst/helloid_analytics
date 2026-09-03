@@ -18,6 +18,13 @@
 
   const ENTRIES = [
     {
+      version: '2026.9.20', date: '2026-09-03',
+      changes: [
+        'The loader now covers every heavy step. Restoring stored imports at startup ran with no veil at all when there was no snapshot — a large vault made the page look hung — and drawing a view never had one: opening Role mining, switching a tab or moving a slider froze the screen for as long as the proposal took. Each view now remembers how long it took; anything over 120 ms, or a first visit on a large import, draws behind the veil.',
+        'The proposal itself is faster on large organisations: merging scores each pair from the smaller profile, and a context of hundreds of sibling departments seeds the merge with the largest 150 and attaches the rest in one pass. 4,000 people over 500 departments: 3.4 → 1.5 s.'
+      ]
+    },
+    {
       version: '2026.9.19', date: '2026-09-03',
       changes: [
         'Long explanations sit behind an ⓘ now, on every screen: any note, card subtitle, tile footer or page intro over a couple of lines shows its first sentence and the rest on hover. Short notes stay where they were; tables and the board report are untouched.'

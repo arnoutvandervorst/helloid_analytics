@@ -30,7 +30,34 @@
   };
 
   /* ------------------------------------------------------------- rendering */
+  /* ---- rendering ------------------------------------------------------------
+     A view builds synchronously, and a heavy one — role mining over a few thousand
+     people — freezes the page for a second or more. render() therefore decides first
+     whether to put the veil up: it remembers how long each view (and tab) took last
+     time, and a view that took more than HEAVY_MS, or is unknown on a large model,
+     is drawn behind the veil. Overlapping requests coalesce into one draw. */
+  const HEAVY_MS = 120;
+  const renderCost = new Map();
+  let renderQueued = false, renderPending = false;
+  const renderKey = () => state.view + (state.params && state.params.tab ? ':' + state.params.tab : '');
+  const largeModel = () => !!(state.model && (
+    (state.model.vault && state.model.vault.persons.length > 500) ||
+    (state.model.summary && state.model.summary.rows > 20000)));
   function render() {
+    const cost = renderCost.get(renderKey());
+    const heavy = cost === undefined ? largeModel() : cost > HEAVY_MS;
+    if (!heavy) { renderNow(); return; }
+    if (renderQueued) { renderPending = true; return; }
+    renderQueued = true;
+    withBusy(T('busy.render'), () => { renderNow(); }).then(() => {
+      renderQueued = false;
+      if (renderPending) { renderPending = false; render(); }
+    });
+  }
+
+  function renderNow() {
+    const started = performance.now();
+    const key = renderKey();
     applyChromeBanner();
     const root = document.getElementById('view-root');
     root.innerHTML = '';
@@ -52,6 +79,7 @@
     if (HR.viewkit && HR.viewkit.collapseNotes) HR.viewkit.collapseNotes(root);
     if (HR.nav) HR.nav.render();
     root.scrollTop = 0;
+    renderCost.set(key, performance.now() - started);
   }
 
   /** Everything above the shell, in pixels: the sidebar sizes itself against it. */
@@ -905,7 +933,7 @@
 
     /* A reload used to lose the vault and the rules, which quietly downgraded views that
        depend on them — the People overview being the visible one. */
-    const restoreContext = HR.store.loadContext().then(ctx => {
+    const restoreContext = HR.store.loadContext().then(ctx => withBusy(T('busy.restore'), () => {
       if (!ctx) return;
       state.raw = { rules: ctx.rules, vault: ctx.vault, granted: ctx.granted, history: ctx.history,
         products: ctx.products, assignments: ctx.assignments, directory: ctx.directory,
@@ -928,7 +956,7 @@
       try { if (ctx.history) state.history = HR.activity.parse(ctx.history, named('history', 'historicactions.csv')); } catch (e) { /* stale */ }
       try { if (ctx.products) state.products = HR.products.parseProducts(ctx.products, named('products', 'products.json')); } catch (e) { /* stale */ }
       try { if (ctx.assignments) state.assignments = HR.products.parseAssignments(ctx.assignments, named('assignments', 'product-assignments.csv')); } catch (e) { /* stale */ }
-    });
+    }));
 
     restoreContext.then(() => refreshSnapshots()).then(async () => {
       const v = location.hash.replace('#', '');
@@ -937,7 +965,8 @@
         await loadSnapshot(state.snapshots[0].id);
         if (state.snapshots.length > 1) await setBaseline(state.snapshots[1].id, true);
       } else {
-        rebuild();
+        /* A vault-only start builds the model here, with nothing else to hide it. */
+        await withBusy(T('busy.restore'), () => rebuild());
       }
     });
   }

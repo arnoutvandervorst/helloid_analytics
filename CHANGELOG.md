@@ -3,6 +3,11 @@
 Versions are CalVer (`YYYY.M.N` — Nth release of that month). This file is
 generated from `js/changelog.js` by `make-changelog.js`; edit there, not here.
 
+## [2026.9.20] — 2026-09-03
+
+- The loader now covers every heavy step. Restoring stored imports at startup ran with no veil at all when there was no snapshot — a large vault made the page look hung — and drawing a view never had one: opening Role mining, switching a tab or moving a slider froze the screen for as long as the proposal took. Each view now remembers how long it took; anything over 120 ms, or a first visit on a large import, draws behind the veil.
+- The proposal itself is faster on large organisations: merging scores each pair from the smaller profile, and a context of hundreds of sibling departments seeds the merge with the largest 150 and attaches the rest in one pass. 4,000 people over 500 departments: 3.4 → 1.5 s.
+
 ## [2026.9.19] — 2026-09-03
 
 - Long explanations sit behind an ⓘ now, on every screen: any note, card subtitle, tile footer or page intro over a couple of lines shows its first sentence and the rest on hover. Short notes stay where they were; tables and the board report are untouched.
