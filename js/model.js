@@ -276,6 +276,7 @@
     if (opts && opts.directory) model.directory = opts.directory;
     if (granted) model.granted = granted;
     if (history) model.history = history;
+    if (opts && opts.audit) model.audit = opts.audit;
     if (granted || history) {
       /* What HelloID granted, and what it tried to do — the evidence that separates
          "outside the identity system" from "the identity system put it there". */

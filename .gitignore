@@ -21,6 +21,9 @@ products.json
 # Collector output — real directories carry personal data. demo/ stays the exception.
 directory*.json
 
+# The audit log pulled from a tenant (helloid-audit.py): names, decisions, logins.
+helloid-audit*.json
+
 # Deployment notes for a specific host: hostnames, users and internal addresses.
 deploy-local/
 DEPLOY-NUC.md

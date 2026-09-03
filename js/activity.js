@@ -348,5 +348,5 @@
     };
   }
 
-  HR.activity = { parse, classify, reconcile, parseDate, splitSub };
+  HR.activity = { parse, classify, reconcile, parseDate, splitSub, buildHistory };
 })(window.HR);

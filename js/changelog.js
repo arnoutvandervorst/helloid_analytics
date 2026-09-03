@@ -18,6 +18,14 @@
 
   const ENTRIES = [
     {
+      version: '2026.9.28', date: '2026-09-03',
+      changes: [
+        'The HelloID audit log is a source. helloid-audit.py pulls it from the tenant’s Elastic API (enabled under admin → Elastic API key; the key stays in a local .env, never in the browser) into helloid-audit.json: every provisioning action with its outcome, every reconciliation issue an administrator excluded with who, why and until when, every threshold approval, every rule publish with the entitlements it added, imports, evaluations, connector changes, portal logins, incidents and licence counts. The collector reports progress per index and per page.',
+        'A new Governance view, Evidence, reads it: Decisions (excluded issues with their reason, expiry and whether the access is still held today; threshold approvals; manual unmanages), Rule changes (every publish with entitlements added and removed, scope delta, condition and who pressed publish; a per-rule timeline) and Who did what (each administrator’s footprint). The account drawer says “excluded in HelloID by X on date until Y — reason” next to the finding. The fit check judges the audit log against the vault and the reconciliation.',
+        'When no historic-actions export is loaded, the audit log’s provisioning actions stand in for it — joiner latency, failed actions and churn read them unchanged; the export still wins when both are present because it carries the origins.'
+      ]
+    },
+    {
       version: '2026.9.27', date: '2026-09-03',
       changes: [
         'The framework references explain themselves. Click a NIS2 / ISO 27001 / BIO pill on Compliance (or “Show framework references” for all) and the control unfolds two things: how this KPI evidences the articles — one sentence per control tying the measurement to what the articles ask — and, per article, its title and what it requires. NIS2 article 21(2)(i) is quoted verbatim from the Directive in English and Dutch; ISO 27001 and BIO controls are described in our own words and labelled so, because their text is licensed, with a link to the official source.',

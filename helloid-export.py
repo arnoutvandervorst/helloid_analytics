@@ -79,7 +79,9 @@ class HelloID:
             raise SystemExit(f'{path} -> {e.reason}')
 
     def paged(self, path):
-        """skip/take until a page comes back short. Some endpoints wrap the array once."""
+        """skip/take until a page comes back short. Some endpoints wrap the array once.
+        Says where it is after every page: a big tenant takes a while, and silence reads
+        as a hang."""
         out, skip = [], 0
         while True:
             page = self.get(path, {'skip': skip, 'take': PAGE})
@@ -89,7 +91,10 @@ class HelloID:
             if len(page) == 1 and isinstance(page[0], list):
                 page = page[0]
             out.extend(page)
+            print(f'  {path}: {len(out):,} so far …', end='\r' if sys.stdout.isatty() else '\n', flush=True)
             if len(page) < PAGE:
+                if sys.stdout.isatty():
+                    print(' ' * 60, end='\r')
                 return out
             skip += PAGE
 

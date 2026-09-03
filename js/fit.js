@@ -124,6 +124,18 @@
       if (users.length) pairs.push(overlap('assignments-recon', users, u => accounts.has(localOf(u)), users.length, model.accountList.length));
     }
 
+    if (state.audit && state.audit.provisioning.length) {
+      const people = U.uniq(state.audit.provisioning.map(r => r.personDisplayName).filter(Boolean));
+      if (vault && people.length) pairs.push(overlap('audit-vault', people, vaultPeopleIndex(vault), people.length, vault.persons.length));
+      if (recon && people.length) {
+        /* Recon persons are keyed by their raw "Name (id)" string, the same form the audit log uses. */
+        const names = new Set(Array.from(model.persons.keys()).map(norm));
+        const ids = new Set(Array.from(model.persons.keys()).map(k => norm(personBits(k).id)).filter(Boolean));
+        pairs.push(overlap('audit-recon', people, raw => { const b = personBits(raw); return ids.has(norm(b.id)) || names.has(norm(raw)) || names.has(norm(b.name)); },
+          people.length, model.persons.size));
+      }
+    }
+
     const order = { mismatch: 0, weak: 1, ok: 2, small: 3 };
     const judged = pairs.filter(p => p.level !== 'small');
     const worst = judged.length ? judged.reduce((w, p) => order[p.level] < order[w] ? p.level : w, 'ok') : null;

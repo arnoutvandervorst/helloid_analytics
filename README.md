@@ -341,6 +341,26 @@ maps headers by alias, so exports from other HelloID versions or locales still l
 model rolls rows up into 3 entity types — accounts, permissions, persons — and every number
 in the UI is computed on entities, not on line counts.
 
+## The HelloID audit log
+
+The exports describe state; HelloID's Elastic API holds the process: every provisioning
+action with its outcome, every reconciliation issue an administrator excluded (who, why,
+until when), every threshold approved, every rule published with the entitlements it
+added, every import and evaluation run, every login to HelloID itself. `helloid-audit.py`
+pulls it into `helloid-audit.json`:
+
+```
+cp .env.example .env     # HELLOID_ELASTIC_URL / _KEY / _SECRET from https://<tenant>.helloid.com/admin/elasticapikey
+python3 helloid-audit.py --days 400
+```
+
+The app cannot call the API itself — the proxy sends no CORS headers and the page's CSP
+forbids it, and an API key that reads a whole tenant does not belong in a browser. The
+file is imported like any other (Imports → HelloID audit log) and is gitignored. It feeds
+the Evidence view under Governance — decisions, rule changes, who did what — puts
+"excluded in HelloID by X on date until Y because Z" in the account drawer, and stands in
+for the historic-actions export when that is not loaded.
+
 ## Before HelloID: the directory import
 
 The chicken-and-egg problem of pre-implementation analysis: the useful exports need

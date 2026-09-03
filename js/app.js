@@ -261,6 +261,7 @@
       if (HR.config.looksLikeNedapBook(peek)) return 'nedapbook';
       if (peek.kind === 'helloid-recon-snapshots' || Array.isArray(peek.snapshots)) return 'snapshots';
       if (HR.directory.looksLikeDirectory(peek)) return 'directory';
+      if (HR.audit.looksLikeAudit(peek)) return 'audit';
       if (HR.products.looksLikeProducts(peek)) return 'products';
       if (HR.fieldmap.looksLikeFieldMapping(peek)) return 'fieldmapping';
       if (HR.fieldmap.looksLikeSourceMapping(peek)) return 'sourcemapping';
@@ -300,7 +301,7 @@
   /** Drop a companion source without clearing the rest — each one stands on its own. */
   function clearSource(kind) {
     if (kind === 'fieldmapping') kind = 'fieldMapping';   // slot id vs state key
-    if (!['rules', 'vault', 'granted', 'history', 'products', 'assignments', 'directory', 'fieldMapping'].includes(kind)) return;
+    if (!['rules', 'vault', 'granted', 'history', 'products', 'assignments', 'directory', 'fieldMapping', 'audit'].includes(kind)) return;
     state[kind] = null;
     if (kind === 'rules') state.ruleSet = null;
     delete state.raw[kind];
@@ -477,6 +478,7 @@
       return;
     }
     if (peek && HR.directory.looksLikeDirectory(peek)) return importDirectory(text, fileName);
+    if (peek && HR.audit.looksLikeAudit(peek)) return importAudit(text, fileName);
     if (peek && HR.products.looksLikeProducts(peek)) return importProducts(text, fileName);
     if (peek && HR.fieldmap.looksLikeFieldMapping(peek)) return importFieldMapping(text, fileName);
     if (peek && HR.fieldmap.looksLikeSourceMapping(peek)) {
@@ -558,6 +560,21 @@
    * collector scripts. It substitutes for the reconciliation and the vault only while
    * the real export of that kind is absent — rebuild() owns that precedence.
    */
+  async function importAudit(text, fileName) {
+    let audit;
+    try { audit = HR.audit.parse(text, fileName); }
+    catch (err) { U.toast(err.message, 7000); return; }
+    state.audit = audit;
+    state.raw.audit = text;
+    state.importedAt.audit = Date.now();
+    state.fileNames.audit = fileName;
+    HR.store.saveContext({ audit: text, importedAt: state.importedAt, fileNames: state.fileNames });
+    U.toast(T('toast.auditLoaded', { n: U.fmtInt(audit.meta.rowCount), d: U.fmtInt(audit.exclusions.length + audit.thresholds.length + audit.rules.length) }), 7000);
+    HR.usage.imported('audit', audit.meta.rowCount);
+    await withBusy(T('busy.recalc'), () => rebuild());
+    go('audit');
+  }
+
   async function importDirectory(text, fileName) {
     let dir;
     try { dir = HR.directory.parse(text, fileName); }
@@ -813,8 +830,11 @@
     return [];
   }
   function buildOpts() {
+    /* The audit log's provisioning actions stand in for the historic-actions export;
+       the export wins when both are loaded — it carries the origins, the audit log does not. */
     return { ruleSet: state.ruleSet, vault: effVault(),
-      granted: state.granted, history: state.history,
+      granted: state.granted, history: state.history || (state.audit ? HR.audit.asHistory(state.audit) : null),
+      audit: state.audit,
       products: state.products, assignments: state.assignments,
       directory: state.directory };
   }
@@ -825,7 +845,7 @@
     /* Any export is enough to build on: a vault alone already answers people and
        organisation questions. The reconciliation deepens the model, it does not gate it. */
     const anySource = state.parsed || state.vault || state.directory || state.ruleSet ||
-      state.granted || state.history || state.products || state.assignments;
+      state.granted || state.history || state.products || state.assignments || state.audit;
     state.model = anySource ? HR.model.build(effRecords(), opts) : null;
     if (state.baselineSnapshot) state.baselineModel = HR.model.build(state.baselineSnapshot.records, opts);
     recomputeDiff();
@@ -977,10 +997,11 @@
       state.demo = ctx.demo || null;
       state.noAutoRecon = !!ctx.noAutoRecon;
       const named = (k, fallback) => state.fileNames[k] || fallback;
-      ['rules', 'vault', 'granted', 'history', 'products', 'assignments', 'directory'].forEach(k => {
+      ['rules', 'vault', 'granted', 'history', 'products', 'assignments', 'directory', 'audit'].forEach(k => {
         if (ctx[k] && !state.importedAt[k]) state.importedAt[k] = ctx.savedAt || null;
       });
       try { if (ctx.directory) state.directory = HR.directory.parse(ctx.directory, named('directory', 'directory.json')); } catch (e) { /* stale */ }
+      try { if (ctx.audit) state.audit = HR.audit.parse(ctx.audit, named('audit', 'helloid-audit.json')); } catch (e) { /* stale */ }
       try { if (ctx.fieldMapping) state.fieldMapping = HR.fieldmap.parse(ctx.fieldMapping, named('fieldMapping', 'fieldMapping.json')); } catch (e) { /* stale */ }
       try { if (ctx.rules) state.ruleSet = HR.rules.parse(ctx.rules, named('rules', 'rules.csv')); } catch (e) { /* stale */ }
       try { if (ctx.vault) state.vault = HR.vault.parse(ctx.vault, named('vault', 'vault.json')); } catch (e) { /* stale */ }

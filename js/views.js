@@ -180,7 +180,7 @@
      pipe-separated entry is satisfied by any one of its options. Views absent
      here run on whatever is loaded and degrade with partialNotice instead. */
   const REQUIRES = {
-    overview: ['recon'], policies: ['recon'], risk: ['recon'], cost: ['recon'],
+    overview: ['recon'], policies: ['recon'], audit: ['audit'], risk: ['recon'], cost: ['recon'],
     accounts: ['recon'], permissions: ['recon'],
     people: ['vault|recon'], org: ['vault'], matching: ['recon', 'vault'],
     mining: ['vault'], rules: ['rules'],
@@ -438,6 +438,7 @@
     { kind: 'rules',     accept: '.csv' },
     { kind: 'granted',   accept: '.csv' },
     { kind: 'history',   accept: '.csv' },
+    { kind: 'audit',     accept: '.json' },
     { kind: 'products', accept: '.json' },
     { kind: 'assignments', accept: '.csv' },
     { kind: 'fieldmapping', accept: '.json' }
@@ -483,6 +484,12 @@
             days: st.history.meta.activeDays,
             span: st.history.meta.spanDays == null ? '—' : st.history.meta.spanDays }),
           health: st.history.meta.health };
+      case 'audit':
+        return st.audit && { file: st.audit.meta.fileName, loaded: st.importedAt.audit,
+          detail: T('src.auditDetail', { n: U.fmtInt(st.audit.meta.rowCount), d: U.fmtInt(st.audit.exclusions.length),
+            from: st.audit.meta.first ? U.fmtDate(st.audit.meta.first).split(',')[0] : '—', to: st.audit.meta.last ? U.fmtDate(st.audit.meta.last).split(',')[0] : '—' })
+            + (st.history ? '' : ' · ' + T('src.auditSubsHistory')),
+          health: null };
       case 'products':
         return st.products && { file: st.products.meta.fileName, loaded: st.importedAt.products,
           detail: T('src.productsDetail', { n: st.products.meta.rowCount,
@@ -2649,7 +2656,7 @@
         const snaps = await HR.store.list().catch(() => []);
         const ctx = await HR.store.loadContext().catch(() => null);
         const rawKinds = ctx
-          ? ['recon', 'vault', 'rules', 'granted', 'history', 'products', 'assignments', 'directory', 'fieldMapping']
+          ? ['recon', 'vault', 'rules', 'granted', 'history', 'products', 'assignments', 'directory', 'fieldMapping', 'audit']
               .filter(k => ctx[k]).length
           : 0;
         const rows = [
@@ -3714,6 +3721,16 @@
         tip: '<div class="t-title">' + U.esc(p.label) + '</div><div class="t-row"><span>points</span><b>' +
           U.fmtNum(p.value, 1) + '</b></div>' + (p.detail ? '<div class="t-row"><span>' + U.esc(p.detail) + '</span></div>' : '')
       })), { valueLabel: T('c.points') }) : el('p', { class: 'note', text: T('dr.clean') })));
+
+    /* What an administrator decided about this account in HelloID: the exclusion, who, why, until when. */
+    const evidence = HR.audit && m.audit ? HR.audit.evidenceFor(m.audit, a) : [];
+    if (evidence.length) {
+      body.appendChild(card(T('dr.excludedIn'), T('dr.excludedInNote'), el('ul', { class: 'clean' }, evidence.map(x => el('li', {}, [
+        el('strong', { text: (x.accountLevel ? T('au.wholeAccount') : x.permission) + ' — ' + (x.issue || '') }),
+        el('div', { class: 'note', text: T('dr.excludedLine', { who: x.userName || '—', date: U.fmtDate(x.at).split(',')[0],
+          until: x.until ? U.fmtDate(x.until).split(',')[0] : '—', why: String(x.comment || '').trim() || T('au.noReason') }) })
+      ])))));
+    }
 
     /* The pairs this account breaks, each with what collided and why that matters. */
     const toxic = HR.sod ? (HR.sod.evaluate(m).perAccount.get(a.key) || []) : [];
