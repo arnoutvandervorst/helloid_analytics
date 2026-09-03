@@ -102,6 +102,33 @@
     ]);
   }
 
+  /* The loaded imports do not look like one tenant: one line per pair that fails,
+     and the way to the page that shows all of them. */
+  const fitPairName = p => T('fit.name.' + p.a) + ' \u2194 ' + T('fit.name.' + p.b);
+  function fitNotice(fit) {
+    return el('div', { class: 'notice' }, [
+      el('strong', { text: T('fit.title') }),
+      el('span', { text: ' ' + fit.mismatches.map(p => T('fit.pair.' + p.key, { pct: U.fmtPct(p.share, 0) })).join(' ') + ' ' }),
+      el('button', { class: 'btn ghost sm', text: T('fit.goSources'), onclick: () => HR.app.go('sources') })
+    ]);
+  }
+
+  /** The Sources card: every judged pair with its overlap and verdict. */
+  function fitCard() {
+    const fit = HR.app.state.fit;
+    if (!fit || !fit.pairs.length) return null;
+    const rows = fit.pairs.map(p => el('div', { class: 'fit-row' + (p.level === 'small' ? ' small' : '') }, [
+      el('span', { class: 'fit-pair', text: fitPairName(p) }),
+      p.level === 'small'
+        ? el('span', { class: 'note', text: T('fit.small') })
+        : el('span', { class: 'fit-bar', title: p.sample.length ? T('fit.sampleTip') + ' ' + p.sample.join(' · ') : '' },
+            [scoreBar(Math.round(p.share * 100)), el('span', { class: 'note', text: U.fmtInt(p.matched) + ' / ' + U.fmtInt(p.of) })]),
+      el('span', { class: 'sev ' + (p.level === 'ok' ? 'good' : p.level === 'weak' ? 'medium' : p.level === 'mismatch' ? 'high' : 'low'),
+        text: T('fit.' + p.level) })
+    ]));
+    return card(T('fit.cardTitle'), T('fit.cardNote'), el('div', { class: 'stack', style: 'gap:6px' }, rows));
+  }
+
   /* A vault synthesized from a directory import answers different questions than a
      real one: the notice says where each shown field really comes from, and the
      mapping drawer spells out the whole translation with its caveats. */
@@ -585,6 +612,8 @@
     const stack = el('div', { class: 'stack' });
     if (HR.demo.isOn() || HR.app.demoAvailable()) stack.appendChild(demoCard());
     stack.appendChild(el('div', { class: 'grid g3' }, SOURCE_SLOTS.map(sourceSlot)));
+    const fits = fitCard();
+    if (fits) stack.appendChild(fits);
 
     /* Not sources of truth about the tenant — settings and snapshot bundles are this
        tool's own files — so they sit apart from the slots above. */
@@ -3719,6 +3748,6 @@
     card, tile, scoreBar, dl, partialNotice, syntheticVaultNotice, personRow, peopleIndex, entitlementTable,
     openDrawer, closeDrawer, drawerAccount, drawerPermission, drawerVaultPerson, drawerSystem,
     drawerChangelog, STATE_SEV, stateLabel, offsetText, sourcesCard, tabbed,
-    lead, info, explain, collapseNotes
+    lead, info, explain, collapseNotes, fitNotice
   };
 })(window.HR);

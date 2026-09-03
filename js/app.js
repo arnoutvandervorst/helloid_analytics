@@ -66,6 +66,9 @@
     if (!state.model && !worksEmpty) { emptyState(root); return; }
     const fn = HR.views[state.view] || HR.views.overview;
     const missing = HR.views.missingFor ? HR.views.missingFor(state.view) : [];
+    if (state.fit && state.fit.worst === 'mismatch' && state.view !== 'sources' && HR.viewkit.fitNotice) {
+      root.appendChild(HR.viewkit.fitNotice(state.fit));
+    }
     try {
       root.appendChild(missing.length ? HR.views.gatePage(state.view, missing) : fn(state.model, state.params));
     } catch (err) {
@@ -727,6 +730,16 @@
 
   async function recomputeDiff() {
     state.diff = (state.model && state.baselineModel) ? HR.diff.compare(state.model, state.baselineModel) : null;
+    /* Whether the loaded sources describe one tenant. Said once, when a new import
+       breaks the fit; the Sources page keeps the full picture. */
+    const before = state.fit ? state.fit.worst : null;
+    try { state.fit = state.model && HR.fit ? HR.fit.check(state, state.model) : null; }
+    catch (e) { console.error(e); state.fit = null; }
+    if (state.fit && state.fit.worst === 'mismatch' && before !== 'mismatch') {
+      const p = state.fit.mismatches[0];
+      /* After the import's own toast, not under it. */
+      setTimeout(() => U.toast(T('fit.toast', { pair: T('fit.name.' + p.a) + ' \u2194 ' + T('fit.name.' + p.b) }), 9000), 2500);
+    }
   }
 
   async function loadSnapshot(id) {

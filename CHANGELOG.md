@@ -3,6 +3,11 @@
 Versions are CalVer (`YYYY.M.N` — Nth release of that month). This file is
 generated from `js/changelog.js` by `make-changelog.js`; edit there, not here.
 
+## [2026.9.21] — 2026-09-03
+
+- Sidekick now checks that the imports belong together. Every slot takes any file, so a vault from one customer and a reconciliation from another used to build a model without complaint. Files from one tenant overlap — the vault’s people hold the reconciliation’s accounts, the rules’ departments exist in the vault, the granted export’s people are vault people — and that overlap is measured per pair of sources: reconciliation ↔ vault, granted ↔ vault, history ↔ vault, granted ↔ reconciliation, rules ↔ vault, rules ↔ reconciliation, directory ↔ reconciliation, product assignments ↔ reconciliation.
+- A pair with well over half its items found “fits”; a few percent “does not fit”. A failing pair shows as a notice on every view and as a toast the moment an import breaks the fit; Sources has the full picture with an example of what was not found. Pairs with too few items on one side are not judged.
+
 ## [2026.9.20] — 2026-09-03
 
 - The loader now covers every heavy step. Restoring stored imports at startup ran with no veil at all when there was no snapshot — a large vault made the page look hung — and drawing a view never had one: opening Role mining, switching a tab or moving a slider froze the screen for as long as the proposal took. Each view now remembers how long it took; anything over 120 ms, or a first visit on a large import, draws behind the veil.

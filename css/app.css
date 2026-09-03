@@ -308,6 +308,10 @@ svg.chart text { font-family: inherit; }
   font-size: 10px; line-height: 1; cursor: help; vertical-align: middle; flex: none;
 }
 .lead { cursor: help; }
+.fit-row { display: grid; grid-template-columns: minmax(200px, 30%) 1fr auto; gap: 12px; align-items: center; font-size: 12px; }
+.fit-row.small { opacity: .7; }
+.fit-pair { font-weight: 600; }
+.fit-bar { display: flex; align-items: center; gap: 8px; }
 @media print { .info { display: none; } }
 .tooltip .t-row { display: flex; justify-content: space-between; gap: 14px; color: var(--text-secondary); }
 .tooltip .t-row b { color: var(--text-primary); font-variant-numeric: tabular-nums; }
