@@ -18,6 +18,12 @@
 
   const ENTRIES = [
     {
+      version: '2026.9.19', date: '2026-09-03',
+      changes: [
+        'Long explanations sit behind an ⓘ now, on every screen: any note, card subtitle, tile footer or page intro over a couple of lines shows its first sentence and the rest on hover. Short notes stay where they were; tables and the board report are untouched.'
+      ]
+    },
+    {
       version: '2026.9.18', date: '2026-09-03',
       changes: [
         'Core vs long tail counts job titles by name, not by HR code: a title carried under several codes (one tenant has “Engineer” under four) is one job, and splitting its headcount could drop it out of the core.'

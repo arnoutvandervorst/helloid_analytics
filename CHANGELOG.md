@@ -3,6 +3,10 @@
 Versions are CalVer (`YYYY.M.N` — Nth release of that month). This file is
 generated from `js/changelog.js` by `make-changelog.js`; edit there, not here.
 
+## [2026.9.19] — 2026-09-03
+
+- Long explanations sit behind an ⓘ now, on every screen: any note, card subtitle, tile footer or page intro over a couple of lines shows its first sentence and the rest on hover. Short notes stay where they were; tables and the board report are untouched.
+
 ## [2026.9.18] — 2026-09-03
 
 - Core vs long tail counts job titles by name, not by HR code: a title carried under several codes (one tenant has “Engineer” under four) is one job, and splitting its headcount could drop it out of the core.

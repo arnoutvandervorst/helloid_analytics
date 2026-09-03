@@ -48,6 +48,8 @@
         el('p', { class: 'note', text: String(err && err.stack || err) })
       ]));
     }
+    /* Long explanations fold behind an ⓘ, whichever view wrote them. */
+    if (HR.viewkit && HR.viewkit.collapseNotes) HR.viewkit.collapseNotes(root);
     if (HR.nav) HR.nav.render();
     root.scrollTop = 0;
   }

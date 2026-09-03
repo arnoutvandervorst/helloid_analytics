@@ -300,6 +300,15 @@ svg.chart text { font-family: inherit; }
   box-shadow: var(--shadow); max-width: 320px;
 }
 .tooltip .t-title { font-weight: 600; margin-bottom: 2px; }
+.tooltip .t-text { max-width: 46ch; white-space: normal; line-height: 1.45; color: var(--text-primary); }
+/* Long explanations fold to their first sentence and an ⓘ; the whole text is the tooltip. */
+.info {
+  display: inline-flex; align-items: center; justify-content: center; width: 15px; height: 15px;
+  margin-left: 6px; border-radius: 50%; border: 1px solid var(--border-strong); color: var(--text-secondary);
+  font-size: 10px; line-height: 1; cursor: help; vertical-align: middle; flex: none;
+}
+.lead { cursor: help; }
+@media print { .info { display: none; } }
 .tooltip .t-row { display: flex; justify-content: space-between; gap: 14px; color: var(--text-secondary); }
 .tooltip .t-row b { color: var(--text-primary); font-variant-numeric: tabular-nums; }
 

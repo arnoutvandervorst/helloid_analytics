@@ -7,9 +7,55 @@
   const T = (k, p) => HR.i18n.t(k, p);
 
   /* ------------------------------------------------------------- primitives */
+  /* ---------------------------------------------------- long text behind ⓘ
+     Explanations grew into paragraphs. Past LONG characters a note shows only its lead
+     — the first sentence or clause, cut at a word boundary — and an ⓘ; the whole text
+     sits in the tooltip. Short notes stay inline. card(), tile() and the render
+     post-pass in app.js all apply the same rule, so every screen behaves alike. */
+  const LONG = 120;
+  const LEAD_MAX = 90;
+  function lead(text) {
+    const full = String(text || '');
+    if (full.length <= LONG) return { short: full, cut: false };
+    const m = full.match(/^(.*?)(\.\s|\s\u2014\s|;\s)/);
+    let head = m ? m[1] + (m[2].trim() === '.' ? '.' : '') : full;
+    let cut = head.length < full.length;
+    if (head.length > LEAD_MAX) {
+      const sp = head.lastIndexOf(' ', LEAD_MAX);
+      head = head.slice(0, sp > 40 ? sp : LEAD_MAX).replace(/[\s,;:\u2014.]+$/, '') + '\u2026';
+      cut = true;
+    }
+    return { short: head, cut };
+  }
+  const tipText = full => () => '<div class="t-text">' + U.esc(full) + '</div>';
+  /** The ⓘ that carries the full text. */
+  function info(full) {
+    return U.tip(el('span', { class: 'info', role: 'img', 'aria-label': T('c.more'), text: '\u24d8' }), tipText(full));
+  }
+  /** Fill `node` with `text`, collapsed behind ⓘ when long. Returns the node. */
+  function explainInto(node, text) {
+    const l = lead(text);
+    node.textContent = l.short;
+    if (l.cut) {
+      node.classList.add('lead');
+      node.appendChild(info(text));
+      U.tip(node, tipText(text));
+    }
+    node.dataset.lead = '1';
+    return node;
+  }
+  const explain = (text, cls) => explainInto(el('p', { class: cls || 'note' }), text);
+  /** Collapse every plain long note under `root` that has not been handled yet. */
+  function collapseNotes(root) {
+    root.querySelectorAll('p.note, span.note, div.note, .view-head p').forEach(n => {
+      if (n.dataset.lead || n.childElementCount || n.textContent.length <= LONG) return;
+      explainInto(n, n.textContent);
+    });
+  }
+
   function card(title, note, children, cls) {
     const c = el('div', { class: 'card ' + (cls || '') });
-    if (title) c.appendChild(el('h2', {}, [document.createTextNode(title), note ? el('span', { class: 'card-note', text: note }) : null]));
+    if (title) c.appendChild(el('h2', {}, [document.createTextNode(title), note ? explainInto(el('span', { class: 'card-note' }), note) : null]));
     (Array.isArray(children) ? children : [children]).forEach(ch => ch && c.appendChild(ch));
     return c;
   }
@@ -25,7 +71,7 @@
     if (opts.color) v.style.color = opts.color;
     t.appendChild(v);
     const footRow = el('div', { class: 'foot' });
-    if (foot) footRow.append(document.createTextNode(foot));
+    if (foot) explainInto(footRow, foot);
     if (opts.delta != null) {
       footRow.append(document.createTextNode(foot ? ' · ' : ''), deltaBadge(opts.delta, opts.deltaFormat, opts.inverse));
     }
@@ -3326,6 +3372,7 @@
     document.getElementById('drawer-title').append(title);
     const b = document.getElementById('drawer-body');
     b.innerHTML = ''; b.appendChild(body); b.scrollTop = 0;
+    collapseNotes(b);
     d.hidden = false; document.getElementById('drawer-scrim').hidden = false;
   }
   function closeDrawer() {
@@ -3671,6 +3718,7 @@
   HR.viewkit = {
     card, tile, scoreBar, dl, partialNotice, syntheticVaultNotice, personRow, peopleIndex, entitlementTable,
     openDrawer, closeDrawer, drawerAccount, drawerPermission, drawerVaultPerson, drawerSystem,
-    drawerChangelog, STATE_SEV, stateLabel, offsetText, sourcesCard, tabbed
+    drawerChangelog, STATE_SEV, stateLabel, offsetText, sourcesCard, tabbed,
+    lead, info, explain, collapseNotes
   };
 })(window.HR);
