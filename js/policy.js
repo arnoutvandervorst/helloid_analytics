@@ -25,8 +25,11 @@
     evaluation: m => !!m.provisioning,
     prices: m => !!(m.cost && m.cost.totalMonthly > 0),
     directory: m => !!m.directory,
-    lastlogon: m => !!(m.directory && m.directory.users.some(u => u.lastLogon))
+    lastlogon: m => !!(m.directory && m.directory.users.some(u => u.lastLogon)),
+    history: m => !!(m.history && !m.history.empty),
+    decisions: m => !!(HR.attest && Object.keys(HR.attest.decisions()).length)
   };
+  const sla = () => Object.assign({ joinerDays: 7, leaverDays: 1, moverDays: 14, privilegedReviewMonths: 12 }, HR.config.get().sla || {});
 
   /* Accounted for in the HelloID reconciliation: a row with any resolution
      other than None (Excluded, mostly) was looked at and justified by a person.
@@ -229,6 +232,37 @@
       } },
     /* AD's replicated lastLogonTimestamp can lag up to two weeks; at a 90-day
        limit that lag is noise. Accounts with no recorded sign-in are skipped. */
+    { id: 'leaver-revoke-sla', unit: 'count', dir: 'max', def: 0, needs: ['vault'], severity: 'critical',
+      refs: { nis2: '21(2)(i)', iso27001: 'A.5.18', bio: '9.2.6' },
+      measure: m => {
+        const days = sla().leaverDays;
+        const res = HR.workforce.leavers(m, m.vault);
+        const late = res.rows.filter(r => r.enabledAccounts && (r.life.days || 0) > days);
+        return { value: late.length, affected: late.map(r => ({ kind: 'person', person: r.person })) };
+      } },
+    { id: 'joiner-latency', unit: 'pct', dir: 'max', def: 10, needs: ['vault', 'history'], severity: 'medium',
+      refs: { iso27001: 'A.5.16', bio: '9.2.2' },
+      measure: m => {
+        const lat = HR.workforce.onboardingLatency(m.vault, m.history);
+        if (!lat || !lat.rows.length) return { value: 0, affected: [] };
+        const late = lat.rows.filter(r => r.days > sla().joinerDays);
+        return { value: 100 * late.length / lat.rows.length, affected: late.map(r => ({ kind: 'person', person: r.person })) };
+      } },
+    { id: 'mover-residue-sla', unit: 'count', dir: 'max', def: 0, needs: ['vault'], severity: 'high',
+      refs: { iso27001: 'A.5.18', bio: '9.2.5' },
+      measure: m => {
+        const res = HR.workforce.moverResidue(m, m.vault, { maxDays: null });
+        if (!res) return { value: 0, affected: [] };
+        const late = res.rows.filter(r => (r.move.daysAgo || 0) > sla().moverDays);
+        return { value: late.length, affected: late.map(r => ({ kind: 'person', person: r.move.person })) };
+      } },
+    { id: 'privileged-reviewed', unit: 'pct', dir: 'min', def: 100, needs: ['vault', 'decisions'], severity: 'critical',
+      refs: { nis2: '21(2)(i)', iso27001: 'A.5.18', bio: '9.2.5' },
+      measure: m => {
+        const a = HR.attest.build(m);
+        const cov = HR.attest.coverage(m, a.packs);
+        return { value: 100 * cov.privShare, affected: [] };
+      } },
     { id: 'sod-violations', unit: 'count', dir: 'max', def: 0, needs: [], severity: 'critical',
       refs: { nis2: '21(2)(i)', iso27001: 'A.5.3', bio: '6.1.2' }, finding: 'sod-violation',
       measure: m => {

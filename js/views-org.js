@@ -21,6 +21,18 @@
 
   let orgCursor = null;
 
+  /* One line under a JML card: the agreed service level, how many are over it, and
+     the p50/p90 that says whether the misses are the rule or the exception. */
+  function slaLine(days, slaDays) {
+    const sorted = days.slice().sort((a, b) => a - b);
+    const pct = q => sorted.length ? sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * q))] : null;
+    const over = sorted.filter(d => d > slaDays).length;
+    return el('p', { class: 'note' }, [
+      el('span', { class: 'sev ' + (over ? 'high' : 'good'), text: T('wf.slaOver', { n: U.fmtInt(over) }) }),
+      document.createTextNode(' ' + T('wf.slaLine', { sla: slaDays, p50: pct(0.5) == null ? '—' : pct(0.5), p90: pct(0.9) == null ? '—' : pct(0.9) }))
+    ]);
+  }
+
   function orgView(m, params) {
     const f = document.createDocumentFragment();
     if (!m.vault) {
@@ -287,6 +299,30 @@
         { severity: a.summary.stale ? 'critical' : 'good' })
     ]));
 
+    /* The loop closed: what came back decided, how much of the held access that covers,
+       and what the decisions still owe. */
+    const cov = HR.attest.coverage(m, a.packs);
+    wrap.appendChild(el('div', { class: 'grid g4', style: 'margin-top:14px' }, [
+      tile(T('at.kCoverage'), U.fmtPct(cov.share, 0), T('at.kCoverageFoot', { n: U.fmtInt(cov.allDone), of: U.fmtInt(cov.all), months: cov.months }),
+        { severity: cov.share >= 0.9 ? 'good' : cov.share >= 0.5 ? 'medium' : 'high' }),
+      tile(T('at.kPrivCoverage'), U.fmtPct(cov.privShare, 0), T('at.kPrivCoverageFoot', { n: U.fmtInt(cov.privDone), of: U.fmtInt(cov.priv) }),
+        { severity: cov.privShare >= 1 ? 'good' : cov.privShare >= 0.5 ? 'medium' : 'critical' }),
+      tile(T('at.kRevoke'), U.fmtInt(cov.revokePending), T('at.kRevokeFoot'),
+        { severity: cov.revokePending ? 'high' : 'good', small: true }),
+      tile(T('at.kDecisions'), U.fmtInt(Object.keys(HR.attest.decisions()).length), T('at.kDecisionsFoot'), { small: true })
+    ]));
+    wrap.appendChild(card(T('at.loopTitle'), T('at.loopNote'), el('div', { class: 'slot-actions' }, [
+      el('button', { class: 'btn', text: T('at.importDecisions'), onclick: () => {
+        const input = el('input', { type: 'file', accept: '.csv' });
+        input.onchange = async () => { const f = input.files[0]; if (f) HR.app.importText(await f.text(), f.name); };
+        input.click();
+      } }),
+      cov.revokePending ? el('button', { class: 'btn', text: T('at.revokeCsv', { n: U.fmtInt(cov.revokePending) }), onclick: () => {
+        U.download('attestation-revoke-checklist.csv', HR.attest.revokeCsv(m, a.packs), 'text/csv');
+        HR.usage.exported('attestation-revoke');
+      } }) : null
+    ].filter(Boolean))));
+
     wrap.appendChild(card(T('at.tableTitle'), T('at.tableNote'), [
       HR.table.make({
         columns: [
@@ -374,7 +410,8 @@
     if (res) {
       const body = [el('p', { text: T('wf.moversLead', {
         moves: U.fmtInt(res.summary.moves), dept: U.fmtInt(res.summary.deptMoves),
-        withResidue: U.fmtInt(res.summary.withResidue), ents: U.fmtInt(res.summary.residueEnts) }) })];
+        withResidue: U.fmtInt(res.summary.withResidue), ents: U.fmtInt(res.summary.residueEnts) }) }),
+        slaLine(res.rows.map(r => r.move.daysAgo || 0), HR.config.get().sla.moverDays)];
       if (res.rows.length) {
         body.push(HR.table.make({
           columns: [
@@ -452,6 +489,7 @@
           tile(T('wf.kOverWeek'), U.fmtInt(lat.summary.overWeek), T('wf.kOverWeekFoot'),
             { severity: lat.summary.overWeek ? 'high' : 'good' })
         ]),
+        slaLine(lat.rows.map(r => r.days), HR.config.get().sla.joinerDays),
         HR.table.make({
           columns: [
             { key: 'person', label: T('py.cPerson'), value: r => r.person.displayName },
@@ -599,6 +637,7 @@
         { small: true, severity: res.summary.monthly ? 'medium' : 'good' })
     );
     wrap.appendChild(k);
+    wrap.appendChild(slaLine(res.rows.filter(r => r.enabledAccounts).map(r => r.life.days || 0), HR.config.get().sla.leaverDays));
 
     wrap.appendChild(card(T('lv.title'), T('lv.note'), [
       el('p', { text: T('lv.lead', { n: U.fmtInt(res.summary.leavers),

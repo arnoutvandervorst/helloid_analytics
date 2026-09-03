@@ -482,6 +482,12 @@ table.board-tbl th {
 table.board-tbl td { padding: 8px; border-bottom: 1px solid #e3e2dc; vertical-align: top; line-height: 1.45; }
 table.board-tbl .why { color: #6b6a66; font-size: 11.5px; margin-top: 2px; }
 table.board-tbl .owner-cell { border-bottom: 1px solid #e3e2dc; min-width: 90px; }
+table.board-tbl td.mono { font-family: var(--mono, ui-monospace, monospace); font-size: 11px; }
+/* sign-off: three ruled lines a pen can use */
+.sheet > .why { font-size: 11px; color: #6b6a66; margin: 0; }
+.sign-head { display: grid; grid-template-columns: 130px 1fr 110px; gap: 12px; font-size: 11px; color: #6b6a66; margin-top: 6px; }
+.sign-row { display: grid; grid-template-columns: 130px 1fr 110px; gap: 12px; align-items: end; height: 34px; font-size: 12.5px; }
+.sign-line { border-bottom: 1px solid #0b0b0b; height: 22px; }
 .sheet ul.method { margin: 0; padding-left: 18px; font-size: 13px; line-height: 1.55; }
 .sheet ul.method li { margin-bottom: 7px; }
 

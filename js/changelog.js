@@ -18,6 +18,15 @@
 
   const ENTRIES = [
     {
+      version: '2026.9.25', date: '2026-09-03',
+      changes: [
+        'Service levels become controls. Settings gains the agreed days for joiners, leavers and movers and the interval for privileged reviews; four new Compliance controls measure against them — leavers past the revoke SLA (critical), movers still holding old-department access past the mover SLA, joiners who waited longer than the joiner SLA (from the historic actions), and privileged access reviewed within the interval. The joiner, mover and leaver cards each show how many are over the SLA with the p50 and p90 days.',
+        'Attestation closes its loop. A pack that comes back with the Decision column filled (keep / revoke) drops into the importer like any other file: decisions are stored per account and entitlement, travel with the settings file, and the Attestation tab shows reviewed coverage (all and privileged), decisions on file and a revoke checklist CSV of everything decided “revoke” that is still held.',
+        'Trend. Every snapshot now carries its finding ids, its twenty largest departments and the leaver SLA breaches, so a finding shows since when it has been open, Snapshots draws open critical controls and leaver breaches over time and lets you follow one department’s €/head and risk across imports, and the board notes findings open in every import for more than 90 days.',
+        'The board report becomes a management pack: a scope page with every source file, when it was loaded and what date its data reflects, the settings fingerprint that produced the figures and a sign-off block; new pages for departments, joiners · movers · leavers against the service levels, and the access review; action owners fill from the control owner. The pack exports as one self-contained HTML file and as JSON.'
+      ]
+    },
+    {
       version: '2026.9.24', date: '2026-09-03',
       changes: [
         'Hidden costs. The recoverable figure only ever counted disabled and doubled licences; the money that is burning without a row in it now has its own tile and bucket list on Cost: leavers still licensed (with what it has cost since each contract ended), dormant licences (from the directory collector’s last sign-in), second accounts of one person, spend nobody owns, work still done by hand and rework after failed actions (from the history export, at the loaded rate), and joiners kept waiting (days always; euros once you state a rate). None is added to “recoverable” — each needs a decision, not a cleanup. Every bucket has its people or accounts behind it and a CSV.',

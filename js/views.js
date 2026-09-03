@@ -987,7 +987,14 @@
       el('span', { class: 'f-title', text: fd.title }),
       el('span', { class: 'pill', text: fd.category }),
       el('span', { class: 'pill solid', text: T(fd.count === 1 ? 'rk.item' : 'rk.items', { n: fd.count }) }),
-      fd.impactMonthly ? el('span', { class: 'pill', text: U.fmtMoney(fd.impactMonthly) + '/mo · ' + T(fd.recoverable ? 'rk.recoverable' : 'rk.atStake') }) : null
+      fd.impactMonthly ? el('span', { class: 'pill', text: U.fmtMoney(fd.impactMonthly) + '/mo · ' + T(fd.recoverable ? 'rk.recoverable' : 'rk.atStake') }) : null,
+      (() => {
+        const seen = HR.app.state.findingsSeen && HR.app.state.findingsSeen[fd.id];
+        if (!seen) return null;
+        const days = Math.round((Date.now() - seen.first) / 86400000);
+        return el('span', { class: 'pill' + (days > 90 ? ' warn' : ''), title: new Date(seen.first).toLocaleDateString(HR.i18n.locale),
+          text: T('rk.openSince', { days: U.fmtInt(days) }) });
+      })()
     ].filter(Boolean));
     d.appendChild(sum);
     const body = el('div', { class: 'f-body' });
@@ -2110,6 +2117,30 @@
              points: ordered.map((s, i) => ({ x: i, y: s.summary.policyScore == null ? null : Math.round(100 * s.summary.policyScore) })).filter(p => p.y != null) }],
           labels, { maxY: 100 })));
       }
+      if (ordered.some(s => s.summary.policyCritical != null || s.summary.leaverBreaches != null)) {
+        g.appendChild(card(T('sn.slaOverTime'), T('sn.perImport'), C.line([
+          { label: T('po.kCritical'), color: C.STATUS.critical,
+            points: ordered.map((s, i) => ({ x: i, y: s.summary.policyCritical == null ? null : s.summary.policyCritical })).filter(p => p.y != null) },
+          { label: T('sn.leaverBreaches'), color: C.STATUS.warning,
+            points: ordered.map((s, i) => ({ x: i, y: s.summary.leaverBreaches == null ? null : s.summary.leaverBreaches })).filter(p => p.y != null) }
+        ], labels)));
+      }
+      /* One department over time: €/head and risk, for the owner who asks "is mine improving". */
+      const deptKeys = U.uniq(ordered.flatMap(s => (s.summary.departments || []).map(d => d.key)));
+      if (deptKeys.length) {
+        const pick = (st.params && st.params.dept) || deptKeys[0];
+        const nameOf = k => { for (const s of ordered) { const d = (s.summary.departments || []).find(x => x.key === k); if (d) return d.name; } return k; };
+        const sel = el('select', {}, deptKeys.map(k => el('option', { value: k, text: nameOf(k), selected: k === pick })));
+        sel.onchange = () => HR.app.go('snapshots', { dept: sel.value });
+        const series = key => ordered.map((s, i) => { const d = (s.summary.departments || []).find(x => x.key === pick); return d ? { x: i, y: Math.round(d[key] || 0) } : null; }).filter(Boolean);
+        g.appendChild(card(T('sn.deptOverTime'), T('sn.deptNote'), [
+          el('div', { class: 'slot-actions', style: 'margin-bottom:8px' }, [sel]),
+          C.line([
+            { label: T('sc.cPerHead'), color: C.slot(4), points: series('costPerHead') },
+            { label: T('sc.cRisk'), color: C.slot(1), points: series('avgRisk') }
+          ], labels)
+        ]));
+      }
       g.appendChild(card(T('sn.moneyOverTime'), T('sn.perImport'), C.line([
         { label: T('ov.licenceSpend'), color: C.slot(4),
           points: ordered.map((s, i) => ({ x: i, y: Math.round(s.summary.monthlyCost || 0) })) },
@@ -2432,6 +2463,13 @@
       numField(cfg.effort, 'minutesPerManualAction', T('st.minManual')),
       numField(cfg.effort, 'minutesPerFailedAction', T('st.minFailed')),
       numField(cfg.effort, 'idleDayCost', T('st.idleDayCost'))
+      ])),
+
+      card(T('st.sla'), T('st.slaNote'), el('div', { class: 'row' }, [
+      numField(cfg.sla, 'joinerDays', T('st.slaJoiner')),
+      numField(cfg.sla, 'leaverDays', T('st.slaLeaver')),
+      numField(cfg.sla, 'moverDays', T('st.slaMover')),
+      numField(cfg.sla, 'privilegedReviewMonths', T('st.slaReview'))
       ])),
 
       card(T('st.thresholds'), null, el('div', { class: 'row' }, [

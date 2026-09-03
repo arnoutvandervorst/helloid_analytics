@@ -271,6 +271,10 @@
        {category} tokens; empty = the modules' built-in names). */
     mining: { excluded: [], ruleName: '', deepestOnly: true, ruleCap: 100 },
     policies: {},
+    /* Service levels the JML controls are judged against, in days / months. */
+    sla: { joinerDays: 7, leaverDays: 1, moverDays: 14, privilegedReviewMonths: 12 },
+    /* Access-review decisions imported from a decided attestation pack. */
+    attest: { decisions: {} },
     /* The classic role model's knobs (ported defaults from the old report). */
     classic: { minRoleMembers: 3, minRelevance: 50, globalPct: 90,
       similarityPct: 90, maxRoles: 100, clusterSim: 0.6, clusterMin: 5 }

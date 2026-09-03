@@ -179,6 +179,7 @@
     if (/^\s*[{[]/.test(text)) return importJsonFile(text, fileName);
     if (HR.nedapons.sniffMappingCsv(text)) return importNedapMappingCsv(text);
     if (looksLikeRuleExport(text)) return importRules(text, fileName);
+    if (HR.attest.looksLikePack(headerOf(text).join(','))) return importAttestation(text, fileName);
     if (looksLikeAssignmentExport(text)) return importAssignments(text, fileName);
     const activityKind = looksLikeActivityExport(text);
     if (activityKind) return importActivity(text, fileName, activityKind);
@@ -375,6 +376,17 @@
 
   function looksLikeAssignmentExport(text) {
     try { return HR.products.looksLikeAssignments(headerOf(text)); } catch (e) { return false; }
+  }
+
+  /** A decided attestation pack: the decisions come back as settings, the packs re-read them. */
+  async function importAttestation(text, fileName) {
+    let n = 0;
+    try { n = HR.attest.importDecisions(text); }
+    catch (err) { U.toast(err.message, 7000); return; }
+    HR.usage.imported('attestation-decisions', n);
+    rebuild();
+    U.toast(T('toast.attestDecisions', { n: U.fmtInt(n), file: fileName }), 6000);
+    go('org', { tab: 'attest' });
   }
 
   /** Product assignments: requested, approved, held. */
@@ -729,6 +741,14 @@
 
   async function recomputeDiff() {
     state.diff = (state.model && state.baselineModel) ? HR.diff.compare(state.model, state.baselineModel) : null;
+    /* When each finding was first and last seen, read off the snapshots that carried it. */
+    const seen = {};
+    (state.snapshots || []).forEach(sn => (sn.summary && sn.summary.findingIds || []).forEach(id => {
+      const at = sn.importedAt;
+      if (!seen[id]) seen[id] = { first: at, last: at };
+      else { seen[id].first = Math.min(seen[id].first, at); seen[id].last = Math.max(seen[id].last, at); }
+    }));
+    state.findingsSeen = seen;
     /* Whether the loaded sources describe one tenant. Said once, when a new import
        breaks the fit; the Sources page keeps the full picture. */
     const before = state.fit ? state.fit.worst : null;

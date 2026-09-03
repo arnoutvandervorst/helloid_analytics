@@ -362,6 +362,19 @@
     if (HR.policy && model.hasRecon) {
       try { Object.assign(model.summary, HR.policy.summaryOf(model)); } catch (e) { console.error(e); }
     }
+    /* What a trend needs beyond the totals: the finding ids (so a finding's age can be
+       read off the snapshots that carried it), the biggest departments, the JML breaches. */
+    try {
+      model.summary.findingIds = U.uniq(model.findings.map(f => f.id));
+      if (model.vault && HR.scorecard) {
+        const sc = HR.scorecard.build(model);
+        model.summary.departments = sc.rows.filter(r => r.people > 0).sort((a, b) => b.people - a.people).slice(0, 20)
+          .map(r => ({ key: r.key, name: r.name, people: r.people, costPerHead: r.costPerHead, leaversWithAccess: r.leaversWithAccess, avgRisk: r.avgRisk }));
+        const days = ((HR.config.get().sla || {}).leaverDays) || 1;
+        const lv = HR.workforce.leavers(model, model.vault);
+        model.summary.leaverBreaches = lv.rows.filter(r => r.enabledAccounts && (r.life.days || 0) > days).length;
+      }
+    } catch (e) { console.error(e); }
     return model;
   }
 

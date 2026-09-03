@@ -157,6 +157,67 @@
   }
 
   /** The file itself. The Decision column ships empty on purpose: it is the review. */
+  /** Key of one held entitlement on one account, the identity a decision is stored under. */
+  const decisionKey = (account, perm) => (account ? account.userName : '') + '|' + (perm ? perm.system : '') + '|' + (perm ? perm.name : '');
+
+  /** The stored decisions, with their age against the review period. */
+  function decisions() {
+    const cfg = HR.config.get();
+    return (cfg.attest && cfg.attest.decisions) || {};
+  }
+
+  /** How much of the held access carries a decision younger than the review period. */
+  function coverage(model, packs) {
+    const months = (HR.config.get().sla || {}).privilegedReviewMonths || 12;
+    const cutoff = new Date(); cutoff.setMonth(cutoff.getMonth() - months);
+    const dec = decisions();
+    let all = 0, allDone = 0, priv = 0, privDone = 0, revokePending = 0;
+    const pending = [];
+    for (const pack of packs) for (const r of pack.rows) {
+      if (!r.perm || !r.account) continue;
+      const d = dec[decisionKey(r.account, r.perm)];
+      const fresh = d && d.at && new Date(d.at) >= cutoff;
+      all++; if (fresh) allDone++;
+      if (r.perm.category === 'privileged' || r.perm.category === 'server') { priv++; if (fresh) privDone++; }
+      if (d && /revoke/i.test(d.decision)) { revokePending++; pending.push({ row: r, decision: d }); }
+    }
+    return { months, all, allDone, priv, privDone, revokePending, pending,
+      share: all ? allDone / all : 0, privShare: priv ? privDone / priv : 0 };
+  }
+
+  /** A decided pack, back in: every row with a Decision becomes a stored decision. */
+  const looksLikePack = header => /(^|,)decision(,|$)/i.test(header) && /(^|,)howgranted(,|$)/i.test(header);
+  function importDecisions(text) {
+    const delim = HR.parse.sniffDelim(text);
+    const grid = HR.parse.parseDelimited(text, delim).filter(r => r.length > 1);
+    const header = grid[0].map(h => h.trim().toLowerCase());
+    const col = {}; header.forEach((h, i) => { col[h] = i; });
+    const get = (row, k) => col[k] == null ? '' : (row[col[k]] || '').trim();
+    const cfg = HR.config.get();
+    cfg.attest = cfg.attest || {}; cfg.attest.decisions = cfg.attest.decisions || {};
+    const at = new Date().toISOString().slice(0, 10);
+    let n = 0;
+    for (let i = 1; i < grid.length; i++) {
+      const r = grid[i];
+      const decision = get(r, 'decision');
+      if (!decision) continue;
+      const key = get(r, 'account') + '|' + get(r, 'system') + '|' + get(r, 'entitlement');
+      cfg.attest.decisions[key] = { decision: decision.toLowerCase(), by: get(r, 'manager'), at, comment: get(r, 'comment') };
+      n++;
+    }
+    HR.config.save();
+    return n;
+  }
+
+  /** Everything decided "revoke" that is still held today: the work the review created. */
+  function revokeCsv(model, packs) {
+    const cov = coverage(model, packs);
+    return U.toCSV(cov.pending.map(({ row, decision }) => ({
+      Manager: decision.by, Person: row.person.displayName, Account: row.account.userName,
+      System: row.perm.system, Entitlement: row.perm.name, DecidedOn: decision.at, Comment: decision.comment || ''
+    })), ['Manager', 'Person', 'Account', 'System', 'Entitlement', 'DecidedOn', 'Comment']);
+  }
+
   function toCsv(model, packs) {
     const rows = [];
     for (const pack of packs) {
@@ -176,8 +237,8 @@
           Sensitive: r.perm && r.perm.sensitivity >= 1.6 ? 'yes' : '',
           MonthlyCost: r.perm && r.perm.monthlyPrice ? r.perm.monthlyPrice.toFixed(2) : '',
           HowGranted: r.reason.text,
-          Decision: '',
-          Comment: ''
+          Decision: (decisions()[decisionKey(r.account, r.perm)] || {}).decision || '',
+          Comment: (decisions()[decisionKey(r.account, r.perm)] || {}).comment || ''
         });
       }
     }
@@ -186,5 +247,5 @@
       'Sensitive', 'MonthlyCost', 'HowGranted', 'Decision', 'Comment']);
   }
 
-  HR.attest = { build, toCsv };
+  HR.attest = { build, toCsv, coverage, decisions, decisionKey, importDecisions, revokeCsv, looksLikePack };
 })(window.HR);

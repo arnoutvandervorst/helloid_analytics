@@ -30,7 +30,7 @@
   function diffSummary(a, b) {
     const keys = ['rows', 'accounts', 'enabledAccounts', 'disabledAccounts', 'persons', 'permissions',
       'orphanAccounts', 'orphanEnabled', 'unmanagedPermissionRows', 'unmanagedAccountRows',
-      'missingPermissionRows', 'riskScore', 'monthlyCost', 'wasteMonthly', 'policyScore', 'policyCritical'];
+      'missingPermissionRows', 'riskScore', 'monthlyCost', 'wasteMonthly', 'policyScore', 'policyCritical', 'leaverBreaches'];
     const out = {};
     keys.forEach(k => out[k] = delta(a[k], b[k]));
     return out;
