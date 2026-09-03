@@ -237,6 +237,7 @@
       ISSUE_ACCOUNT, ISSUE_PERM_UNMANAGED, ISSUE_PERM_MISSING
     };
 
+    if (HR.sod) HR.sod.evaluate(model);   // toxic combinations feed the account risk below
     HR.risk.score(model);         // adds risk fields to accounts/permissions + model.risk
     HR.cost.compute(model);       // adds model.cost
 

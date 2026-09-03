@@ -180,7 +180,7 @@
      pipe-separated entry is satisfied by any one of its options. Views absent
      here run on whatever is loaded and degrade with partialNotice instead. */
   const REQUIRES = {
-    overview: ['recon'], risk: ['recon'], cost: ['recon'],
+    overview: ['recon'], policies: ['recon'], risk: ['recon'], cost: ['recon'],
     accounts: ['recon'], permissions: ['recon'],
     people: ['vault|recon'], org: ['vault'], matching: ['recon', 'vault'],
     mining: ['vault'], rules: ['rules'],
@@ -840,9 +840,46 @@
       { id: 'findings', label: T('rk.tab.findings'), count: m.findings.length,
         build: () => riskFindings(m) },
       { id: 'score', label: T('rk.tab.score'), build: () => riskScoreTab(m) },
-      { id: 'permissions', label: T('rk.tab.permissions'), build: () => riskPermsTab(m) }
-    ], params));
+      { id: 'permissions', label: T('rk.tab.permissions'), build: () => riskPermsTab(m) },
+      HR.sod ? { id: 'toxic', label: T('sod.tab'), count: HR.sod.evaluate(m).violations.length, build: () => riskToxicTab(m) } : null
+    ].filter(Boolean), params));
     return f;
+  }
+
+  /* Toxic combinations: the pairs, who breaks them, and the two things that collide. */
+  function riskToxicTab(m) {
+    const sod = HR.sod.evaluate(m);
+    const s = sod.summary;
+    const wrap = el('div', {});
+    wrap.appendChild(el('div', { class: 'grid g4', style: 'margin-bottom:14px' }, [
+      tile(T('sod.kViolations'), U.fmtInt(s.violations), T('sod.kViolationsFoot', { critical: U.fmtInt(s.bySeverity.critical), high: U.fmtInt(s.bySeverity.high) }),
+        { severity: s.bySeverity.critical ? 'critical' : s.violations ? 'high' : 'good' }),
+      tile(T('sod.kAccounts'), U.fmtInt(s.accounts), T('sod.kAccountsFoot'), { small: true }),
+      tile(T('sod.kPeople'), U.fmtInt(s.people), T('sod.kPeopleFoot'), { small: true }),
+      tile(T('sod.kRules'), U.fmtInt(s.rules), T('sod.kRulesFoot', { hit: U.fmtInt(sod.byRule.filter(r => r.count).length) }), { small: true })
+    ]));
+    wrap.appendChild(card(T('sod.rulesTitle'), T('sod.rulesNote'), [
+      C.barList(sod.byRule.map(r => ({ label: r.rule.label, value: r.count, sev: r.rule.severity })), { format: v => U.fmtInt(v) }),
+      el('p', { class: 'note' }, [document.createTextNode(T('sod.editNote') + ' '),
+        el('a', { href: '#', text: T('sod.editLink'), onclick: e => { e.preventDefault(); HR.app.go('settings', { tab: 'classification' }); } })])
+    ]));
+    const sideText = (v, side) => v[side] ? v[side].name : T('sod.accountType', { cls: T('cls.' + v.account.cls) || v.account.cls });
+    wrap.appendChild(card(T('sod.violationsTitle'), null, HR.table.make({
+      columns: [
+        { key: 'severity', label: T('c.severity'), value: v => ({ critical: 0, high: 1, medium: 2 })[v.severity],
+          render: v => el('span', { class: 'sev ' + v.severity, text: T('c.' + v.severity) }) },
+        { key: 'rule', label: T('sod.cRule'), value: v => v.rule.label },
+        { key: 'account', label: T('c.account'), value: v => v.account.userName },
+        { key: 'person', label: T('c.person'), value: v => v.person || '', render: v => v.person ? el('span', { text: v.person }) : el('span', { class: 'note', text: T('c.unowned') }) },
+        { key: 'a', label: T('sod.cA'), value: v => sideText(v, 'a') },
+        { key: 'b', label: T('sod.cB'), value: v => sideText(v, 'b') }
+      ],
+      rows: sod.violations, pageSize: 25, exportName: 'toxic-combinations',
+      initialSort: { key: 'severity', dir: 1 },
+      search: (v, q) => (v.account.userName + ' ' + v.person + ' ' + v.rule.label).toLowerCase().includes(q),
+      onRowClick: v => drawerAccount(v.account)
+    })));
+    return wrap;
   }
 
   /* How the overall number is built, and which classes and categories carry it. */
@@ -1493,6 +1530,8 @@
     }
     f.appendChild(k);
 
+    let outliers = null;
+    try { outliers = m.hasRecon && HR.outlier ? HR.outlier.build(m) : null; } catch (e) { outliers = null; }
     const columns = [
       { key: 'name', label: T('c.person'), value: r => r.person.displayName },
       { key: 'externalId', label: T('c.employeeId'), value: r => r.person.externalId,
@@ -1508,9 +1547,18 @@
       { key: 'accounts', label: T('pp.accounts'), num: true, value: r => r.accounts.length },
       { key: 'perms', label: T('c.perms'), num: true, value: r => r.perms.length },
       { key: 'cost', label: T('c.costMo'), num: true, value: r => r.monthlyCost, render: r => U.fmtMoney(r.monthlyCost) },
-      { key: 'risk', label: T('pp.maxRisk'), num: true, value: r => r.maxRisk, render: r => r.accounts.length ? scoreBar(r.maxRisk) : '—' }
+      { key: 'risk', label: T('pp.maxRisk'), num: true, value: r => r.maxRisk, render: r => r.accounts.length ? scoreBar(r.maxRisk) : '—' },
+      outliers ? { key: 'outlier', label: T('ol.col'), num: true, hint: T('ol.colHint'),
+        value: r => { const o = outliers.byPerson.get(r.person.personId); return o ? o.score : -1; },
+        render: r => { const o = outliers.byPerson.get(r.person.personId); return o ? scoreBar(o.score) : el('span', { class: 'note', text: '\u2014' }); } } : null
     ].filter(Boolean);
 
+    if (outliers && outliers.rows.length) {
+      f.appendChild(el('div', { class: 'grid g4', style: 'margin-top:14px' }, [
+        tile(T('ol.kHigh'), U.fmtInt(outliers.summary.high), T('ol.kHighFoot', { of: U.fmtInt(outliers.summary.people), mean: outliers.summary.mean }),
+          { severity: outliers.summary.high ? 'medium' : 'good', small: true })
+      ]));
+    }
     f.appendChild(el('div', { style: 'margin-top:14px' }, card(null, null, HR.table.make({
       columns,
       rows, pageSize: 40, exportName: 'people',
@@ -1720,6 +1768,20 @@
       [T('pp.jobTitle'), row.title || '—'],
       [T('dr.monthlyCost'), U.fmtMoney(row.monthlyCost)]
     ]));
+    /* How far this person's access is from anyone else's, and what drives it. */
+    let ol = null;
+    try { ol = m && m.hasRecon && HR.outlier ? HR.outlier.build(m).byPerson.get(p.personId) : null; } catch (e) { ol = null; }
+    if (ol) {
+      const permName = k => { const perm = m.permissions.get(k); return perm ? perm.name : String(k); };
+      const list = ents => ents.slice(0, 5).map(permName).join(', ') + (ents.length > 5 ? ' +' + (ents.length - 5) : '');
+      body.appendChild(card(T('ol.title'), T('ol.note'), dl([
+        [T('ol.score'), scoreBar(ol.score)],
+        [T('ol.fPeer'), el('span', {}, [scoreBar(ol.factors.peer.value), el('span', { class: 'note', text: ' ' + (ol.factors.peer.peer
+          ? T('ol.fPeerD', { p: Math.round(100 * ol.factors.peer.similarity), name: ol.factors.peer.peer.person.displayName }) : T('ol.fPeerNone')) })])],
+        [T('ol.fStandalone'), el('span', {}, [scoreBar(ol.factors.standalone.value), el('span', { class: 'note', text: ' ' + list(ol.factors.standalone.ents) })])],
+        [T('ol.fRare'), el('span', {}, [scoreBar(ol.factors.rare.value), el('span', { class: 'note', text: ' ' + list(ol.factors.rare.ents) })])]
+      ])));
+    }
 
     body.appendChild(card(T('pp.drawerContracts'), T('dr.groupsN', { n: p.contracts.length }), HR.table.make({
       columns: [
@@ -2174,6 +2236,18 @@
         return co && toks.includes(co.slice(2));
       }).length };
     };
+    if (!Array.isArray(cfg.sod)) cfg.sod = HR.config.clone(HR.sod.DEFAULTS);
+    /* A pair's live count: how many accounts break it today. */
+    const sodCount = item => {
+      const m2 = HR.app.state.model;
+      if (!m2 || !m2.hasRecon) return null;
+      const probe = Object.assign({}, m2, { _sod: null });
+      const saved = HR.config.get().sod;
+      HR.config.get().sod = [item];
+      let n = 0;
+      try { n = HR.sod.evaluate(probe).violations.length; } finally { HR.config.get().sod = saved; }
+      return { valid: true, count: n };
+    };
     const classificationTab = () => grid([
       HR.app.state.model ? card(T('wz.stTitle'), T('wz.stNote'), el('div', { class: 'slot-actions' },
         el('button', { class: 'btn primary', text: T('wz.stOpen'),
@@ -2197,6 +2271,16 @@
             cfg.categories.map(c => ({ value: c.id, label: HR.config.labelOf(c) })) }],
         () => ({ t: '', id: 'other' }),
         { matchFn: hintCatCount }),
+      editableList(T('st.sodTitle'), T('st.sodNote'),
+        cfg.sod,
+        [{ key: 'label', label: T('st.sodLabel'), width: '220px' },
+         { key: 'aKind', label: T('st.sodA'), options: () => HR.sod.KINDS.map(k => ({ value: k, label: T('st.sodKind.' + k) })) },
+         { key: 'aValue', label: T('st.sodValue'), width: '140px' },
+         { key: 'bKind', label: T('st.sodB'), options: () => HR.sod.KINDS.map(k => ({ value: k, label: T('st.sodKind.' + k) })) },
+         { key: 'bValue', label: T('st.sodValue'), width: '140px' },
+         { key: 'severity', label: T('c.severity'), options: () => HR.sod.SEVERITIES.map(v => ({ value: v, label: T('c.' + v) })) }],
+        () => ({ id: 'sod' + Date.now(), label: '', aKind: 'category', aValue: '', bKind: 'category', bValue: '', severity: 'medium' }),
+        { matchFn: sodCount }),
       editableList(T('st.hintsCls'), T('st.hintsClsNote'),
         cfg.hints.classes,
         [{ key: 't', label: T('st.hintTokensExact'), width: '260px' },

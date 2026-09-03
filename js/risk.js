@@ -9,7 +9,7 @@
     const cfg = HR.config.get();
     const R = cfg.risk;
 
-    for (const a of model.accountList) scoreAccount(a, cfg, R);
+    for (const a of model.accountList) scoreAccount(a, cfg, R, model);
     for (const p of model.permissionList) scorePermission(p, model, cfg);
 
     const accs = model.accountList;
@@ -55,7 +55,7 @@
     })).sort((a, b) => b.meanRisk - a.meanRisk);
   }
 
-  function scoreAccount(a, cfg, R) {
+  function scoreAccount(a, cfg, R, model) {
     const parts = [];
     const add = (label, value, detail, noMult) => { if (value > 0.01) parts.push({ label, value, detail, noMult }); };
 
@@ -114,6 +114,12 @@
     if (a.permCount >= 3 && a.peerBest != null && a.outlier > 0.4) {
       add(T('rc.outlier'), R.outlierBonus * ((a.outlier - 0.4) / 0.6),
         T('rc.outlierD', { p: Math.round((a.peerBest || 0) * 100) }));
+    }
+
+    /* --- toxic combination: two things one account should never hold together --- */
+    if (HR.sod && model && model._sod && (R.toxicBonus || 0) > 0) {
+      const w = HR.sod.weightOf(model, a);
+      if (w > 0) add(T('rc.toxic'), R.toxicBonus * w, T('rc.toxicD', { n: model._sod.perAccount.get(a.key).length }));
     }
 
     /* --- duplicate licence SKUs on one account --- */

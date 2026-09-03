@@ -18,6 +18,14 @@
 
   const ENTRIES = [
     {
+      version: '2026.9.23', date: '2026-09-03',
+      changes: [
+        'Toxic combinations. Separation of duties as data: each pair is two things one account must not hold together — a permission category, a word in a permission name or an account type on either side — checked against every account. Four defaults hold on any tenant (privileged access on an external, test or shared account; two privileged groups on one account; finance with procurement as the example to edit). Violations appear as a tab under Risk & findings, as a finding, as a critical control on Compliance (NIS2 21(2)(i), ISO A.5.3, BIO 6.1.2), and add to the account’s risk; the pairs are edited under Settings › Classification with a live count.',
+        'Identity outliers. Every person with access gets an outlier score from three explained factors: how little they share with their closest peer, how much of their access no rule or product hands out, and how much of it fewer than one in a hundred people hold. People gains the column and a tile; the person drawer shows the three factors with the entitlements behind them; a finding lists people scoring 70 or more.',
+        'Compliance reads as a scorecard now: each control is what it is and why, where you stand against the limit with a gauge, and who owns it by when — the editing controls fold behind “Edit”. Compliance is also gated on a reconciliation like the other Governance views.'
+      ]
+    },
+    {
       version: '2026.9.22', date: '2026-09-03',
       changes: [
         '“Am I compliant?” gets its own page under Governance: Compliance. Every control now carries a severity (critical, high, medium, low), the framework articles it evidences (NIS2 21(2), ISO 27001:2022 Annex A, BIO) and, where one exists, the finding that computes the same thing. The score is weighted — a failed critical control counts three times a housekeeping one — and the page groups controls by severity, critical first, with a filter per framework.',

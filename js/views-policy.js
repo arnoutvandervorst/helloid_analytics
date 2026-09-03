@@ -69,106 +69,120 @@
     ].filter(Boolean));
   }
 
+  /* One control, three columns: what it is and why; where we stand against the limit;
+     who owns it and by when. Editing (limit, switch, owner, due, exception) folds
+     behind one link so the page reads as a scorecard, not a form. */
   function policyLine(m, row) {
     const id = row.def.id;
-    const head = el('div', { class: 'row', style: 'gap:10px;align-items:center;flex-wrap:wrap' });
+    const wrap = el('div', { class: 'ctl' + (row.applicable && row.on && row.status === 'notMet' ? ' open' : '') });
 
+    /* --- column 1: what --- */
+    const status = !row.applicable
+      ? el('span', { class: 'pill muted', text: T('po.needs') })
+      : !row.on ? el('span', { class: 'pill muted', text: T('po.off') })
+      : el('span', { class: 'pill ' + (row.status === 'met' ? 'ok' : row.status === 'accepted' ? 'warn' : 'removed'),
+          text: T('po.status.' + row.status) });
+    const what = el('div', { class: 'ctl-what' }, [
+      el('div', { class: 'row', style: 'gap:8px;align-items:center' }, [
+        status,
+        el('span', { class: 'sev ' + (row.def.severity || 'medium'), title: T('po.sev.' + (row.def.severity || 'medium')) }),
+        el('strong', { text: T('po.p.' + id) })
+      ]),
+      el('p', { class: 'note ctl-desc', text: T('po.p.' + id + '.d') }),
+      el('div', { class: 'ctl-refs' }, refPills(row.def))
+    ]);
     if (!row.applicable) {
-      head.append(
-        el('span', { class: 'pill muted', text: T('po.needs') }),
-        el('strong', { text: T('po.p.' + id) }),
-        el('span', { class: 'note', text: T('po.needsNote', {
-          list: row.missing.map(n => T('po.need.' + n)).join(', ') }) })
-      );
-    } else {
-      head.append(
-        row.on
-          ? el('span', { class: 'pill ' + (row.status === 'met' ? 'ok' : row.status === 'accepted' ? 'warn' : 'removed'),
-              text: T('po.status.' + row.status) })
-          : el('span', { class: 'pill muted', text: T('po.off') }),
-        el('span', { class: 'sev ' + row.severity, text: T('po.sev.' + row.severity) }),
-        el('strong', { text: T('po.p.' + id) }),
-        el('span', { class: 'mono', text: fmtVal(row) }),
-        el('span', { class: 'note', text: fmtLimit(row) })
-      );
+      what.appendChild(el('p', { class: 'note', text: T('po.needsNote', { list: row.missing.map(n => T('po.need.' + n)).join(', ') }) }));
     }
-    refPills(row.def).forEach(p => head.appendChild(p));
+    if (row.applicable && row.on && row.status === 'notMet') {
+      what.appendChild(el('p', { class: 'note ctl-fix' }, [
+        el('span', { class: 'sev medium', text: T('po.improve') }),
+        document.createTextNode(' ' + T('po.p.' + id + '.fix'))
+      ]));
+    }
+    if (row.applicable && row.status === 'accepted') {
+      what.appendChild(el('p', { class: 'note ctl-fix', text: T('po.exAccepted', {
+        until: row.exception.until, by: row.exception.by || '—', why: row.exception.why || '—' }) }));
+    }
 
-    /* threshold input */
-    const tIn = el('input', { type: 'number', min: 0, step: row.def.unit === 'pct' ? 0.5 : 1,
-      value: row.threshold });
+    /* --- column 2: now vs limit --- */
+    const stand = el('div', { class: 'ctl-stand' });
+    if (row.applicable) {
+      const pct = row.def.unit === 'pct';
+      stand.appendChild(el('div', { class: 'ctl-now mono', text: fmtVal(row) }));
+      stand.appendChild(el('div', { class: 'note', text: T('po.limitIs', { limit: fmtLimit(row) }) }));
+      if (pct) {
+        const cap = Math.max(row.threshold, row.value, 1);
+        stand.appendChild(el('div', { class: 'ctl-gauge' }, [
+          el('i', { class: row.met ? 'ok' : 'bad', style: 'width:' + Math.min(100, 100 * row.value / cap) + '%' }),
+          el('b', { style: 'left:' + Math.min(100, 100 * row.threshold / cap) + '%', title: fmtLimit(row) })
+        ]));
+      }
+      if (row.affected.length) {
+        stand.appendChild(el('a', { href: '#', class: 'ctl-affected', text: T('po.affectedN', { n: U.fmtInt(row.affected.length) }),
+          onclick: e => { e.preventDefault(); openAffected(m, row); } }));
+      }
+    }
+
+    /* --- column 3: who, by when, and the fold --- */
+    const who = el('div', { class: 'ctl-who' });
+    who.appendChild(el('div', { class: 'ctl-kv' }, [
+      el('span', { class: 'note', text: T('po.owner') }),
+      el('span', { text: row.owner || '—' })
+    ]));
+    who.appendChild(el('div', { class: 'ctl-kv' }, [
+      el('span', { class: 'note', text: T('po.due') }),
+      el('span', { text: row.due || '—' })
+    ]));
+    if (row.def.finding) {
+      who.appendChild(el('a', { href: '#', class: 'note', text: T('po.seeFinding'),
+        onclick: e => { e.preventDefault(); HR.app.go('risk', { tab: 'findings' }); } }));
+    }
+    const editor = el('div', { class: 'ctl-edit', hidden: true });
+    const editLink = el('a', { href: '#', class: 'note', text: T('po.edit') + ' ▾', onclick: e => {
+      e.preventDefault(); editor.hidden = !editor.hidden;
+      editLink.textContent = T('po.edit') + (editor.hidden ? ' ▾' : ' ▴');
+    } });
+    who.appendChild(editLink);
+    wrap.append(what, stand, who);
+
+    /* --- the fold: limit, switch, owner, due, exception, log --- */
+    const tIn = el('input', { type: 'number', min: 0, step: row.def.unit === 'pct' ? 0.5 : 1, value: row.threshold });
     tIn.style.width = '72px';
     tIn.onchange = () => change(m, id, { t: Math.max(0, +tIn.value || 0) });
-    head.appendChild(el('label', { class: 'inline' }, [
-      document.createTextNode(T('po.limitLabel')), tIn,
-      document.createTextNode(row.def.unit === 'pct' ? '%' : '')
-    ]));
-
+    const controls = el('div', { class: 'slot-actions' }, [
+      el('label', { class: 'inline' }, [document.createTextNode(T('po.limitLabel')), tIn,
+        document.createTextNode(row.def.unit === 'pct' ? '%' : '')])
+    ]);
     if (row.def.paramDef !== undefined) {
       const pIn = el('input', { type: 'number', min: 1, step: 1, value: row.param });
       pIn.style.width = '64px';
       pIn.onchange = () => change(m, id, { p: Math.max(1, Math.round(+pIn.value || 1)) });
-      head.appendChild(el('label', { class: 'inline' }, [
-        document.createTextNode(T('po.paramLabel.' + id)), pIn
-      ]));
+      controls.appendChild(el('label', { class: 'inline' }, [document.createTextNode(T('po.paramLabel.' + id)), pIn]));
     }
-
     const onIn = el('input', { type: 'checkbox' });
     onIn.checked = row.on;
     onIn.onchange = () => change(m, id, { on: onIn.checked });
-    head.appendChild(el('label', { class: 'inline' }, [onIn,
-      document.createTextNode(T('po.countLabel'))]));
-
-    if (row.applicable && row.affected.length) {
-      head.appendChild(el('a', { href: '#', text: T('po.affectedN', { n: U.fmtInt(row.affected.length) }),
-        onclick: e => { e.preventDefault(); openAffected(m, row); } }));
-    }
-
-    /* Who owns the control and by when — the two fields an audit asks for first. */
+    controls.appendChild(el('label', { class: 'inline' }, [onIn, document.createTextNode(T('po.countLabel'))]));
     const owner = el('input', { type: 'text', value: row.owner || '', placeholder: T('po.owner') });
     owner.style.width = '150px';
     owner.onchange = () => change(m, id, { owner: owner.value.trim() });
     const due = el('input', { type: 'date', value: row.due || '' });
     due.onchange = () => change(m, id, { due: due.value });
-    head.append(
+    controls.append(
       el('label', { class: 'inline' }, [document.createTextNode(T('po.owner')), owner]),
       el('label', { class: 'inline' }, [document.createTextNode(T('po.due')), due])
     );
-    if (row.def.finding) {
-      head.appendChild(el('a', { href: '#', class: 'note', text: T('po.seeFinding'),
-        onclick: e => { e.preventDefault(); HR.app.go('risk', { tab: 'findings' }); } }));
-    }
-
-    const lines = [head, el('p', { class: 'note', style: 'margin:2px 0 0',
-      text: T('po.p.' + id + '.d') })];
-    /* The exception form stays folded until asked for: fourteen open forms is noise. */
-    const foldedForm = () => {
-      const holder = el('div', {});
-      const open = el('a', { href: '#', class: 'note', text: T('po.exOpen'), onclick: e => {
-        e.preventDefault(); holder.innerHTML = ''; holder.appendChild(exceptionForm(m, row));
-      } });
-      holder.appendChild(el('p', { class: 'note', style: 'margin:2px 0 0' }, [open]));
-      return holder;
-    };
-    if (row.applicable && row.on && row.status === 'notMet') {
-      lines.push(el('p', { class: 'note', style: 'margin:2px 0 0' }, [
-        el('span', { class: 'sev medium', text: T('po.improve') }),
-        document.createTextNode(' ' + T('po.p.' + id + '.fix'))
-      ]));
-      lines.push(foldedForm());
-    }
-    if (row.applicable && row.status === 'accepted') {
-      lines.push(el('p', { class: 'note', style: 'margin:2px 0 0', text: T('po.exAccepted', {
-        until: row.exception.until, by: row.exception.by || '\u2014', why: row.exception.why || '\u2014' }) }));
-      lines.push(foldedForm());
-    }
+    editor.appendChild(controls);
+    if (row.applicable && (row.status === 'notMet' || row.status === 'accepted')) editor.appendChild(exceptionForm(m, row));
     if (row.changes && row.changes.length) {
       const last = row.changes[row.changes.length - 1];
-      lines.push(el('p', { class: 'note', style: 'margin:2px 0 0', title: row.changes.slice(-5).map(c =>
-        c.at.slice(0, 10) + ' ' + c.field + ': ' + JSON.stringify(c.from) + ' \u2192 ' + JSON.stringify(c.to)).join('\n'),
+      editor.appendChild(el('p', { class: 'note', style: 'margin:4px 0 0', title: row.changes.slice(-5).map(c =>
+        c.at.slice(0, 10) + ' ' + c.field + ': ' + JSON.stringify(c.from) + ' → ' + JSON.stringify(c.to)).join('\n'),
         text: T('po.lastChange', { at: last.at.slice(0, 10), field: last.field }) }));
     }
-    return el('div', { style: 'padding:10px 0;border-bottom:1px solid var(--border)' }, lines);
+    wrap.appendChild(editor);
+    return wrap;
   }
 
   /** The whole scorecard as one file: what an audit takes away. */

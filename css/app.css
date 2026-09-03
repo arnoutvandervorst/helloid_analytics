@@ -308,6 +308,25 @@ svg.chart text { font-family: inherit; }
   font-size: 10px; line-height: 1; cursor: help; vertical-align: middle; flex: none;
 }
 .lead { cursor: help; }
+/* Compliance controls: what · where we stand · who; editing folds beneath. */
+.ctl { display: grid; grid-template-columns: minmax(0, 1fr) 190px 210px; gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--border); align-items: start; }
+.ctl.open { background: linear-gradient(90deg, color-mix(in srgb, var(--critical) 6%, transparent), transparent 40%); }
+.ctl-what strong { font-size: 14px; }
+.ctl-desc { margin: 4px 0 0; }
+.ctl-refs { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.ctl-refs .pill { font-size: 10.5px; }
+.ctl-fix { margin: 6px 0 0; }
+.ctl-stand { padding-top: 2px; }
+.ctl-now { font-size: 22px; font-weight: 600; line-height: 1.1; }
+.ctl-gauge { position: relative; height: 6px; margin: 8px 0 6px; border-radius: 3px; background: var(--surface-2); overflow: visible; }
+.ctl-gauge i { display: block; height: 6px; border-radius: 3px; }
+.ctl-gauge i.ok { background: var(--good); } .ctl-gauge i.bad { background: var(--critical); }
+.ctl-gauge b { position: absolute; top: -3px; width: 2px; height: 12px; background: var(--text-primary); transform: translateX(-1px); }
+.ctl-affected { display: inline-block; margin-top: 4px; font-size: 12px; }
+.ctl-who { font-size: 12px; display: flex; flex-direction: column; gap: 4px; padding-top: 2px; }
+.ctl-kv { display: grid; grid-template-columns: 56px 1fr; gap: 6px; }
+.ctl-edit { grid-column: 1 / -1; padding: 8px 10px; border-radius: 8px; background: var(--surface-2); }
+@media (max-width: 900px) { .ctl { grid-template-columns: 1fr; } }
 .fit-row { display: grid; grid-template-columns: minmax(200px, 30%) 1fr auto; gap: 12px; align-items: center; font-size: 12px; }
 .fit-row.small { opacity: .7; }
 .fit-pair { font-weight: 600; }

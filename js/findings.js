@@ -185,6 +185,18 @@
       }, prose('peer-outlier', { n: hits.length }));
     },
 
+    function toxicCombinations(m) {
+      if (!HR.sod) return null;
+      const sod = HR.sod.evaluate(m);
+      if (!sod.violations.length) return null;
+      return Object.assign({
+        id: 'sod-violation', severity: sod.summary.worst === 'critical' ? 'critical' : 'high', category: T('fi.cat.identity'),
+        entities: sod.violations.slice(0, 60).map(v => ({ type: 'account', key: v.account.key, label: v.account.userName,
+          detail: v.rule.label + ': ' + [v.a && v.a.name, v.b && v.b.name, !v.a || !v.b ? T('fi.sod-violation.cls', { cls: v.account.cls }) : ''].filter(Boolean).join(' + ') })),
+        impactMonthly: 0
+      }, prose('sod-violation', { n: sod.violations.length, accounts: sod.summary.accounts, rules: sod.byRule.filter(r => r.count).length }));
+    },
+
     function rareSensitive(m) {
       const hits = m.permissionList.filter(p => p.rare && p.sensitivity >= 1.5 && p.holderCount > 0);
       if (!hits.length) return null;
@@ -393,6 +405,19 @@
   /* ---------------------------------------------------------------------------
      Vault findings — only when a vault export makes conditions evaluable. */
   const VAULT_RULES = [
+    function identityOutliers(m) {
+      if (!HR.outlier) return null;
+      const o = HR.outlier.build(m);
+      const hits = o.rows.filter(r => r.score >= HR.outlier.HIGH).slice(0, 60);
+      if (!hits.length) return null;
+      return Object.assign({
+        id: 'identity-outlier', severity: 'medium', category: T('fi.cat.entitlements'),
+        entities: hits.map(r => ({ type: 'person', key: r.person.personId, label: r.person.displayName,
+          detail: T('fi.identity-outlier.detail', { score: r.score, peer: r.factors.peer.value, standalone: r.factors.standalone.value, rare: r.factors.rare.value }) })),
+        impactMonthly: 0
+      }, prose('identity-outlier', { n: hits.length, of: o.rows.length }));
+    },
+
     function ruleSelectsNobody(m) {
       const ev = m.evaluation;
       const dead = [];

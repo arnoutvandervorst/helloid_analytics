@@ -229,6 +229,12 @@
       } },
     /* AD's replicated lastLogonTimestamp can lag up to two weeks; at a 90-day
        limit that lag is noise. Accounts with no recorded sign-in are skipped. */
+    { id: 'sod-violations', unit: 'count', dir: 'max', def: 0, needs: [], severity: 'critical',
+      refs: { nis2: '21(2)(i)', iso27001: 'A.5.3', bio: '6.1.2' }, finding: 'sod-violation',
+      measure: m => {
+        const sod = HR.sod ? HR.sod.evaluate(m) : { violations: [] };
+        return { value: sod.violations.length, affected: sod.violations.map(v => ({ kind: 'account', a: v.account })) };
+      } },
     { id: 'dormant-accounts', severity: 'high', refs: { iso27001: 'A.5.18', bio: '9.2.5' }, unit: 'pct', dir: 'max', def: 5, paramDef: 90, needs: ['directory', 'lastlogon'],
       measure: (m, param) => {
         const now = Date.now();

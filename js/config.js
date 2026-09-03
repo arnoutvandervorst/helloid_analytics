@@ -190,6 +190,7 @@
     rarityBonus: 10,                // max bonus for entitlements almost nobody else holds
     stackedLicenceBonus: 8,
     outlierBonus: 12,               // peer-group entitlement outlier
+    toxicBonus: 15,                 // a toxic combination on the account, scaled by its severity
     unmanagedPermCap: 22,           // ceiling on the entitlement-drift component
     accountCap: 100                 // account scores clamp here
   };
