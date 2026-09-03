@@ -1101,8 +1101,13 @@
     k.append(
       tile(T('ov.licenceSpend'), U.fmtMoney(c.totalMonthly) + '/mo', T('ov.perYear', { amount: U.fmtMoney(c.totalAnnual) }), { delta: bDelta('monthlyCost'), deltaFormat: U.fmtMoney, onClick: () => HR.app.go('cost', { tab: 'spend' }) }),
       tile(T('ct.recoverableNow'), U.fmtMoney(c.wasteMonthly) + '/mo', T('ov.perYear', { amount: U.fmtMoney(c.wasteAnnual) }), { severity: c.wasteMonthly ? 'high' : 'good', onClick: () => HR.app.go('cost', { tab: 'waste' }) }),
-      tile(T('ct.outsideControl'), U.fmtMoney(c.unmanagedSpend) + '/mo', T('ct.outsideControlFoot'), { severity: 'medium', onClick: () => HR.app.go('permissions') }),
-      tile(T('ov.cleanup'), U.fmtMoney(c.remediationCost), T('ct.cleanupFoot', { h: Math.round(c.remediation.hours) }) + (c.paybackMonths ? ' \u00b7 ' + T('ct.payback', { n: U.fmtNum(c.paybackMonths, 1) }) : ''), { small: true, onClick: () => HR.app.go('cost', { tab: 'case' }) })
+      c.hidden ? tile(T('ct.hidden'), U.fmtMoney(c.hidden.hiddenMonthly) + '/mo', T('ct.hiddenFoot', { amount: U.fmtMoney(c.hidden.hiddenMonthly * 12) }),
+        { severity: c.hidden.hiddenMonthly ? 'medium' : 'good', onClick: () => HR.app.go('cost', { tab: 'waste' }) })
+        : tile(T('ct.outsideControl'), U.fmtMoney(c.unmanagedSpend) + '/mo', T('ct.outsideControlFoot'), { severity: 'medium', onClick: () => HR.app.go('permissions') }),
+      c.hidden && c.hidden.trueup.rows.length
+        ? tile(T('ct.shelfware'), U.fmtMoney(c.hidden.trueup.shelfware) + '/mo', T('ct.shelfwareFoot', { n: U.fmtInt(c.hidden.trueup.rows.length), under: U.fmtInt(c.hidden.trueup.under) }),
+            { severity: c.hidden.trueup.under ? 'high' : c.hidden.trueup.shelfware ? 'medium' : 'good', onClick: () => HR.app.go('cost', { tab: 'spend' }) })
+        : tile(T('ov.cleanup'), U.fmtMoney(c.remediationCost), T('ct.cleanupFoot', { h: Math.round(c.remediation.hours) }) + (c.paybackMonths ? ' \u00b7 ' + T('ct.payback', { n: U.fmtNum(c.paybackMonths, 1) }) : ''), { small: true, onClick: () => HR.app.go('cost', { tab: 'case' }) })
     );
     f.appendChild(k);
 
@@ -1140,6 +1145,61 @@
       search: (r, q) => (r.userName + ' ' + r.displayName).toLowerCase().includes(q),
       onRowClick: a => drawerAccount(a)
     }))));
+
+    /* The hidden buckets: burning, not counted in the recoverable headline. */
+    const h = c.hidden;
+    if (h) {
+      const hb = [
+        { key: 'leavers', label: T('ct.hLeavers'), value: h.leavers.monthly, note: T('ct.hLeaversNote', { n: U.fmtInt(h.leavers.rows.length), toDate: U.fmtMoney(h.leavers.toDate) }), available: h.leavers.available, color: C.STATUS.critical },
+        { key: 'dormant', label: T('ct.hDormant'), value: h.dormant.monthly, note: h.dormant.available ? T('ct.hDormantNote', { n: U.fmtInt(h.dormant.rows.length), days: h.dormant.days }) : T('ct.hNeedsCollector'), available: h.dormant.available, color: C.STATUS.serious },
+        { key: 'duplicates', label: T('ct.hDuplicates'), value: h.duplicates.monthly, note: h.duplicates.available ? T('ct.hDuplicatesNote', { n: U.fmtInt(h.duplicates.rows.length) }) : T('ct.hNeedsVault'), available: h.duplicates.available, color: C.STATUS.warning },
+        { key: 'unmatched', label: T('ct.hUnmatched'), value: h.unmatched.monthly, note: T('ct.hUnmatchedNote', { n: U.fmtInt(h.unmatched.rows.length) }), available: true, color: C.STATUS.warning },
+        { key: 'manual', label: T('ct.hManual'), value: h.manual.monthly, note: h.manual.available ? T('ct.hManualNote', { manual: U.fmtNum(h.manual.perMonth.manual, 1), failed: U.fmtNum(h.manual.perMonth.failed, 1) }) : T('ct.hNeedsHistory'), available: h.manual.available, color: C.slot(4) },
+        { key: 'onboarding', label: T('ct.hOnboarding'), value: h.onboarding.monthly, note: h.onboarding.available
+          ? (h.onboarding.rate ? T('ct.hOnboardingNote', { late: U.fmtInt(h.onboarding.late), days: U.fmtInt(h.onboarding.idleDays) }) : T('ct.hOnboardingNoRate', { late: U.fmtInt(h.onboarding.late), days: U.fmtInt(h.onboarding.idleDays) }))
+          : T('ct.hNeedsHistory'), available: h.onboarding.available, color: C.slot(4) }
+      ];
+      f.appendChild(el('div', { class: 'grid', style: 'margin-top:14px' }, card(T('ct.hiddenTitle'), T('ct.hiddenNote'), [
+        C.barList(hb.map(b => ({ label: b.label + (b.available ? '' : ' \u00b7 ' + T('ct.hUnavailable')), value: b.value, color: b.color, note: b.note })),
+          { format: v => U.fmtMoney(v), valueLabel: T('c.perMonth') })
+      ])));
+      if (h.leavers.rows.length) {
+        f.appendChild(el('div', { class: 'grid', style: 'margin-top:14px' }, card(T('ct.hLeavers'), T('ct.hLeaversTable', { toDate: U.fmtMoney(h.leavers.toDate) }), HR.table.make({
+          columns: [
+            { key: 'person', label: T('c.person'), value: r => r.person.displayName },
+            { key: 'days', label: T('ct.cDaysSinceEnd'), num: true, value: r => r.days },
+            { key: 'monthly', label: T('c.costMo'), num: true, value: r => r.monthly, render: r => U.fmtMoney(r.monthly) },
+            { key: 'toDate', label: T('ct.cBurntToDate'), num: true, value: r => r.toDate, render: r => U.fmtMoney(r.toDate) },
+            { key: 'accounts', label: T('pp.accounts'), value: r => r.accounts.map(a => a.userName).join(', ') }
+          ], rows: h.leavers.rows, pageSize: 15, exportName: 'leaver-burn', initialSort: { key: 'toDate', dir: -1 },
+          search: (r, q) => r.person.displayName.toLowerCase().includes(q),
+          onRowClick: r => drawerVaultPerson(personRow(m, r.person), m)
+        }))));
+      }
+      if (h.duplicates.rows.length) {
+        f.appendChild(el('div', { class: 'grid', style: 'margin-top:14px' }, card(T('ct.hDuplicates'), T('ct.hDuplicatesTable'), HR.table.make({
+          columns: [
+            { key: 'person', label: T('c.person'), value: r => r.person.displayName },
+            { key: 'accounts', label: T('pp.accounts'), value: r => r.accounts.map(a => a.userName + ' (' + U.fmtMoney(a.monthlyCost) + ')').join(', ') },
+            { key: 'monthly', label: T('ct.cExtraCost'), num: true, value: r => r.monthly, render: r => U.fmtMoney(r.monthly) }
+          ], rows: h.duplicates.rows, pageSize: 15, exportName: 'duplicate-account-cost', initialSort: { key: 'monthly', dir: -1 },
+          search: (r, q) => r.person.displayName.toLowerCase().includes(q),
+          onRowClick: r => drawerVaultPerson(personRow(m, r.person), m)
+        }))));
+      }
+      if (h.dormant.rows.length) {
+        f.appendChild(el('div', { class: 'grid', style: 'margin-top:14px' }, card(T('ct.hDormant'), T('ct.hDormantNote', { n: U.fmtInt(h.dormant.rows.length), days: h.dormant.days }), HR.table.make({
+          columns: [
+            { key: 'account', label: T('c.account'), value: r => r.account.userName },
+            { key: 'person', label: T('c.person'), value: r => r.account.personName || '' },
+            { key: 'days', label: T('ct.cDaysSinceLogon'), num: true, value: r => r.days },
+            { key: 'monthly', label: T('c.costMo'), num: true, value: r => r.monthly, render: r => U.fmtMoney(r.monthly) }
+          ], rows: h.dormant.rows, pageSize: 15, exportName: 'dormant-licensed', initialSort: { key: 'monthly', dir: -1 },
+          search: (r, q) => (r.account.userName + ' ' + (r.account.personName || '')).toLowerCase().includes(q),
+          onRowClick: r => drawerAccount(r.account)
+        }))));
+      }
+    }
     return f;
   }
 
@@ -1194,6 +1254,23 @@
       search: (r, q) => r.name.toLowerCase().includes(q),
       onRowClick: r => { const p = m.permissions.get(r.key); if (p) drawerPermission(p, m); }
     }))));
+
+    /* Purchased against assigned, per price-book row that states its seats. */
+    const tu = c.hidden && c.hidden.trueup;
+    f.appendChild(el('div', { class: 'grid', style: 'margin-top:14px' }, card(T('ct.trueupTitle'), T('ct.trueupNote'),
+      tu && tu.rows.length ? HR.table.make({
+        columns: [
+          { key: 'label', label: T('ct.priceEntry') },
+          { key: 'seats', label: T('ct.cSeats'), num: true },
+          { key: 'assigned', label: T('ct.cAssigned'), num: true },
+          { key: 'over', label: T('ct.cOver'), num: true, render: r => r.over ? el('span', { class: 'sev medium', text: U.fmtInt(r.over) }) : el('span', { class: 'note', text: '0' }) },
+          { key: 'under', label: T('ct.cUnder'), num: true, render: r => r.under ? el('span', { class: 'sev high', text: U.fmtInt(r.under) }) : el('span', { class: 'note', text: '0' }) },
+          { key: 'shelfware', label: T('ct.cShelfware'), num: true, render: r => U.fmtMoney(r.shelfware) },
+          { key: 'renewal', label: T('ct.cRenewal'), value: r => r.renewal || '', render: r => r.renewal
+            ? el('span', { class: r.daysToRenewal != null && r.daysToRenewal < 90 ? 'sev medium' : '', text: r.renewal + (r.daysToRenewal != null ? ' (' + U.fmtInt(r.daysToRenewal) + ' d)' : '') })
+            : el('span', { class: 'note', text: '\u2014' }) }
+        ], rows: tu.rows, pageSize: 20, exportName: 'true-up', initialSort: { key: 'shelfware', dir: -1 }
+      }) : el('p', { class: 'note', text: T('ct.trueupEmpty') }))));
     return f;
   }
 
@@ -2308,7 +2385,9 @@
             [{ value: '', label: T('st.anyClassification') }].concat(
               cfg.categories.map(c => ({ value: c.id, label: HR.config.labelOf(c) }))) },
          { key: 'pattern', matcher: 'match', label: T('st.refine'), width: '140px' },
-         { key: 'price', label: T('st.price'), num: true, step: '0.01' }],
+         { key: 'price', label: T('st.price'), num: true, step: '0.01' },
+         { key: 'seats', label: T('st.seats'), num: true, step: '1' },
+         { key: 'renewal', label: T('st.renewal'), width: '110px' }],
         () => ({ label: 'New SKU', classification: 'licence', pattern: '', match: { op: 'ends', value: '' }, price: 0, unit: 'month' }),
         { matchFn: item => {
             const m = HR.app.state.model;
@@ -2349,7 +2428,10 @@
       numField(cfg.effort, 'minutesPerUnmanagedPermission', T('st.minPerm')),
       numField(cfg.effort, 'minutesPerUnmanagedAccount', T('st.minAccount')),
       numField(cfg.effort, 'minutesPerMissingPermission', T('st.minMissing')),
-      numField(cfg.effort, 'minutesPerPrivilegedReview', T('st.minPriv'))
+      numField(cfg.effort, 'minutesPerPrivilegedReview', T('st.minPriv')),
+      numField(cfg.effort, 'minutesPerManualAction', T('st.minManual')),
+      numField(cfg.effort, 'minutesPerFailedAction', T('st.minFailed')),
+      numField(cfg.effort, 'idleDayCost', T('st.idleDayCost'))
       ])),
 
       card(T('st.thresholds'), null, el('div', { class: 'row' }, [

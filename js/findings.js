@@ -257,6 +257,50 @@
     }
   ];
 
+  /* The hidden-cost buckets, computed after the vault, directory and history are in;
+   run last from the model, several findings from one pass. */
+  function hiddenCosts(m) {
+    const h = m.cost && m.cost.hidden;
+    if (!h) return null;
+    const out = [];
+    if (h.leavers.rows.length) out.push(Object.assign({
+      id: 'leaver-burn', severity: 'high', category: T('fi.cat.cost'),
+      entities: h.leavers.rows.slice(0, 40).map(r => ({ type: 'person', key: r.person.personId, label: r.person.displayName,
+        detail: T('fi.leaver-burn.detail', { days: r.days, monthly: U.fmtMoney(r.monthly), toDate: U.fmtMoney(r.toDate) }) })),
+      impactMonthly: h.leavers.monthly
+    }, prose('leaver-burn', { n: h.leavers.rows.length, toDate: U.fmtMoney(h.leavers.toDate), monthly: U.fmtMoney(h.leavers.monthly) })));
+    if (h.dormant.rows.length) out.push(Object.assign({
+      id: 'dormant-licensed', severity: 'medium', category: T('fi.cat.cost'),
+      entities: h.dormant.rows.slice(0, 40).map(r => ({ type: 'account', key: r.account.key, label: r.account.userName,
+        detail: T('fi.dormant-licensed.detail', { days: r.days, monthly: U.fmtMoney(r.monthly) }) })),
+      impactMonthly: h.dormant.monthly
+    }, prose('dormant-licensed', { n: h.dormant.rows.length, days: h.dormant.days, monthly: U.fmtMoney(h.dormant.monthly) })));
+    if (h.duplicates.rows.length) out.push(Object.assign({
+      id: 'duplicate-accounts-cost', severity: 'low', category: T('fi.cat.cost'),
+      entities: h.duplicates.rows.slice(0, 40).map(r => ({ type: 'person', key: r.person.personId, label: r.person.displayName,
+        detail: r.accounts.map(a => a.userName).join(', ') + ' \u00b7 ' + U.fmtMoney(r.monthly) })),
+      impactMonthly: h.duplicates.monthly
+    }, prose('duplicate-accounts-cost', { n: h.duplicates.rows.length, monthly: U.fmtMoney(h.duplicates.monthly) })));
+    if (h.trueup.rows.some(r => r.over || r.under)) out.push(Object.assign({
+      id: 'shelfware', severity: h.trueup.under ? 'high' : 'medium', category: T('fi.cat.cost'),
+      entities: h.trueup.rows.filter(r => r.over || r.under).map(r => ({ type: 'sku', key: r.label, label: r.label,
+        detail: T('fi.shelfware.detail', { seats: r.seats, assigned: r.assigned, over: r.over, under: r.under }) })),
+      impactMonthly: h.trueup.shelfware
+    }, prose('shelfware', { n: h.trueup.rows.filter(r => r.over).length, under: h.trueup.under, monthly: U.fmtMoney(h.trueup.shelfware) })));
+    if (h.manual.available && h.manual.monthly > 0) out.push(Object.assign({
+      id: 'manual-run-rate', severity: 'info', category: T('fi.cat.cost'),
+      entities: [], impactMonthly: h.manual.monthly
+    }, prose('manual-run-rate', { manual: U.fmtNum(h.manual.perMonth.manual, 1), failed: U.fmtNum(h.manual.perMonth.failed, 1), monthly: U.fmtMoney(h.manual.monthly) })));
+    return out;
+  }
+
+  function runHidden(model) {
+    let list = [];
+    try { list = hiddenCosts(model) || []; } catch (e) { console.error('hidden cost findings failed', e); }
+    list.forEach(f => { if (f.count == null) f.count = f.entities.length; f.annualImpact = (f.impactMonthly || 0) * 12; });
+    return list;
+  }
+
   function run(model) {
     const out = [];
     for (const rule of RULES) {
@@ -1308,7 +1352,7 @@
     return out;
   }
 
-  HR.findings = { run, runComparison, runVault, runCorrelation, runExplanation, runActivity, runProducts,
+  HR.findings = { runHidden, run, runComparison, runVault, runCorrelation, runExplanation, runActivity, runProducts,
     runVaultQuality, runNedap,
     RULES, COMPARISON_RULES, VAULT_RULES, CORRELATION_RULES, EXPLANATION_RULES,
     ACTIVITY_RULES, PRODUCT_RULES, VAULT_QUALITY_RULES, NEDAP_RULES };

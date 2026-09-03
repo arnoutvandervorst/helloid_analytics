@@ -245,11 +245,17 @@
       ]));
 
       /* ============ page 3 — money ============ */
+      const h = c.hidden;
       const buckets = [
         { label: T('bd.leakDisabled'), value: c.disabledWaste, color: C.STATUS.critical },
         { label: T('bd.leakDouble'), value: c.stackedWasteNet, color: C.STATUS.serious },
         { label: T('bd.leakUnowned'), value: c.orphanExposure, color: C.STATUS.warning }
-      ];
+      ].concat(h ? [
+        { label: T('ct.hLeavers'), value: h.leavers.monthly, color: C.STATUS.critical },
+        { label: T('ct.hDormant'), value: h.dormant.monthly, color: C.STATUS.serious },
+        { label: T('ct.hDuplicates'), value: h.duplicates.monthly, color: C.STATUS.warning },
+        { label: T('ct.hManual'), value: h.manual.monthly, color: C.slot(4) }
+      ].filter(b => b.value > 0) : []).concat(h && h.trueup.shelfware ? [{ label: T('ct.shelfware'), value: h.trueup.shelfware, color: C.slot(2) }] : []);
       paper.appendChild(page([
         el('h2', { class: 'sheet-h', text: T('bd.secMoney') }),
         el('div', { class: 'bignums three' }, [
@@ -262,7 +268,8 @@
           (c.paybackMonths ? ' ' + T('bd.moneyPayback', { n: U.fmtNum(c.paybackMonths, 1) }) : '') }),
         el('h3', { class: 'sheet-h3', text: T('bd.moneyLeaks') }),
         C.barList(buckets, { format: v => U.fmtMoney(v) + ' ' + T('bd.perMonth'), valueLabel: T('bd.perMonth') }),
-        el('p', { class: 'footnote', text: T('bd.moneyFoot') })
+        h && h.hiddenMonthly ? el('p', { class: 'lead', text: T('bd.moneyHidden', { amount: U.fmtMoney(h.hiddenMonthly * 12, { compact: true }), toDate: U.fmtMoney(h.leavers.toDate, { compact: true }) }) }) : null,
+        el('p', { class: 'footnote', text: T('bd.moneyFoot') + (h ? ' ' + T('bd.moneyHiddenFoot') : '') })
       ]));
 
       /* ============ page 4 — change since baseline ============ */

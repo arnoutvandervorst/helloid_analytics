@@ -3,6 +3,11 @@
 Versions are CalVer (`YYYY.M.N` — Nth release of that month). This file is
 generated from `js/changelog.js` by `make-changelog.js`; edit there, not here.
 
+## [2026.9.24] — 2026-09-03
+
+- Hidden costs. The recoverable figure only ever counted disabled and doubled licences; the money that is burning without a row in it now has its own tile and bucket list on Cost: leavers still licensed (with what it has cost since each contract ended), dormant licences (from the directory collector’s last sign-in), second accounts of one person, spend nobody owns, work still done by hand and rework after failed actions (from the history export, at the loaded rate), and joiners kept waiting (days always; euros once you state a rate). None is added to “recoverable” — each needs a decision, not a cleanup. Every bucket has its people or accounts behind it and a CSV.
+- True-up. A price-book row can now state how many seats were bought and when it renews; Cost › Spend shows bought against assigned per row — unused seats as shelfware, over-assigned seats as the exposure the vendor charges for — with the days to renewal. The board’s Money page prints the hidden buckets and shelfware next to the recoverable leaks, and five findings carry the same numbers into Risk & findings.
+
 ## [2026.9.23] — 2026-09-03
 
 - Toxic combinations. Separation of duties as data: each pair is two things one account must not hold together — a permission category, a word in a permission name or an account type on either side — checked against every account. Four defaults hold on any tenant (privileged access on an external, test or shared account; two privileged groups on one account; finance with procurement as the example to edit). Violations appear as a tab under Risk & findings, as a finding, as a critical control on Compliance (NIS2 21(2)(i), ISO A.5.3, BIO 6.1.2), and add to the account’s risk; the pairs are edited under Settings › Classification with a live count.

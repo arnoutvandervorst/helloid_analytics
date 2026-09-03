@@ -351,6 +351,11 @@
 
     model.findings.sort((a, b) => HR.util.severityRank(a.severity) - HR.util.severityRank(b.severity) ||
       (b.impactMonthly || 0) - (a.impactMonthly || 0) || b.count - a.count);
+    /* Second cost pass: the buckets that need the vault, directory and history. */
+    if (HR.cost.hidden) {
+      try { HR.cost.hidden(model); model.findings = model.findings.concat(HR.findings.runHidden(model)); }
+      catch (e) { console.error(e); }
+    }
     model.summary = summarise(model);
     /* The compliance score travels with the summary, so every snapshot keeps it and
        the trend can be drawn. policy.js loads later, so this is a runtime lookup. */

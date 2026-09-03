@@ -150,7 +150,10 @@
     minutesPerUnmanagedPermission: 4,
     minutesPerUnmanagedAccount: 25,
     minutesPerMissingPermission: 10,
-    minutesPerPrivilegedReview: 45
+    minutesPerPrivilegedReview: 45,
+    minutesPerManualAction: 6,      // a grant or revoke done by hand, per the history export
+    minutesPerFailedAction: 15,     // rework after a failed or blocked provisioning action
+    idleDayCost: 0                  // what a joiner without access costs per day; 0 = not stated
   };
 
   /* --- account-to-person matching -------------------------------------------
