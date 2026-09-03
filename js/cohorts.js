@@ -379,8 +379,10 @@
    * sits in (people-weighted median of their own value's headcount).
    */
   function massOf(people, attr) {
+    /* By name, not by HR code: one job title carried under four codes is still one
+       job, and splitting its headcount would drop it out of the core. */
     const tally = new Map();
-    for (const p of people) { const v = p.attrs[attr]; if (v) tally.set(v, (tally.get(v) || 0) + 1); }
+    for (const p of people) { const v = p.labels[attr] || p.attrs[attr]; if (v) tally.set(v, (tally.get(v) || 0) + 1); }
     const ordered = Array.from(tally.entries()).sort((a, b) => b[1] - a[1]);
     const withValue = U.sum(ordered, x => x[1]);
     const core = new Set();
@@ -415,7 +417,7 @@
       HR.workforce.moves(model.vault, now).forEach(mv => { if (mv.daysAgo >= 0 && mv.daysAgo <= 365) moved.add(mv.person); });
     }
     for (const p of people) {
-      p.core = !!p.attrs.Title && mass.Title.core.has(p.attrs.Title);
+      p.core = !!(p.labels.Title || p.attrs.Title) && mass.Title.core.has(p.labels.Title || p.attrs.Title);
       p.flow = recent(p.person.firstStart) || recent(p.person.lastEnd) || moved.has(p.person);
       p.worth = (p.core ? 1 : worth.tail) * (p.flow ? worth.flow : 1);
     }

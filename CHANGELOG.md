@@ -3,6 +3,10 @@
 Versions are CalVer (`YYYY.M.N` — Nth release of that month). This file is
 generated from `js/changelog.js` by `make-changelog.js`; edit there, not here.
 
+## [2026.9.18] — 2026-09-03
+
+- Core vs long tail counts job titles by name, not by HR code: a title carried under several codes (one tenant has “Engineer” under four) is one job, and splitting its headcount could drop it out of the core.
+
 ## [2026.9.17] — 2026-09-02
 
 - The department hierarchy is now the natural layering of the proposal. Where the vault carries parent links, every level becomes an attribute of its own (department level 1, 2, …): a rule on a branch — “Directie Intramurale Zorg”, 2,092 people — is the generic rule, the leaf department or the job title within it the specialisation, and “builds on” follows membership so a leaf rule sits under its branch. HelloID cannot condition on a branch, so the export spells it out as the “one of” list of every department beneath it. On a real vault six levels deep the top branches surface as the first roots.
