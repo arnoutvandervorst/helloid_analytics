@@ -51,9 +51,9 @@
 
   /* The groups are the questions somebody arrives with, not the modules that answer them. */
   const GROUPS = [
-    { key: 'state', views: ['overview', 'risk', 'cost'] },
+    { key: 'state', views: ['overview', 'policies', 'risk', 'cost'] },
     { key: 'who', views: ['accounts', 'permissions', 'people', 'matching', 'org', 'conventions'] },
-    { key: 'model', views: ['mining', 'rules', 'policies', 'products', 'nedap', 'fieldmap', 'activity', 'explain'] },
+    { key: 'model', views: ['mining', 'rules', 'products', 'nedap', 'fieldmap', 'activity', 'explain'] },
     { key: 'data', views: ['diff', 'snapshots', 'sources'] },
     { key: 'out', views: ['board', 'settings'] }
   ];

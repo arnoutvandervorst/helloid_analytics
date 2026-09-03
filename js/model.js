@@ -351,6 +351,11 @@
     model.findings.sort((a, b) => HR.util.severityRank(a.severity) - HR.util.severityRank(b.severity) ||
       (b.impactMonthly || 0) - (a.impactMonthly || 0) || b.count - a.count);
     model.summary = summarise(model);
+    /* The compliance score travels with the summary, so every snapshot keeps it and
+       the trend can be drawn. policy.js loads later, so this is a runtime lookup. */
+    if (HR.policy && model.hasRecon) {
+      try { Object.assign(model.summary, HR.policy.summaryOf(model)); } catch (e) { console.error(e); }
+    }
     return model;
   }
 

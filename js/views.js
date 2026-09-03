@@ -1964,6 +1964,13 @@
         [{ label: T('ov.unmanagedEnt'), color: C.slot(1),
            points: ordered.map((s, i) => ({ x: i, y: s.summary.unmanagedPermissionRows })) }],
         labels)));
+      /* Compliance is the line a board asks for: is the control set holding. */
+      if (ordered.some(s => s.summary.policyScore != null)) {
+        g.appendChild(card(T('sn.policyOverTime'), T('sn.perImport'), C.line(
+          [{ label: T('po.kScore'), color: C.STATUS.good,
+             points: ordered.map((s, i) => ({ x: i, y: s.summary.policyScore == null ? null : Math.round(100 * s.summary.policyScore) })).filter(p => p.y != null) }],
+          labels, { maxY: 100 })));
+      }
       g.appendChild(card(T('sn.moneyOverTime'), T('sn.perImport'), C.line([
         { label: T('ov.licenceSpend'), color: C.slot(4),
           points: ordered.map((s, i) => ({ x: i, y: Math.round(s.summary.monthlyCost || 0) })) },

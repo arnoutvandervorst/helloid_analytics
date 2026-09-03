@@ -114,8 +114,7 @@
         el('button', { class: 'btn primary', text: T('empty.sources'), onclick: () => go('sources') }),
         sampleFile ? el('button', { class: 'btn', style: 'margin-left:8px',
           text: T('src.sampleFile', { name: sampleFile }), onclick: loadSample }) : null
-      ]),
-      el('p', { class: 'hint', text: T('empty.columns') })
+      ])
     ]));
   }
 

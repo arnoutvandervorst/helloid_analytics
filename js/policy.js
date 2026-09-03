@@ -55,21 +55,31 @@
     };
   };
 
+  /* How much a control weighs in the score: a failed critical control is not the
+     same as a failed housekeeping one. */
+  const SEVERITY_WEIGHT = { critical: 3, high: 2, medium: 1, low: 1 };
+  const SEVERITIES = ['critical', 'high', 'medium', 'low'];
+  /* The frameworks a control can be mapped to: NIS2 article, ISO 27001:2022 Annex A
+     control, BIO (Baseline Informatiebeveiliging Overheid, ISO 27002:2013 numbering). */
+  const FRAMEWORKS = ['nis2', 'iso27001', 'bio'];
+
   /**
-   * The guideline catalog. dir 'max': the value must stay at or under the
+   * The control catalog. dir 'max': the value must stay at or under the
    * threshold; 'min': at or above it. unit 'pct' values are 0-100.
-   * paramDef marks a guideline with a second knob (e.g. the membership limit).
+   * paramDef marks a control with a second knob (e.g. the membership limit).
+   * severity weighs it; refs name the framework articles it evidences; finding
+   * names the finding that computes the same thing, when one exists.
    */
   const CATALOG = [
-    { id: 'unowned-share', unit: 'pct', dir: 'max', def: 15, needs: [],
+    { id: 'unowned-share', severity: 'high', refs: { nis2: '21(2)(i)', iso27001: 'A.5.16', bio: '9.2.1' }, unit: 'pct', dir: 'max', def: 15, needs: [],
       measure: m => {
         const affected = m.accountList.filter(a => a.orphan && !justified(a))
           .map(a => ({ kind: 'account', a }));
         return { value: m.summary.accounts ? 100 * affected.length / m.summary.accounts : 0, affected };
       } },
-    { id: 'admin-share', unit: 'pct', dir: 'max', def: 2, needs: [],
+    { id: 'admin-share', severity: 'high', refs: { nis2: '21(2)(i)', iso27001: 'A.8.2', bio: '9.2.3' }, unit: 'pct', dir: 'max', def: 2, needs: [],
       measure: m => clsShare(m, 'admin') },
-    { id: 'wide-membership', unit: 'pct', dir: 'max', def: 0, paramDef: 25, needs: [],
+    { id: 'wide-membership', severity: 'medium', refs: { iso27001: 'A.5.18', bio: '9.2.5' }, unit: 'pct', dir: 'max', def: 0, paramDef: 25, needs: [],
       measure: (m, param) => {
         const affected = m.accountList.filter(a => a.permCount > param)
           .map(a => ({ kind: 'account', a }));
@@ -78,32 +88,32 @@
           affected
         };
       } },
-    { id: 'disabled-share', unit: 'pct', dir: 'max', def: 15, needs: [],
+    { id: 'disabled-share', severity: 'low', refs: { iso27001: 'A.5.18', bio: '9.2.6' }, unit: 'pct', dir: 'max', def: 15, needs: [],
       measure: m => ({
         value: m.summary.accounts ? 100 * m.summary.disabledAccounts / m.summary.accounts : 0,
         affected: m.accountList.filter(a => a.enabled === false).map(a => ({ kind: 'account', a }))
       }) },
-    { id: 'test-share', unit: 'pct', dir: 'max', def: 1, needs: [],
+    { id: 'test-share', severity: 'medium', refs: { iso27001: 'A.5.16', bio: '9.2.1' }, unit: 'pct', dir: 'max', def: 1, needs: [],
       measure: m => clsShare(m, 'test') },
-    { id: 'shared-share', unit: 'pct', dir: 'max', def: 2, needs: [],
+    { id: 'shared-share', severity: 'medium', refs: { iso27001: 'A.5.16', bio: '9.2.1' }, unit: 'pct', dir: 'max', def: 2, needs: [],
       measure: m => clsShare(m, 'shared') },
-    { id: 'unmanaged-share', unit: 'pct', dir: 'max', def: 25, needs: [],
+    { id: 'unmanaged-share', severity: 'high', refs: { nis2: '21(2)(i)', iso27001: 'A.5.15', bio: '9.2.2' }, unit: 'pct', dir: 'max', def: 25, needs: [],
       measure: m => {
         const open = m.records.filter(r => r.issue === 'Permission unmanaged' && !resolved(r)).length;
         return { value: m.summary.rows ? 100 * open / m.summary.rows : 0, affected: [] };
       } },
-    { id: 'rule-coverage', unit: 'pct', dir: 'min', def: 60, needs: ['rules'],
+    { id: 'rule-coverage', severity: 'medium', refs: { nis2: '21(2)(i)', iso27001: 'A.5.15', bio: '9.2.2' }, unit: 'pct', dir: 'min', def: 60, needs: ['rules'],
       measure: m => ({
         value: 100 * (m.comparison.summary.coverage || 0),
         affected: m.comparison.unmodelled.map(row => ({ kind: 'perm', perm: row.perm }))
       }) },
-    { id: 'leavers-enabled', unit: 'count', dir: 'max', def: 0, needs: ['vault'],
+    { id: 'leavers-enabled', severity: 'critical', refs: { nis2: '21(2)(i)', iso27001: 'A.5.18', bio: '9.2.6' }, finding: 'vault-leaver-enabled', unit: 'count', dir: 'max', def: 0, needs: ['vault'],
       measure: m => {
         const res = HR.workforce.leavers(m, m.vault);
         const rows = res.rows.filter(r => r.enabledAccounts);
         return { value: rows.length, affected: rows.map(r => ({ kind: 'person', person: r.person })) };
       } },
-    { id: 'disabled-licensed', unit: 'count', dir: 'max', def: 0, needs: ['prices'],
+    { id: 'disabled-licensed', severity: 'high', refs: { iso27001: 'A.5.9', bio: '8.1.1' }, finding: 'disabled-licensed', unit: 'count', dir: 'max', def: 0, needs: ['prices'],
       measure: m => {
         const affected = m.accountList.filter(a => a.enabled === false && a.monthlyCost > 0)
           .map(a => ({ kind: 'account', a }));
@@ -111,13 +121,13 @@
       } },
 
     /* ---- unique identification & ownership ---- */
-    { id: 'unowned-enabled', unit: 'pct', dir: 'max', def: 5, needs: [],
+    { id: 'unowned-enabled', severity: 'high', refs: { nis2: '21(2)(i)', iso27001: 'A.5.16', bio: '9.2.1' }, unit: 'pct', dir: 'max', def: 5, needs: [],
       measure: m => {
         const affected = m.accountList.filter(a => a.orphan && a.enabled !== false && !justified(a))
           .map(a => ({ kind: 'account', a }));
         return { value: m.accountList.length ? 100 * affected.length / m.accountList.length : 0, affected };
       } },
-    { id: 'privileged-unowned', unit: 'count', dir: 'max', def: 0, needs: [],
+    { id: 'privileged-unowned', severity: 'critical', refs: { nis2: '21(2)(i)', iso27001: 'A.8.2', bio: '9.2.3' }, finding: 'privileged-orphan', unit: 'count', dir: 'max', def: 0, needs: [],
       /* Judged on the privileged rows alone: excluding those in the HelloID
          reconciliation accounts for the privileged access, even when a mundane
          row on the same account is still open. */
@@ -128,14 +138,14 @@
           .map(a => ({ kind: 'account', a }));
         return { value: affected.length, affected };
       } },
-    { id: 'service-unowned', unit: 'count', dir: 'max', def: 5, needs: [],
+    { id: 'service-unowned', severity: 'medium', refs: { iso27001: 'A.8.2', bio: '9.2.3' }, unit: 'count', dir: 'max', def: 5, needs: [],
       measure: m => {
         const affected = m.accountList
           .filter(a => a.cls === 'service' && a.orphan && !justified(a))
           .map(a => ({ kind: 'account', a }));
         return { value: affected.length, affected };
       } },
-    { id: 'duplicate-ids', unit: 'count', dir: 'max', def: 0, needs: ['vault'],
+    { id: 'duplicate-ids', severity: 'high', refs: { iso27001: 'A.5.16', bio: '9.2.1' }, finding: 'vault-duplicate-id', unit: 'count', dir: 'max', def: 0, needs: ['vault'],
       measure: m => {
         const q = m.orgQuality || HR.org.quality(m.vault);
         const affected = [];
@@ -144,13 +154,13 @@
       } },
 
     /* ---- timely revocation ---- */
-    { id: 'former-accounts', unit: 'count', dir: 'max', def: 0, needs: ['vault'],
+    { id: 'former-accounts', severity: 'critical', refs: { nis2: '21(2)(i)', iso27001: 'A.5.18', bio: '9.2.6' }, finding: 'correlate-former-employee', unit: 'count', dir: 'max', def: 0, needs: ['vault'],
       measure: m => {
         const hits = ((m.correlation && m.correlation.former) || [])
           .filter(h => h.stillEnabled && !justified(h.account));
         return { value: hits.length, affected: hits.map(h => ({ kind: 'account', a: h.account })) };
       } },
-    { id: 'disabled-entitled', unit: 'pct', dir: 'max', def: 25, needs: [],
+    { id: 'disabled-entitled', severity: 'medium', refs: { iso27001: 'A.5.18', bio: '9.2.6' }, unit: 'pct', dir: 'max', def: 25, needs: [],
       measure: m => {
         const disabled = m.accountList.filter(a => a.enabled === false);
         const affected = disabled.filter(a => a.permCount > 0 && !justified(a))
@@ -159,7 +169,7 @@
       } },
 
     /* ---- least privilege ---- */
-    { id: 'over-provisioned', unit: 'pct', dir: 'max', def: 20, needs: ['vault', 'evaluation'],
+    { id: 'over-provisioned', severity: 'high', refs: { iso27001: 'A.5.18', bio: '9.2.5' }, finding: 'vault-over-provisioned', unit: 'pct', dir: 'max', def: 20, needs: ['vault', 'evaluation'],
       measure: m => {
         const s = m.provisioning.summary;
         const rows = m.provisioning.rows.filter(r => r.extra.length);
@@ -168,13 +178,13 @@
           affected: rows.map(r => ({ kind: 'person', person: r.person }))
         };
       } },
-    { id: 'peer-outliers', unit: 'pct', dir: 'max', def: 10, needs: [],
+    { id: 'peer-outliers', severity: 'medium', refs: { iso27001: 'A.5.18', bio: '9.2.5' }, finding: 'peer-outlier', unit: 'pct', dir: 'max', def: 10, needs: [],
       measure: m => {
         const eligible = m.accountList.filter(a => a.permCount >= 3 && a.outlier !== null);
         const affected = eligible.filter(a => a.outlier > 0.65).map(a => ({ kind: 'account', a }));
         return { value: eligible.length ? 100 * affected.length / eligible.length : 0, affected };
       } },
-    { id: 'multiple-accounts', unit: 'pct', dir: 'max', def: 5, paramDef: 2, needs: ['vault'],
+    { id: 'multiple-accounts', severity: 'medium', refs: { iso27001: 'A.5.16', bio: '9.2.1' }, unit: 'pct', dir: 'max', def: 5, paramDef: 2, needs: ['vault'],
       measure: (m, param) => {
         const groups = ((m.linkedAccounts && m.linkedAccounts.groups) || [])
           .filter(g => 1 + g.secondary.length > param);
@@ -185,7 +195,7 @@
       } },
 
     /* ---- lifecycle completeness ---- */
-    { id: 'no-account-employees', unit: 'pct', dir: 'max', def: 5, needs: ['vault'],
+    { id: 'no-account-employees', severity: 'medium', refs: { iso27001: 'A.5.16', bio: '9.2.2' }, unit: 'pct', dir: 'max', def: 5, needs: ['vault'],
       measure: m => {
         const index = HR.correlate.personAccountIndex(m, m.vault, m.correlation);
         const now = new Date();
@@ -197,7 +207,7 @@
         }).map(person => ({ kind: 'person', person }));
         return { value: current.length ? 100 * affected.length / current.length : 0, affected };
       } },
-    { id: 'stale-managers', unit: 'count', dir: 'max', def: 0, needs: ['vault'],
+    { id: 'stale-managers', severity: 'medium', refs: { iso27001: 'A.5.18', bio: '9.2.5' }, finding: 'vault-stale-manager', unit: 'count', dir: 'max', def: 0, needs: ['vault'],
       measure: m => {
         const res = HR.workforce.managers(m.vault);
         return { value: res.summary.stale,
@@ -205,13 +215,13 @@
       } },
 
     /* ---- directory hygiene ---- */
-    { id: 'empty-groups', unit: 'count', dir: 'max', def: 0, needs: ['directory'],
+    { id: 'empty-groups', severity: 'low', refs: { iso27001: 'A.5.9', bio: '8.1.1' }, unit: 'count', dir: 'max', def: 0, needs: ['directory'],
       measure: m => {
         const empty = m.directory.groups.filter(g =>
           !(g.memberUsers || []).length && !(g.memberGroups || []).length);
         return { value: empty.length, affected: [] };
       } },
-    { id: 'deep-nesting', unit: 'pct', dir: 'max', def: 5, paramDef: 3, needs: ['directory'],
+    { id: 'deep-nesting', severity: 'low', refs: { iso27001: 'A.5.15', bio: '9.1.1' }, unit: 'pct', dir: 'max', def: 5, paramDef: 3, needs: ['directory'],
       measure: (m, param) => {
         const metas = Array.from(m.directory.groupMeta.values());
         const deep = metas.filter(g => g.depth > param);
@@ -219,7 +229,7 @@
       } },
     /* AD's replicated lastLogonTimestamp can lag up to two weeks; at a 90-day
        limit that lag is noise. Accounts with no recorded sign-in are skipped. */
-    { id: 'dormant-accounts', unit: 'pct', dir: 'max', def: 5, paramDef: 90, needs: ['directory', 'lastlogon'],
+    { id: 'dormant-accounts', severity: 'high', refs: { iso27001: 'A.5.18', bio: '9.2.5' }, unit: 'pct', dir: 'max', def: 5, paramDef: 90, needs: ['directory', 'lastlogon'],
       measure: (m, param) => {
         const now = Date.now();
         const byName = new Map(m.accountList.map(a => [String(a.userName || '').toLowerCase(), a]));
@@ -240,22 +250,39 @@
       } }
   ];
 
-  /** A guideline's stored settings, defaults filled in. */
+  /** A control's stored settings, defaults filled in — threshold, and the governance
+      record around it: who owns it, by when, and whether its failure is accepted. */
   function settingsFor(def) {
     const st = (HR.config.get().policies || {})[def.id] || {};
+    const exception = st.exception && st.exception.until ? st.exception : null;
     return {
       on: st.on !== false,
       threshold: st.t === undefined || st.t === null || st.t === '' ? def.def : +st.t,
       param: def.paramDef === undefined ? undefined
-        : (st.p === undefined || st.p === null || st.p === '' ? def.paramDef : +st.p)
+        : (st.p === undefined || st.p === null || st.p === '' ? def.paramDef : +st.p),
+      owner: st.owner || '',
+      due: st.due || '',
+      note: st.note || '',
+      exception,
+      /* An accepted risk holds while its date has not passed. */
+      accepted: !!(exception && new Date(exception.until) >= new Date(new Date().toDateString())),
+      changes: st.changes || []
     };
   }
 
-  /** Store one guideline's settings; the caller re-renders. */
+  /** Store one control's settings; every change is logged with the values it replaced,
+      so "when did this threshold change" has an answer. The caller re-renders. */
   function set(id, patch) {
     const cfg = HR.config.get();
     cfg.policies = cfg.policies || {};
-    cfg.policies[id] = Object.assign({}, cfg.policies[id], patch);
+    const before = cfg.policies[id] || {};
+    const changes = (before.changes || []).slice();
+    Object.keys(patch).forEach(field => {
+      const from = before[field], to = patch[field];
+      if (JSON.stringify(from) === JSON.stringify(to)) return;
+      changes.push({ at: new Date().toISOString(), field, from: from === undefined ? null : from, to: to === undefined ? null : to });
+    });
+    cfg.policies[id] = Object.assign({}, before, patch, { changes: changes.slice(-20) });
     HR.config.save();
   }
 
@@ -276,25 +303,50 @@
         continue;
       }
       const r = def.measure(m, st.param);
-      const pass = def.dir === 'max'
+      const met = def.dir === 'max'
         ? r.value <= st.threshold + 1e-9
         : r.value >= st.threshold - 1e-9;
+      /* An accepted exception counts as passed, and says so. */
+      const status = met ? 'met' : st.accepted ? 'accepted' : 'notMet';
       rows.push({ def, on: st.on, threshold: st.threshold, param: st.param,
-        applicable: true, value: r.value, affected: r.affected || [], pass });
+        owner: st.owner, due: st.due, note: st.note, exception: st.exception, changes: st.changes,
+        applicable: true, value: r.value, affected: r.affected || [], met, pass: met || st.accepted, status,
+        severity: def.severity || 'medium', weight: SEVERITY_WEIGHT[def.severity || 'medium'] });
     }
     const scored = rows.filter(r => r.applicable && r.on);
     const passed = scored.filter(r => r.pass).length;
+    const weightOf = list => U.sum(list, r => r.weight);
+    const bySeverity = {};
+    SEVERITIES.forEach(sev => {
+      const of = scored.filter(r => r.severity === sev);
+      bySeverity[sev] = { of: of.length, passed: of.filter(r => r.pass).length, open: of.filter(r => !r.pass).length };
+    });
+    const open = scored.filter(r => !r.pass).sort((a, b) => SEVERITIES.indexOf(a.severity) - SEVERITIES.indexOf(b.severity));
     m._policy = {
       rows,
       summary: {
         evaluated: scored.length,
         passed,
         failed: scored.length - passed,
-        score: scored.length ? passed / scored.length : 0
+        accepted: scored.filter(r => r.status === 'accepted').length,
+        /* Weighted: a critical control counts three times a housekeeping one. */
+        score: scored.length ? weightOf(scored.filter(r => r.pass)) / weightOf(scored) : 0,
+        plainScore: scored.length ? passed / scored.length : 0,
+        bySeverity,
+        criticalOpen: bySeverity.critical.open,
+        worstOpen: open[0] || null,
+        nextExpiry: scored.filter(r => r.status === 'accepted').map(r => r.exception.until).sort()[0] || null
       }
     };
     return m._policy;
   }
 
-  HR.policy = { CATALOG, evaluate, set, settingsFor };
+  /** The rows that carry into the model summary and so into every snapshot. */
+  function summaryOf(m) {
+    const ev = evaluate(m);
+    return { policyScore: ev.summary.score, policyPassed: ev.summary.passed, policyEvaluated: ev.summary.evaluated,
+      policyCritical: ev.summary.criticalOpen, policyAccepted: ev.summary.accepted };
+  }
+
+  HR.policy = { CATALOG, SEVERITIES, SEVERITY_WEIGHT, FRAMEWORKS, evaluate, summaryOf, set, settingsFor };
 })(window.HR);

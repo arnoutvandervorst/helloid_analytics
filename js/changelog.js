@@ -18,6 +18,15 @@
 
   const ENTRIES = [
     {
+      version: '2026.9.22', date: '2026-09-03',
+      changes: [
+        '“Am I compliant?” gets its own page under Governance: Compliance. Every control now carries a severity (critical, high, medium, low), the framework articles it evidences (NIS2 21(2), ISO 27001:2022 Annex A, BIO) and, where one exists, the finding that computes the same thing. The score is weighted — a failed critical control counts three times a housekeeping one — and the page groups controls by severity, critical first, with a filter per framework.',
+        'Each control can carry an owner and a due date, and a failing control can be accepted as a known risk until a date, by someone, for a reason: it then counts as met and says so. Every change to a threshold, owner or exception is logged with what it replaced. The whole scorecard exports as CSV or JSON.',
+        'The compliance score travels with every snapshot, so Snapshots gains a “Compliance over time” line and Diff reports it against the baseline. The board report’s policy page prints severity, framework references, owner, due date and accepted exceptions.',
+        'The empty page no longer claims everything starts with the reconciliation — a vault alone is a start — and no longer lists the reconciliation’s columns.'
+      ]
+    },
+    {
       version: '2026.9.21', date: '2026-09-03',
       changes: [
         'Sidekick now checks that the imports belong together. Every slot takes any file, so a vault from one customer and a reconciliation from another used to build a model without complaint. Files from one tenant overlap — the vault’s people hold the reconciliation’s accounts, the rules’ departments exist in the vault, the granted export’s people are vault people — and that overlap is measured per pair of sources: reconciliation ↔ vault, granted ↔ vault, history ↔ vault, granted ↔ reconciliation, rules ↔ vault, rules ↔ reconciliation, directory ↔ reconciliation, product assignments ↔ reconciliation.',

@@ -331,29 +331,44 @@
         const ps = pol.summary;
         const pt = el('table', { class: 'board-tbl' });
         pt.appendChild(el('thead', {}, el('tr', {}, [
+          el('th', { text: T('bd.polSeverity') }),
           el('th', { text: T('bd.polGuideline') }),
+          el('th', { text: T('bd.polRefs') }),
           el('th', { text: T('bd.polActual') }),
           el('th', { text: T('bd.polLimit') }),
-          el('th', { text: T('c.status') })
+          el('th', { text: T('c.status') }),
+          el('th', { text: T('po.owner') }),
+          el('th', { text: T('po.due') })
         ])));
         const ptb = el('tbody');
-        pol.rows.filter(r => r.applicable && r.on).forEach(r => {
-          const pct = r.def.unit === 'pct';
-          ptb.appendChild(el('tr', {}, [
-            el('td', {}, el('strong', { text: T('po.p.' + r.def.id) })),
-            el('td', { class: 'num nowrap', text: pct ? U.fmtNum(r.value, 1) + '%' : U.fmtInt(r.value) }),
-            el('td', { class: 'num nowrap', text: (r.def.dir === 'max' ? '≤ ' : '≥ ') +
-              (pct ? U.fmtNum(r.threshold, 1) + '%' : U.fmtInt(r.threshold)) }),
-            el('td', {}, statusPill(r.pass ? 'good' : 'bad'))
-          ]));
-        });
+        const order = HR.policy.SEVERITIES;
+        pol.rows.filter(r => r.applicable && r.on)
+          .sort((a, b) => order.indexOf(a.severity) - order.indexOf(b.severity) || (a.pass ? 1 : 0) - (b.pass ? 1 : 0))
+          .forEach(r => {
+            const pct = r.def.unit === 'pct';
+            const refs = Object.keys(r.def.refs || {}).map(fw => ({ nis2: 'NIS2', iso27001: 'ISO', bio: 'BIO' })[fw] + ' ' + r.def.refs[fw]).join(' · ');
+            ptb.appendChild(el('tr', {}, [
+              el('td', { class: 'nowrap', text: T('po.sev.' + r.severity) }),
+              el('td', {}, el('strong', { text: T('po.p.' + r.def.id) })),
+              el('td', { class: 'nowrap', text: refs }),
+              el('td', { class: 'num nowrap', text: pct ? U.fmtNum(r.value, 1) + '%' : U.fmtInt(r.value) }),
+              el('td', { class: 'num nowrap', text: (r.def.dir === 'max' ? '≤ ' : '≥ ') +
+                (pct ? U.fmtNum(r.threshold, 1) + '%' : U.fmtInt(r.threshold)) }),
+              el('td', {}, r.status === 'accepted'
+                ? el('span', { class: 'nowrap', text: T('po.status.accepted') + ' \u2192 ' + r.exception.until })
+                : statusPill(r.pass ? 'good' : 'bad')),
+              el('td', { text: r.owner || '' }),
+              el('td', { class: 'nowrap', text: r.due || '' })
+            ]));
+          });
         pt.appendChild(ptb);
+        const sevLine = order.map(sev => T('po.sev.' + sev) + ' ' + ps.bySeverity[sev].passed + '/' + ps.bySeverity[sev].of).join(' \u00b7 ');
         paper.appendChild(page([
           el('h2', { class: 'sheet-h', text: T('bd.polTitle') }),
           el('p', { class: 'lead', text: T('bd.polLead', {
-            passed: ps.passed, n: ps.evaluated, score: U.fmtPct(ps.score, 0) }) }),
+            passed: ps.passed, n: ps.evaluated, score: U.fmtPct(ps.score, 0) }) + ' ' + T('bd.polBySeverity', { line: sevLine }) }),
           pt,
-          el('p', { class: 'footnote', text: T('bd.polFoot') })
+          el('p', { class: 'footnote', text: T('bd.polFoot') + ' ' + T('bd.polRefsFoot') })
         ]));
       }
 
