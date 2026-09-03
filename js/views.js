@@ -860,19 +860,31 @@
     ]));
     wrap.appendChild(card(T('sod.rulesTitle'), T('sod.rulesNote'), [
       C.barList(sod.byRule.map(r => ({ label: r.rule.label, value: r.count, sev: r.rule.severity })), { format: v => U.fmtInt(v) }),
+      el('dl', { class: 'sod-why' }, sod.byRule.flatMap(r => [
+        el('dt', { text: r.rule.label }),
+        el('dd', { text: HR.sod.whyOf(r.rule) || T('sod.whyNone') })
+      ])),
       el('p', { class: 'note' }, [document.createTextNode(T('sod.editNote') + ' '),
         el('a', { href: '#', text: T('sod.editLink'), onclick: e => { e.preventDefault(); HR.app.go('settings', { tab: 'classification' }); } })])
     ]));
     const sideText = (v, side) => v[side] ? v[side].name : T('sod.accountType', { cls: T('cls.' + v.account.cls) || v.account.cls });
-    wrap.appendChild(card(T('sod.violationsTitle'), null, HR.table.make({
+    /* What made the side match: "privileged category", "name contains FIN", "external account". */
+    const matchText = w => w.kind === 'class' ? T('sod.whyClass', { cls: T('cls.' + w.value) || w.value })
+      : w.kind === 'category' ? T('sod.whyCategory', { cat: HR.config.labelOf(HR.config.get().categories.find(c => c.id === w.value)) || w.value })
+      : T('sod.whyName', { word: w.value.toUpperCase() });
+    const sideCell = (v, side) => el('div', {}, [
+      el('div', { text: sideText(v, side) }),
+      el('div', { class: 'note', text: matchText(v[side + 'Why']) })
+    ]);
+    wrap.appendChild(card(T('sod.violationsTitle'), T('sod.violationsNote'), HR.table.make({
       columns: [
-        { key: 'severity', label: T('c.severity'), value: v => ({ critical: 0, high: 1, medium: 2 })[v.severity],
+        { key: 'severity', label: T('c.sev'), value: v => ({ critical: 0, high: 1, medium: 2 })[v.severity],
           render: v => el('span', { class: 'sev ' + v.severity, text: T('c.' + v.severity) }) },
         { key: 'rule', label: T('sod.cRule'), value: v => v.rule.label },
         { key: 'account', label: T('c.account'), value: v => v.account.userName },
         { key: 'person', label: T('c.person'), value: v => v.person || '', render: v => v.person ? el('span', { text: v.person }) : el('span', { class: 'note', text: T('c.unowned') }) },
-        { key: 'a', label: T('sod.cA'), value: v => sideText(v, 'a') },
-        { key: 'b', label: T('sod.cB'), value: v => sideText(v, 'b') }
+        { key: 'a', label: T('sod.cA'), value: v => sideText(v, 'a'), render: v => sideCell(v, 'a') },
+        { key: 'b', label: T('sod.cB'), value: v => sideText(v, 'b'), render: v => sideCell(v, 'b') }
       ],
       rows: sod.violations, pageSize: 25, exportName: 'toxic-combinations',
       initialSort: { key: 'severity', dir: 1 },
@@ -2381,13 +2393,14 @@
         { matchFn: hintCatCount }),
       editableList(T('st.sodTitle'), T('st.sodNote'),
         cfg.sod,
-        [{ key: 'label', label: T('st.sodLabel'), width: '220px' },
+        [{ key: 'label', label: T('st.sodLabel'), width: '200px' },
+         { key: 'why', label: T('st.sodWhy'), width: '240px' },
          { key: 'aKind', label: T('st.sodA'), options: () => HR.sod.KINDS.map(k => ({ value: k, label: T('st.sodKind.' + k) })) },
          { key: 'aValue', label: T('st.sodValue'), width: '140px' },
          { key: 'bKind', label: T('st.sodB'), options: () => HR.sod.KINDS.map(k => ({ value: k, label: T('st.sodKind.' + k) })) },
          { key: 'bValue', label: T('st.sodValue'), width: '140px' },
-         { key: 'severity', label: T('c.severity'), options: () => HR.sod.SEVERITIES.map(v => ({ value: v, label: T('c.' + v) })) }],
-        () => ({ id: 'sod' + Date.now(), label: '', aKind: 'category', aValue: '', bKind: 'category', bValue: '', severity: 'medium' }),
+         { key: 'severity', label: T('c.sev'), options: () => HR.sod.SEVERITIES.map(v => ({ value: v, label: T('c.' + v) })) }],
+        () => ({ id: 'sod' + Date.now(), label: '', why: '', aKind: 'category', aValue: '', bKind: 'category', bValue: '', severity: 'medium' }),
         { matchFn: sodCount }),
       editableList(T('st.hintsCls'), T('st.hintsClsNote'),
         cfg.hints.classes,
@@ -3701,6 +3714,17 @@
         tip: '<div class="t-title">' + U.esc(p.label) + '</div><div class="t-row"><span>points</span><b>' +
           U.fmtNum(p.value, 1) + '</b></div>' + (p.detail ? '<div class="t-row"><span>' + U.esc(p.detail) + '</span></div>' : '')
       })), { valueLabel: T('c.points') }) : el('p', { class: 'note', text: T('dr.clean') })));
+
+    /* The pairs this account breaks, each with what collided and why that matters. */
+    const toxic = HR.sod ? (HR.sod.evaluate(m).perAccount.get(a.key) || []) : [];
+    if (toxic.length) {
+      const name = (v, side) => v[side] ? v[side].name : T('sod.accountType', { cls: T('cls.' + v.account.cls) || v.account.cls });
+      body.appendChild(card(T('sod.tab'), T('dr.toxicNote'), el('ul', { class: 'clean' }, toxic.map(v => el('li', {}, [
+        el('span', { class: 'sev ' + v.severity, text: T('c.' + v.severity) }), document.createTextNode(' '),
+        el('strong', { text: v.rule.label }), document.createTextNode(': ' + name(v, 'a') + ' + ' + name(v, 'b')),
+        HR.sod.whyOf(v.rule) ? el('div', { class: 'note', text: HR.sod.whyOf(v.rule) }) : null
+      ].filter(Boolean))))));
+    }
 
     if (change) {
       body.appendChild(card(T('dr.changedSince'), null, el('ul', { class: 'clean' },

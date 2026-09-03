@@ -511,6 +511,9 @@ table.board-tbl td.mono { font-family: var(--mono, ui-monospace, monospace); fon
   table.board-tbl tr { break-inside: avoid; page-break-inside: avoid; }
 }
 
+.sod-why { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 10px 0 6px; font-size: 12.5px; }
+.sod-why dt { color: var(--text-primary); }
+.sod-why dd { margin: 0; color: var(--text-secondary); }
 /* ---------- branding ---------- */
 .brand .mark-host { display: inline-flex; height: 28px; flex: none; align-items: center; }
 /* wordmarks are wide, placeholder tiles are square — size a real logo on height,

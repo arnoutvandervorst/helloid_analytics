@@ -38,6 +38,21 @@
     return account.perms.filter(p => { const n = String(p.name || '').toLowerCase(); return vals.some(v => n.includes(v)); });
   }
 
+  /** What a side matched on: the category, the word in the name, or the account type. */
+  function sideWhy(kind, value, perm, account) {
+    if (kind === 'class') return { kind, value: String(account.cls || '') };
+    if (kind === 'category') return { kind, value: perm ? String(perm.category || '') : '' };
+    const n = perm ? String(perm.name || '').toLowerCase() : '';
+    return { kind, value: values(value).find(v => n.includes(v)) || '' };
+  }
+
+  /** The reason a pair is toxic: the rule's own text, or the shipped one for a default. */
+  function whyOf(rule) {
+    if (rule.why) return rule.why;
+    const key = 'sod.why.' + rule.id;
+    return HR.i18n.has(key) ? HR.i18n.t(key) : '';
+  }
+
   function rules() {
     const stored = HR.config.get().sod;
     return Array.isArray(stored) && stored.length ? stored : DEFAULTS;
@@ -64,7 +79,9 @@
           if (pair) hit = { a: pair[0], b: pair[1] };
         }
         if (!hit) continue;
-        const v = { rule: r, account: a, person: a.personName || '', a: hit.a, b: hit.b, severity: r.severity || 'medium' };
+        const v = { rule: r, account: a, person: a.personName || '', a: hit.a, b: hit.b, severity: r.severity || 'medium',
+          /* Which part of each side actually matched, so the row can say what makes it toxic. */
+          aWhy: sideWhy(r.aKind, r.aValue, hit.a, a), bWhy: sideWhy(r.bKind, r.bValue, hit.b, a) };
         violations.push(v);
         if (!perAccount.has(a.key)) perAccount.set(a.key, []);
         perAccount.get(a.key).push(v);
@@ -92,5 +109,5 @@
     return Math.max.apply(null, list.map(v => severityWeight[v.severity] || 0.4));
   }
 
-  HR.sod = { evaluate, weightOf, rules, DEFAULTS, KINDS, SEVERITIES };
+  HR.sod = { evaluate, weightOf, rules, whyOf, DEFAULTS, KINDS, SEVERITIES };
 })(window.HR);

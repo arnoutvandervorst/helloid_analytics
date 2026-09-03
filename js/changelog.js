@@ -18,6 +18,12 @@
 
   const ENTRIES = [
     {
+      version: '2026.9.26', date: '2026-09-03',
+      changes: [
+        'Toxic combinations say what is toxic. Each pair carries the reason it is a pair (an external with admin rights escapes the leaver process; one account administering two domains is one point of full compromise; raising and approving a purchase is the classic fraud path) — shown under the pair list, editable per pair under Settings › Classification. Every violation row now says what made each side match: the category, the word in the permission name, or the account type. The account drawer lists the pairs an account breaks with the same explanation.'
+      ]
+    },
+    {
       version: '2026.9.25', date: '2026-09-03',
       changes: [
         'Service levels become controls. Settings gains the agreed days for joiners, leavers and movers and the interval for privileged reviews; four new Compliance controls measure against them — leavers past the revoke SLA (critical), movers still holding old-department access past the mover SLA, joiners who waited longer than the joiner SLA (from the historic actions), and privileged access reviewed within the interval. The joiner, mover and leaver cards each show how many are over the SLA with the p50 and p90 days.',
