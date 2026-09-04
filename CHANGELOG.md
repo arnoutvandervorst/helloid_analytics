@@ -3,6 +3,11 @@
 Versions are CalVer (`YYYY.M.N` — Nth release of that month). This file is
 generated from `js/changelog.js` by `make-changelog.js`; edit there, not here.
 
+## [2026.9.29] — 2026-09-04
+
+- Engine health, from the audit log. Evidence gains a tab that says whether HelloID itself runs and lands: the share of provisioning actions that failed over the last 30 active days, grouped by system and message with the people behind each group; every source import per system with its last run, result and median duration; people added, removed and blocked per snapshot; evaluations and enforcements with the age of the last one; incidents by component with the open ones listed.
+- Four Compliance controls read it: provisioning actions that fail (max 2 %), source imports that failed, days since the last evaluation (max 1 — a rule set nobody evaluates enforces nothing) and exclusions without a reason. Each carries its framework references (ISO A.8.15 Logging, BIO 12.4.1) and evidence sentence; findings for failed actions, failed imports, reasonless exclusions and open incidents join Risk & findings; the board report gains a “HelloID operations” page and the pack JSON an operations block.
+
 ## [2026.9.28] — 2026-09-03
 
 - The HelloID audit log is a source. helloid-audit.py pulls it from the tenant’s Elastic API (enabled under admin → Elastic API key; the key stays in a local .env, never in the browser) into helloid-audit.json: every provisioning action with its outcome, every reconciliation issue an administrator excluded with who, why and until when, every threshold approval, every rule publish with the entitlements it added, imports, evaluations, connector changes, portal logins, incidents and licence counts. The collector reports progress per index and per page.

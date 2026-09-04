@@ -27,7 +27,8 @@
     directory: m => !!m.directory,
     lastlogon: m => !!(m.directory && m.directory.users.some(u => u.lastLogon)),
     history: m => !!(m.history && !m.history.empty),
-    decisions: m => !!(HR.attest && Object.keys(HR.attest.decisions()).length)
+    decisions: m => !!(HR.attest && Object.keys(HR.attest.decisions()).length),
+    audit: m => !!(m.audit && m.audit.provisioning.length)
   };
   const sla = () => Object.assign({ joinerDays: 7, leaverDays: 1, moverDays: 14, privilegedReviewMonths: 12 }, HR.config.get().sla || {});
 
@@ -262,6 +263,28 @@
         const a = HR.attest.build(m);
         const cov = HR.attest.coverage(m, a.packs);
         return { value: 100 * cov.privShare, affected: [] };
+      } },
+    /* From the audit log: does the engine that enforces the policy actually run and land. */
+    { id: 'failed-actions-rate', unit: 'pct', dir: 'max', def: 2, needs: ['audit'], severity: 'high',
+      refs: { iso27001: 'A.8.15', bio: '12.4.1' }, finding: 'audit-failed-actions',
+      measure: m => {
+        const h = HR.audit.health(m.audit);
+        return { value: 100 * h.failures.recentRate, affected: [] };
+      } },
+    { id: 'import-failures', unit: 'count', dir: 'max', def: 0, needs: ['audit'], severity: 'high',
+      refs: { iso27001: 'A.8.15', bio: '12.4.1' }, finding: 'audit-import-failures',
+      measure: m => ({ value: HR.audit.health(m.audit).imports.failedRecent, affected: [] }) },
+    { id: 'evaluation-age', unit: 'count', dir: 'max', def: 1, needs: ['audit'], severity: 'critical',
+      refs: { nis2: '21(2)(i)', iso27001: 'A.5.15', bio: '9.2.2' },
+      measure: m => {
+        const e = HR.audit.health(m.audit).evaluations;
+        return { value: e.ageDays == null ? 999 : e.ageDays, affected: [] };
+      } },
+    { id: 'exclusions-without-reason', unit: 'count', dir: 'max', def: 0, needs: ['audit'], severity: 'medium',
+      refs: { iso27001: 'A.5.18', bio: '9.2.5' }, finding: 'audit-exclusions-no-reason',
+      measure: m => {
+        const list = m.audit.exclusions.filter(x => !String(x.comment || '').trim());
+        return { value: list.length, affected: [] };
       } },
     { id: 'sod-violations', unit: 'count', dir: 'max', def: 0, needs: [], severity: 'critical',
       refs: { nis2: '21(2)(i)', iso27001: 'A.5.3', bio: '6.1.2' }, finding: 'sod-violation',

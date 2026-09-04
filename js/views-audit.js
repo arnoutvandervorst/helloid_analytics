@@ -153,6 +153,77 @@
       ].filter(Boolean)))));
   }
 
+  /* -------------------------------------------------------- engine health */
+  function healthTab(m, audit) {
+    const h = HR.audit.health(audit);
+    const wrap = el('div', {});
+    const C = HR.charts;
+    const ms = v => v == null ? '—' : v >= 60000 ? U.fmtNum(v / 60000, 1) + ' min' : U.fmtNum(v / 1000, 1) + ' s';
+    wrap.appendChild(el('div', { class: 'grid g4', style: 'margin-bottom:14px' }, [
+      tile(T('au.kFailRate'), U.fmtPct(h.failures.recentRate, 1), T('au.kFailRateFoot', { failed: U.fmtInt(h.failures.recentFailed), n: U.fmtInt(h.failures.recentActions), until: day(h.failures.recentUntil), all: U.fmtPct(h.failures.rate, 1) }),
+        { severity: h.failures.recentRate > 0.05 ? 'critical' : h.failures.recentRate > 0.02 ? 'high' : 'good' }),
+      tile(T('au.kEvalAge'), h.evaluations.ageDays == null ? '—' : T('wf.days', { n: U.fmtInt(h.evaluations.ageDays) }),
+        T('au.kEvalAgeFoot', { n: U.fmtInt(h.evaluations.starts), enf: U.fmtInt(h.evaluations.enforcements), sched: U.fmtInt(h.evaluations.scheduled) }),
+        { severity: h.evaluations.ageDays == null || h.evaluations.ageDays > 7 ? 'critical' : h.evaluations.ageDays > 1 ? 'medium' : 'good' }),
+      tile(T('au.kImports'), U.fmtInt(h.imports.runs), T('au.kImportsFoot', { failed: U.fmtInt(h.imports.failed), recent: U.fmtInt(h.imports.failedRecent), median: ms(h.imports.medianMs) }),
+        { severity: h.imports.failedRecent ? 'high' : h.imports.failed ? 'medium' : 'good', small: true }),
+      tile(T('au.kIncidents'), U.fmtInt(h.incidents.open.length), T('au.kIncidentsFoot', { n: U.fmtInt(h.incidents.distinct), agents: U.fmtInt(h.incidents.agentDown) }),
+        { severity: h.incidents.agentDown ? 'high' : h.incidents.open.length ? 'medium' : 'good', small: true })
+    ]));
+
+    wrap.appendChild(card(T('au.failuresTitle'), T('au.failuresNote'), HR.table.make({
+      columns: [
+        { key: 'system', label: T('c.system'), value: g => g.system },
+        { key: 'action', label: T('au.cAction'), value: g => g.action },
+        { key: 'message', label: T('au.cMessage'), value: g => g.message },
+        { key: 'count', label: T('au.cTimes'), value: g => g.count, align: 'right' },
+        { key: 'people', label: T('au.cPeople'), value: g => g.people.length, align: 'right' },
+        { key: 'last', label: T('au.cLast'), value: g => g.last ? +g.last : 0, render: g => el('span', { class: 'nowrap', text: day(g.last) }) }
+      ],
+      rows: h.failures.groups, pageSize: 10, exportName: 'helloid-failed-actions', initialSort: { key: 'count', dir: -1 },
+      search: (g, q) => (g.system + ' ' + g.action + ' ' + g.message).toLowerCase().includes(q),
+      onRowClick: g => HR.viewkit.openDrawer(el('div', {}, [el('div', { class: 'drawer-title', text: g.system + ' · ' + g.action }), el('div', { class: 'note', text: g.message })]),
+        el('ul', { class: 'clean' }, g.people.slice(0, 200).map(p => el('li', { text: p }))))
+    })));
+
+    const g2 = el('div', { class: 'grid g2' });
+    g2.appendChild(card(T('au.importsTitle'), T('au.importsNote'), HR.table.make({
+      columns: [
+        { key: 'system', label: T('c.system'), value: s => s.system },
+        { key: 'runs', label: T('au.cRuns'), value: s => s.runs, align: 'right' },
+        { key: 'failed', label: T('au.cFailed'), value: s => s.failed, align: 'right', render: s => el('span', { class: s.failed ? 'sev high' : 'note', text: String(s.failed) }) },
+        { key: 'median', label: T('au.cMedian'), value: s => s.medianMs || 0, align: 'right', render: s => el('span', { text: ms(s.medianMs) }) },
+        { key: 'last', label: T('au.cLast'), value: s => s.last ? +s.last : 0,
+          render: s => el('span', { class: 'nowrap' + (/succe/i.test(s.lastResult) ? '' : ' sev high'), text: day(s.last) + (s.ageDays != null ? ' (' + T('wf.daysAgo', { n: U.fmtInt(s.ageDays) }) + ')' : '') }) }
+      ],
+      rows: h.imports.sources, pageSize: 10, exportName: 'helloid-imports', initialSort: { key: 'last', dir: -1 }
+    })));
+    g2.appendChild(card(T('au.snapshotsTitle'), T('au.snapshotsNote', { added: U.fmtInt(h.imports.personsAdded), removed: U.fmtInt(h.imports.personsRemoved), blocked: U.fmtInt(h.imports.personsBlocked) }),
+      audit.snapshots.length ? C.line([
+        { label: T('au.sTotal'), color: C.slot(1), points: audit.snapshots.map((r, i) => ({ x: i, y: r.totalPersons || 0 })) },
+        { label: T('au.sAdded'), color: C.STATUS.good, points: audit.snapshots.map((r, i) => ({ x: i, y: r.personsAdded || 0 })) },
+        { label: T('au.sRemoved'), color: C.STATUS.critical, points: audit.snapshots.map((r, i) => ({ x: i, y: r.personsRemoved || 0 })) }
+      ], audit.snapshots.map(r => day(r.at))) : el('p', { class: 'note', text: '—' })));
+    wrap.appendChild(g2);
+
+    const g3 = el('div', { class: 'grid g2', style: 'margin-top:14px' });
+    g3.appendChild(card(T('au.incidentsTitle'), T('au.incidentsNote'), [
+      C.barList(h.incidents.byComponent.map(c => ({ label: c.component, value: c.n })), { format: v => U.fmtInt(v) }),
+      h.incidents.open.length ? el('ul', { class: 'clean', style: 'margin-top:8px' }, h.incidents.open.slice(0, 10).map(r => el('li', {}, [
+        el('span', { class: 'sev high', text: T('au.open') }), document.createTextNode(' ' + (r.title || '') + ' · ' + day(r.at))]))) : el('p', { class: 'note', text: T('au.noOpen') })
+    ]));
+    g3.appendChild(card(T('au.evalTitle'), T('au.evalNote'), [
+      HR.viewkit.dl([
+        [T('au.evalLast'), h.evaluations.last ? U.fmtDate(h.evaluations.last) : '—'],
+        [T('au.evalLastEnf'), h.evaluations.lastEnforcement ? U.fmtDate(h.evaluations.lastEnforcement) : '—'],
+        [T('au.evalManual'), U.fmtInt(h.evaluations.manual)], [T('au.evalScheduled'), U.fmtInt(h.evaluations.scheduled)],
+        [T('au.evalCancels'), U.fmtInt(h.evaluations.cancels)], [T('au.notifications'), U.fmtInt(h.notifications)]
+      ])
+    ]));
+    wrap.appendChild(g3);
+    return wrap;
+  }
+
   /* --------------------------------------------------------- who did what */
   function actorsTab(m, audit) {
     const actors = HR.audit.actors(audit);
@@ -180,6 +251,7 @@
     f.appendChild(tabbed('audit', [
       { id: 'decisions', label: T('au.tab.decisions'), count: audit.exclusions.length + audit.thresholds.length, build: () => decisionsTab(m, audit) },
       { id: 'rules', label: T('au.tab.rules'), count: audit.rules.filter(r => /publish/i.test(r.action || '')).length, build: () => rulesTab(m, audit) },
+      { id: 'health', label: T('au.tab.health'), count: HR.audit.health(audit).failures.recentFailed, build: () => healthTab(m, audit) },
       { id: 'actors', label: T('au.tab.actors'), build: () => actorsTab(m, audit) }
     ], params));
     return f;

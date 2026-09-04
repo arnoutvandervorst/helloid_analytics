@@ -301,6 +301,43 @@
     return list;
   }
 
+  /** From the audit log: the engine's failures and the decisions an audit cannot read. */
+  function runAudit(model) {
+    const a = model.audit;
+    if (!a || !HR.audit.health) return [];
+    const out = [];
+    try {
+      const h = HR.audit.health(a);
+      if (h.failures.groups.length) out.push(Object.assign({
+        id: 'audit-failed-actions', severity: h.failures.recentRate > 0.02 ? 'high' : 'medium', category: T('fi.cat.provisioning'),
+        entities: h.failures.groups.slice(0, 25).map(g => ({ type: 'failure', key: g.system + '|' + g.action, label: g.system + ' \u00b7 ' + g.action,
+          detail: T('fi.audit-failed-actions.detail', { n: U.fmtInt(g.count), people: U.fmtInt(g.people.length), message: g.message, last: g.last ? U.fmtDate(g.last).split(',')[0] : '\u2014' }) })),
+        count: h.failures.failed
+      }, prose('audit-failed-actions', { n: U.fmtInt(h.failures.failed), pct: U.fmtNum(100 * h.failures.rate, 1), recent: U.fmtInt(h.failures.recentFailed), recentPct: U.fmtNum(100 * h.failures.recentRate, 1) })));
+      if (h.imports.failed) out.push(Object.assign({
+        id: 'audit-import-failures', severity: h.imports.failedRecent ? 'high' : 'low', category: T('fi.cat.provisioning'),
+        entities: h.imports.sources.filter(s => s.failed).map(s => ({ type: 'source', key: s.system, label: s.system,
+          detail: T('fi.audit-import-failures.detail', { failed: U.fmtInt(s.failed), runs: U.fmtInt(s.runs), last: s.last ? U.fmtDate(s.last).split(',')[0] : '\u2014', result: s.lastResult }) })),
+        count: h.imports.failed
+      }, prose('audit-import-failures', { n: U.fmtInt(h.imports.failed), runs: U.fmtInt(h.imports.runs), recent: U.fmtInt(h.imports.failedRecent) })));
+      const noReason = a.exclusions.filter(x => !String(x.comment || '').trim());
+      if (noReason.length) out.push(Object.assign({
+        id: 'audit-exclusions-no-reason', severity: 'medium', category: T('fi.cat.process'),
+        entities: noReason.map(x => ({ type: 'exclusion', key: x.account + '|' + x.permission, label: (x.accountUserName || '') + (x.permission ? ' \u00b7 ' + x.permission : ''),
+          detail: T('fi.audit-exclusions-no-reason.detail', { who: x.userName || '\u2014', date: x.at ? U.fmtDate(x.at).split(',')[0] : '\u2014', until: x.until ? U.fmtDate(x.until).split(',')[0] : '\u2014' }) })),
+        count: noReason.length
+      }, prose('audit-exclusions-no-reason', { n: U.fmtInt(noReason.length), of: U.fmtInt(a.exclusions.length) })));
+      if (h.incidents.open.length) out.push(Object.assign({
+        id: 'audit-open-incidents', severity: h.incidents.agentDown ? 'high' : 'medium', category: T('fi.cat.provisioning'),
+        entities: h.incidents.open.slice(0, 25).map(r => ({ type: 'incident', key: r.identifier || r.title, label: r.title || '',
+          detail: (r.description || '') + (r.at ? ' \u00b7 ' + U.fmtDate(r.at).split(',')[0] : '') })),
+        count: h.incidents.open.length
+      }, prose('audit-open-incidents', { n: U.fmtInt(h.incidents.open.length), agents: U.fmtInt(h.incidents.agentDown) })));
+    } catch (e) { console.error('audit findings failed', e); }
+    out.forEach(f => { if (f.count == null) f.count = f.entities.length; f.annualImpact = (f.impactMonthly || 0) * 12; });
+    return out;
+  }
+
   function run(model) {
     const out = [];
     for (const rule of RULES) {
@@ -1352,7 +1389,7 @@
     return out;
   }
 
-  HR.findings = { runHidden, run, runComparison, runVault, runCorrelation, runExplanation, runActivity, runProducts,
+  HR.findings = { runHidden, runAudit, run, runComparison, runVault, runCorrelation, runExplanation, runActivity, runProducts,
     runVaultQuality, runNedap,
     RULES, COMPARISON_RULES, VAULT_RULES, CORRELATION_RULES, EXPLANATION_RULES,
     ACTIVITY_RULES, PRODUCT_RULES, VAULT_QUALITY_RULES, NEDAP_RULES };

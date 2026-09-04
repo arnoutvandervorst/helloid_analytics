@@ -540,6 +540,36 @@
         }
       }
 
+      /* ============ HelloID operations — from the audit log ============ */
+      if (m.audit && HR.audit.health) {
+        const h = HR.audit.health(m.audit);
+        const A = m.audit;
+        const noReason = A.exclusions.filter(x => !String(x.comment || '').trim()).length;
+        const ft = el('table', { class: 'board-tbl' });
+        ft.appendChild(el('thead', {}, el('tr', {}, [el('th', { text: T('c.system') }), el('th', { text: T('au.cAction') }), el('th', { text: T('au.cMessage') }),
+          el('th', { class: 'num', text: T('au.cTimes') }), el('th', { class: 'num', text: T('au.cPeople') })])));
+        ft.appendChild(el('tbody', {}, h.failures.groups.slice(0, 8).map(g => el('tr', {}, [
+          el('td', { text: g.system }), el('td', { class: 'nowrap', text: g.action }), el('td', { text: g.message }),
+          el('td', { class: 'num', text: U.fmtInt(g.count) }), el('td', { class: 'num', text: U.fmtInt(g.people.length) })]))));
+        paper.appendChild(page([
+          el('h2', { class: 'sheet-h', text: T('bd.secOps') }),
+          el('div', { class: 'bignums' }, [
+            bigNumber(U.fmtPct(h.failures.recentRate, 1), T('bd.opsFailRate'), T('bd.opsFailRateSub', { n: U.fmtInt(h.failures.recentFailed) }),
+              h.failures.recentRate > 0.05 ? 'bad' : h.failures.recentRate > 0.02 ? 'watch' : 'good'),
+            bigNumber(h.evaluations.ageDays == null ? '—' : String(h.evaluations.ageDays), T('bd.opsEvalAge'), T('bd.opsEvalAgeSub', { n: U.fmtInt(h.evaluations.starts) }),
+              h.evaluations.ageDays == null || h.evaluations.ageDays > 7 ? 'bad' : h.evaluations.ageDays > 1 ? 'watch' : 'good'),
+            bigNumber(U.fmtInt(h.imports.failedRecent), T('bd.opsImportFail'), T('bd.opsImportFailSub', { n: U.fmtInt(h.imports.runs) }), h.imports.failedRecent ? 'bad' : 'good'),
+            bigNumber(U.fmtInt(h.incidents.open.length), T('bd.opsIncidents'), T('bd.opsIncidentsSub', { n: U.fmtInt(h.incidents.distinct) }), h.incidents.agentDown ? 'bad' : h.incidents.open.length ? 'watch' : 'good')
+          ]),
+          el('p', { class: 'lead', text: T('bd.opsLead', { from: A.meta.first ? U.fmtDate(A.meta.first).split(',')[0] : '—', to: A.meta.last ? U.fmtDate(A.meta.last).split(',')[0] : '—',
+            actions: U.fmtInt(h.failures.actions), exclusions: U.fmtInt(A.exclusions.length), noReason: U.fmtInt(noReason), thresholds: U.fmtInt(A.thresholds.length),
+            publishes: U.fmtInt(A.rules.filter(r => /publish/i.test(r.action || '')).length), actors: U.fmtInt(HR.audit.actors(A).length) }) }),
+          el('h3', { class: 'sheet-h3', text: T('bd.opsFailures') }),
+          ft,
+          el('p', { class: 'footnote', text: T('bd.opsFoot') })
+        ]));
+      }
+
       /* ============ page 5 — recommendations ============ */
       /* ============ policy guidelines ============ */
       const pol = HR.policy.evaluate(m);
@@ -678,6 +708,14 @@
       departments: s.departments || [],
       actions: actions(m).map(a => ({ title: a.title, hours: Math.round(a.hours), saving: a.saving, severity: a.severity, owner: a.owner || null }))
     };
+    if (m.audit && HR.audit.health) {
+      const h = HR.audit.health(m.audit);
+      out.operations = { window: { from: m.audit.meta.first, to: m.audit.meta.last }, actions: h.failures.actions, failed: h.failures.failed, failedRate30d: h.failures.recentRate,
+        imports: { runs: h.imports.runs, failed: h.imports.failed, failedRecent: h.imports.failedRecent }, evaluations: { starts: h.evaluations.starts, ageDays: h.evaluations.ageDays, last: h.evaluations.last },
+        incidents: { distinct: h.incidents.distinct, open: h.incidents.open.length }, exclusions: m.audit.exclusions.length,
+        exclusionsWithoutReason: m.audit.exclusions.filter(x => !String(x.comment || '').trim()).length, thresholdApprovals: m.audit.thresholds.length,
+        rulePublishes: m.audit.rules.filter(r => /publish/i.test(r.action || '')).length };
+    }
     if (m.vault && HR.workforce) {
       try {
         const lv = HR.workforce.leavers(m, m.vault);

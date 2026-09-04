@@ -357,6 +357,9 @@
       try { HR.cost.hidden(model); model.findings = model.findings.concat(HR.findings.runHidden(model)); }
       catch (e) { console.error(e); }
     }
+    if (model.audit && HR.findings.runAudit) {
+      try { model.findings = model.findings.concat(HR.findings.runAudit(model)); } catch (e) { console.error(e); }
+    }
     model.summary = summarise(model);
     /* The compliance score travels with the summary, so every snapshot keeps it and
        the trend can be drawn. policy.js loads later, so this is a runtime lookup. */

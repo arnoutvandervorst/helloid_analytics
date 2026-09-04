@@ -135,5 +135,96 @@
     return Array.from(by.values()).sort((a, b) => b.total - a.total);
   }
 
-  HR.audit = { parse, looksLikeAudit, asHistory, evidenceFor, actors, untilOf };
+  /* -------------------------------------------------------------- health */
+
+  const DAY = 86400000;
+  const median = xs => { const a = xs.filter(x => x != null).sort((p, q) => p - q); return a.length ? a[Math.floor(a.length / 2)] : null; };
+
+  /**
+   * Does the engine run, and does it land? Imports, evaluations, failed actions and
+   * incidents over the window and over the last 30 days. Cached on the audit object.
+   */
+  function health(audit, now) {
+    if (audit._health) return audit._health;
+    now = now || new Date();
+    const recent = r => r.at && (now - r.at) <= 30 * DAY;
+
+    /* imports: per source system, the last run and whether it landed */
+    const bySource = new Map();
+    audit.imports.forEach(r => {
+      const k = r.systemName || r.systemId || '?';
+      if (!bySource.has(k)) bySource.set(k, { system: k, runs: 0, failed: 0, last: null, lastResult: '', durations: [] });
+      const s = bySource.get(k); s.runs++;
+      if (!/succe/i.test(r.result || '')) s.failed++;
+      if (r.processingTimeMs != null) s.durations.push(r.processingTimeMs);
+      if (!s.last || r.at > s.last) { s.last = r.at; s.lastResult = r.result || ''; }
+    });
+    const importFailed = audit.imports.filter(r => !/succe/i.test(r.result || ''));
+    const imports = {
+      runs: audit.imports.length, failed: importFailed.length, failedRecent: importFailed.filter(recent).length,
+      recent: audit.imports.filter(recent).length,
+      medianMs: median(audit.imports.map(r => r.processingTimeMs)),
+      sources: Array.from(bySource.values()).map(s => Object.assign(s, { medianMs: median(s.durations), ageDays: s.last ? Math.round((now - s.last) / DAY) : null })).sort((a, b) => (a.ageDays || 0) - (b.ageDays || 0)),
+      personsAdded: U.sum(audit.snapshots, r => r.personsAdded || 0),
+      personsRemoved: U.sum(audit.snapshots, r => r.personsRemoved || 0),
+      personsBlocked: U.sum(audit.snapshots, r => r.personsBlocked || 0),
+      lastSnapshot: audit.snapshots.length ? audit.snapshots[audit.snapshots.length - 1] : null
+    };
+
+    /* evaluations: cadence and the last one that ran */
+    const starts = audit.evaluations.filter(r => /start/i.test(r.action || ''));
+    const cancels = audit.evaluations.filter(r => /cancel/i.test(r.action || ''));
+    const lastStart = starts.length ? starts[starts.length - 1] : null;
+    const enforce = starts.filter(r => r.isEnforcement);
+    const evaluations = {
+      starts: starts.length, enforcements: enforce.length, cancels: cancels.length,
+      scheduled: starts.filter(r => /schedul/i.test(r.runType || '')).length,
+      manual: starts.filter(r => /manual/i.test(r.runType || '')).length,
+      recent: starts.filter(recent).length,
+      last: lastStart ? lastStart.at : null,
+      lastEnforcement: enforce.length ? enforce[enforce.length - 1].at : null,
+      ageDays: lastStart ? Math.round((now - lastStart.at) / DAY) : null
+    };
+
+    /* failed actions: what fails, where, for whom. "Recent" is the last 30 days of
+       activity, counted back from the latest action — an idle tenant is not a clean one. */
+    const acts = audit.provisioning.filter(r => !/SendNotification/i.test(r.action || ''));
+    const failed = acts.filter(r => /error|fail/i.test(r.state || ''));
+    const lastAct = acts.length ? acts[acts.length - 1].at : now;
+    const recentAct = r => r.at && (lastAct - r.at) <= 30 * DAY;
+    const recentActs = acts.filter(recentAct), recentFailed = failed.filter(recentAct);
+    const groups = new Map();
+    failed.forEach(r => {
+      const k = (r.systemName || '?') + '|' + (r.action || '?') + '|' + String(r.message || '').slice(0, 80);
+      if (!groups.has(k)) groups.set(k, { system: r.systemName || '?', action: r.action || '?', message: r.message || '', count: 0, people: new Set(), last: null });
+      const g = groups.get(k); g.count++; if (r.personDisplayName) g.people.add(r.personDisplayName); if (!g.last || r.at > g.last) g.last = r.at;
+    });
+    const failures = {
+      actions: acts.length, failed: failed.length, rate: acts.length ? failed.length / acts.length : 0,
+      recentActions: recentActs.length, recentFailed: recentFailed.length, recentRate: recentActs.length ? recentFailed.length / recentActs.length : 0,
+      recentUntil: lastAct,
+      groups: Array.from(groups.values()).map(g => Object.assign(g, { people: Array.from(g.people) })).sort((a, b) => b.count - a.count),
+      bySystem: Array.from(U.counts(failed, r => r.systemName || '?').entries()).map(([system, n]) => ({ system, failed: n,
+        actions: acts.filter(a => (a.systemName || '?') === system).length })).sort((a, b) => b.failed - a.failed)
+    };
+
+    /* incidents: one per identifier, open when the latest row has no closedAt */
+    const byId = new Map();
+    audit.incidents.forEach(r => { const k = r.identifier || r.title; if (!byId.has(k) || r.at > byId.get(k).at) byId.set(k, r); });
+    const distinct = Array.from(byId.values());
+    const tagOf = (r, type) => ((r.tags || []).find(t => t.type === type) || {}).value || '';
+    const incidents = {
+      events: audit.incidents.length, distinct: distinct.length,
+      open: distinct.filter(r => !r.closedAt),
+      recent: distinct.filter(recent).length,
+      byComponent: Array.from(U.counts(distinct, r => tagOf(r, 'Component') || '?').entries()).map(([component, n]) => ({ component, n })).sort((a, b) => b.n - a.n),
+      agentDown: distinct.filter(r => !r.closedAt && /agent/i.test(r.title || '') && /down/i.test(r.title || '')).length
+    };
+
+    const notifications = audit.provisioning.filter(r => /SendNotification/i.test(r.action || '')).length;
+    audit._health = { imports, evaluations, failures, incidents, notifications, now };
+    return audit._health;
+  }
+
+  HR.audit = { parse, looksLikeAudit, asHistory, evidenceFor, actors, untilOf, health };
 })(window.HR);
