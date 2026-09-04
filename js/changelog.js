@@ -18,6 +18,12 @@
 
   const ENTRIES = [
     {
+      version: '2026.9.32', date: '2026-09-04',
+      changes: [
+        'helloid-export.ps1 verified against a live tenant and fixed: a page variable shadowed the page size (PowerShell variable names are case-insensitive), and an empty assignment list came back as one bogus row. Both collectors now produce the same file as their Python twins for the same tenant.'
+      ]
+    },
+    {
       version: '2026.9.31', date: '2026-09-04',
       changes: [
         'The collectors ask for their credentials. helloid-export.py and helloid-audit.py no longer need environment variables or a .env file: the first run asks for the tenant URL, key and secret (the secret typed without echo), says where in HelloID the key is created, and offers to save them as a named profile in helloid-config.json next to the scripts — owner-only, gitignored, never deployed. After that a run just runs; --profile picks another tenant, --setup asks again, --list-profiles and --forget manage the file. The old ways still work for scheduled jobs.',

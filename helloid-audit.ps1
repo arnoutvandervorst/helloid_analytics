@@ -68,7 +68,7 @@ function Write-Progress-Line([string]$Message) {
   else { Write-Host ("`r" + (' ' * 100) + "`r        $Message") -NoNewline }
 }
 
-$Page = 5000
+$PageSize = 5000
 $WindowCap = 10000
 # index pattern, output key, fields to keep (empty = all)
 $Sources = @(
@@ -137,7 +137,7 @@ function Get-AuditWindow([string]$Pattern, [datetime]$Start, [datetime]$End, [st
   $offset = 0
   $limit = [Math]::Min($total, $WindowCap)
   while ($offset -lt $limit) {
-    $body = @{ size = $Page; from = $offset; sort = @(@{ logDate = 'asc' }); query = (Get-RangeQuery $Start $End) }
+    $body = @{ size = $PageSize; from = $offset; sort = @(@{ logDate = 'asc' }); query = (Get-RangeQuery $Start $End) }
     if ($Fields.Count) { $body['_source'] = $Fields }
     $res = Invoke-Search $Pattern $body
     $hits = @($res.hits.hits)
@@ -155,7 +155,7 @@ function Get-AuditWindow([string]$Pattern, [datetime]$Start, [datetime]$End, [st
     $Tally.rows += $hits.Count
     $lastDate = [string]$hits[-1]._source.logDate; if ($lastDate.Length -gt 10) { $lastDate = $lastDate.Substring(0, 10) }
     Write-Progress-Line ("{0:N0} rows - {1} requests - up to {2}" -f $Tally.rows, $script:Requests, $lastDate)
-    if ($hits.Count -lt $Page) { break }
+    if ($hits.Count -lt $PageSize) { break }
   }
   return $out.ToArray()
 }

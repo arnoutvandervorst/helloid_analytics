@@ -57,7 +57,7 @@ $ErrorActionPreference = 'Stop'
 if ($ListProfiles) { Show-HelloIDProfile; return }
 if ($Forget) { Remove-HelloIDProfile $Forget; return }
 
-$Page = 500
+$PageSize = 500   # variables are case-insensitive: not $Page, which the loop below reuses
 $creds = Resolve-HelloIDCredential -Kind api -ProfileName $ProfileName -Setup:$Setup -EnvFile $EnvFile
 $base = $creds.Url.TrimEnd('/')
 if (-not $base.EndsWith('/api/v1')) { $base += '/api/v1' }
@@ -80,7 +80,7 @@ function Get-Paged([string]$Path) {
   $out = New-Object System.Collections.Generic.List[object]
   $skip = 0
   while ($true) {
-    $page = Invoke-Api $Path @{ skip = $skip; take = $Page }
+    $page = Invoke-Api $Path @{ skip = $skip; take = $PageSize }
     if ($page -is [PSCustomObject] -and ($page.PSObject.Properties['data'] -or $page.PSObject.Properties['items'])) {
       $page = if ($page.data) { $page.data } else { $page.items }
     }
@@ -88,8 +88,8 @@ function Get-Paged([string]$Path) {
     if ($page.Count -eq 1 -and $page[0] -is [array]) { $page = @($page[0]) }
     foreach ($p in $page) { $out.Add($p) }
     Write-Host ("  {0}: {1:N0} so far ..." -f $Path, $out.Count)
-    if ($page.Count -lt $Page) { return $out.ToArray() }
-    $skip += $Page
+    if ($page.Count -lt $PageSize) { return $out.ToArray() }
+    $skip += $PageSize
   }
 }
 
@@ -106,7 +106,7 @@ function Get-ProductList {
     }
     $data = @($data)
     Write-Host "  products via $path`: $($data.Count)"
-    return @($data, $path)
+    return @{ Data = $data; Path = $path }
   }
   throw 'Neither /products nor /selfservice/products answered.'
 }
@@ -137,8 +137,9 @@ function ConvertTo-AssignmentRow($a) {
 
 $profileNote = ''; if ($creds.Profile) { $profileNote = " (profile $($creds.Profile))" }
 Write-Host "Tenant $tenant$profileNote"
-$products, $productPath = Get-ProductList
-$assignments = Get-Paged '/product-assignment'
+$pl = Get-ProductList
+$products = @($pl.Data); $productPath = $pl.Path
+$assignments = @(Get-Paged '/product-assignment')
 Write-Host "  product assignments: $($assignments.Count)"
 $rows = @($assignments | ForEach-Object { ConvertTo-AssignmentRow $_ })
 
