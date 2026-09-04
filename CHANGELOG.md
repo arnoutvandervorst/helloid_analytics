@@ -3,6 +3,10 @@
 Versions are CalVer (`YYYY.M.N` — Nth release of that month). This file is
 generated from `js/changelog.js` by `make-changelog.js`; edit there, not here.
 
+## [2026.9.36] — 2026-09-04
+
+- “Load demo” fetches the demo files bypassing the browser cache. A deploy had briefly left the demo set off the host and the CDN in front handed browsers a four-hour TTL on the resulting 404s; the files are back and the fetch no longer trusts a cached answer.
+
 ## [2026.9.35] — 2026-09-04
 
 - A control’s link lands on the thing itself. “See finding” on Compliance now opens Risk & findings with that one finding expanded, highlighted and scrolled into view, and is only offered when the finding actually fired. Every other control has an “open →” link to the page and tab it reads from — leavers, workforce, attestation, engine health, decisions, admin access, toxic combinations, accounts (unowned filter), people, permissions, business rules — instead of a page where the reader still had to look.

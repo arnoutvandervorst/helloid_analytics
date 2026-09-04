@@ -23,7 +23,8 @@
     manifest = null;
     if (location.protocol === 'file:') return manifest;
     try {
-      const res = await fetch(DIR + 'manifest.json');
+      /* no-store: a CDN in front hands browsers a four-hour TTL on these files, 404s included. */
+      const res = await fetch(DIR + 'manifest.json', { cache: 'no-store' });
       if (!res.ok) return manifest;
       const data = await res.json();
       if (data && data.kind === 'helloid-analytics-demo' && Array.isArray(data.files)) {
@@ -51,7 +52,7 @@
       for (const entry of m.files) {
         let text;
         try {
-          const res = await fetch(DIR + entry.file);
+          const res = await fetch(DIR + entry.file, { cache: 'no-store' });
           if (!res.ok) throw new Error(res.status + ' ' + res.statusText);
           text = HR.parse.decode(await res.arrayBuffer()).text;
         } catch (e) {
