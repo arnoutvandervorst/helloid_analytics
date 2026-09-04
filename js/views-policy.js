@@ -176,7 +176,9 @@
     tIn.onchange = () => change(m, id, { t: Math.max(0, +tIn.value || 0) });
     const controls = el('div', { class: 'slot-actions' }, [
       el('label', { class: 'inline' }, [document.createTextNode(T('po.limitLabel')), tIn,
-        document.createTextNode(row.def.unit === 'pct' ? '%' : '')])
+        document.createTextNode(row.def.unit === 'pct' ? '%' : '')]),
+      el('span', { class: 'note', text: T('po.defaultIs', { v: row.def.unit === 'pct' ? U.fmtNum(row.def.def, 1) + '%' : U.fmtInt(row.def.def) })
+        + (row.def.paramDef !== undefined ? ' \u00b7 ' + T('po.paramLabel.' + id) + row.def.paramDef : '') })
     ]);
     if (row.def.paramDef !== undefined) {
       const pIn = el('input', { type: 'number', min: 1, step: 1, value: row.param });

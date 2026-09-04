@@ -2498,6 +2498,37 @@
       numField(cfg.effort, 'idleDayCost', T('st.idleDayCost'))
       ])),
 
+      /* Every compliance limit in one table: the shipped default, what is set now, when
+         it changed. Editing per row lives on Compliance; this is the overview. */
+      card(T('st.limits'), T('st.limitsNote'), (() => {
+        const T2 = HR.i18n.t;
+        const rows = HR.policy.CATALOG.map(def => {
+          const st = HR.policy.settingsFor(def);
+          const fmt = v => def.unit === 'pct' ? U.fmtNum(v, 1) + '%' : U.fmtInt(v);
+          const last = (st.changes || []).filter(c => c.field === 't' || c.field === 'p').slice(-1)[0];
+          return { def, st, fmt, last, changed: st.threshold !== def.def || (def.paramDef !== undefined && st.param !== def.paramDef) };
+        });
+        return HR.table.make({
+          columns: [
+            { key: 'sev', label: T2('c.sev'), value: r => HR.policy.SEVERITIES.indexOf(r.def.severity || 'medium'),
+              render: r => el('span', { class: 'sev ' + (r.def.severity || 'medium'), text: T2('c.' + (r.def.severity || 'medium')) }) },
+            { key: 'control', label: T2('st.cControl'), value: r => T2('po.p.' + r.def.id) },
+            { key: 'default', label: T2('st.cDefault'), value: r => r.def.def, align: 'right',
+              render: r => el('span', { class: 'mono', text: (r.def.dir === 'max' ? '\u2264 ' : '\u2265 ') + r.fmt(r.def.def)
+                + (r.def.paramDef !== undefined ? ' \u00b7 ' + T2('po.paramLabel.' + r.def.id) + r.def.paramDef : '') }) },
+            { key: 'current', label: T2('st.cCurrent'), value: r => r.st.threshold, align: 'right',
+              render: r => el('span', { class: 'mono' + (r.changed ? ' sev medium' : ''), text: (r.def.dir === 'max' ? '\u2264 ' : '\u2265 ') + r.fmt(r.st.threshold)
+                + (r.def.paramDef !== undefined ? ' \u00b7 ' + T2('po.paramLabel.' + r.def.id) + r.st.param : '') + (r.st.on ? '' : ' \u00b7 ' + T2('po.off')) }) },
+            { key: 'when', label: T2('st.cChanged'), value: r => r.last ? r.last.at : '', render: r => el('span', { class: 'note nowrap', text: r.last ? r.last.at.slice(0, 10) : '\u2014' }) },
+            { key: 'reset', label: '', value: () => 0, render: r => r.changed
+              ? el('button', { class: 'btn sm ghost', text: T2('st.resetOne'), onclick: () => { HR.policy.set(r.def.id, { t: null, p: null }); HR.app.rebuildBusy().then(() => HR.app.go('settings', { tab: 'weights' })); } })
+              : el('span', { class: 'note', text: T2('st.isDefault') }) }
+          ],
+          rows, pageSize: 40, exportName: 'compliance-limits', initialSort: { key: 'sev', dir: 1 },
+          search: (r, q) => T2('po.p.' + r.def.id).toLowerCase().includes(q)
+        });
+      })()),
+
       card(T('st.sla'), T('st.slaNote'), el('div', { class: 'row' }, [
       numField(cfg.sla, 'joinerDays', T('st.slaJoiner')),
       numField(cfg.sla, 'leaverDays', T('st.slaLeaver')),

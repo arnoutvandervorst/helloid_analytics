@@ -18,6 +18,12 @@
 
   const ENTRIES = [
     {
+      version: '2026.9.34', date: '2026-09-04',
+      changes: [
+        'Every compliance limit in one place. Settings › Weights & thresholds gains a “Compliance limits” table: each control with its shipped default, what is set now (marked when it differs), when it last changed, and a reset per row. The Edit fold on a Compliance row now says the default next to the limit. The limits themselves were always editable per row and saved with the settings file; the defaults live in the control catalogue.'
+      ]
+    },
+    {
       version: '2026.9.33', date: '2026-09-04',
       changes: [
         'The Entra collector can use a saved profile too. collect-entra.ps1 -AppOnly signs in as an app registration (tenant id, client id, client secret — asked once, kept in helloid-config.json alongside the HelloID keys) for scheduled, unattended collections; it needs the same three permissions as Application permissions with admin consent. The interactive sign-in stays the default: it leaves no secret on disk and its consent is revocable. docs/ENTRA-CONSENT.md explains both.'
