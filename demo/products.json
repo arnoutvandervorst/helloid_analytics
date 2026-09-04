@@ -1,0 +1,381 @@
+{
+ "kind": "helloid-products",
+ "source": "/products",
+ "tenant": "demo.helloid.com",
+ "products": [
+  {
+   "productId": "p0000-demo-0000-0000-000000000000",
+   "name": "PowerBI Pro",
+   "description": "PowerBI Pro — aan te vragen via de selfservice-catalogus.",
+   "code": "20240000DEMO",
+   "categories": [
+    {
+     "id": "cat-0"
+    }
+   ],
+   "resourceOwnerGroup": {
+    "name": "ROLE-KWA07-Kwaliteit"
+   },
+   "approvalWorkflow": {
+    "name": "Auto Approve"
+   },
+   "price": "9,90",
+   "showPrice": true,
+   "hasRiskFactor": false,
+   "riskFactor": null,
+   "hasTimeLimit": false,
+   "ownershipMaxDuration": 60,
+   "limitType": "Maximum",
+   "returnOnUserDisable": true,
+   "visibility": "All",
+   "isEnabled": true,
+   "actions": []
+  },
+  {
+   "productId": "p0001-demo-0000-0000-000000000000",
+   "name": "Copilot",
+   "description": "Copilot — aan te vragen via de selfservice-catalogus.",
+   "code": "20240001DEMO",
+   "categories": [
+    {
+     "id": "cat-1"
+    }
+   ],
+   "resourceOwnerGroup": {},
+   "approvalWorkflow": {
+    "name": "Auto Approve"
+   },
+   "price": "28,00",
+   "showPrice": true,
+   "hasRiskFactor": false,
+   "riskFactor": null,
+   "hasTimeLimit": false,
+   "ownershipMaxDuration": 60,
+   "limitType": "Maximum",
+   "returnOnUserDisable": true,
+   "visibility": "All",
+   "isEnabled": true,
+   "actions": []
+  },
+  {
+   "productId": "p0002-demo-0000-0000-000000000000",
+   "name": "Adobe Acrobat Pro",
+   "description": "Adobe Acrobat Pro — aan te vragen via de selfservice-catalogus.",
+   "code": "20240002DEMO",
+   "categories": [
+    {
+     "id": "cat-2"
+    }
+   ],
+   "resourceOwnerGroup": {},
+   "approvalWorkflow": {
+    "name": "Auto Approve"
+   },
+   "price": "17,50",
+   "showPrice": true,
+   "hasRiskFactor": false,
+   "riskFactor": null,
+   "hasTimeLimit": false,
+   "ownershipMaxDuration": 60,
+   "limitType": "Maximum",
+   "returnOnUserDisable": true,
+   "visibility": "All",
+   "isEnabled": true,
+   "actions": []
+  },
+  {
+   "productId": "p0003-demo-0000-0000-000000000000",
+   "name": "Visio",
+   "description": "Visio — aan te vragen via de selfservice-catalogus.",
+   "code": "20240003DEMO",
+   "categories": [
+    {
+     "id": "cat-3"
+    }
+   ],
+   "resourceOwnerGroup": {
+    "name": "ROLE-KWA07-Kwaliteit"
+   },
+   "approvalWorkflow": {
+    "name": "Auto Approve"
+   },
+   "price": "12,00",
+   "showPrice": true,
+   "hasRiskFactor": false,
+   "riskFactor": null,
+   "hasTimeLimit": true,
+   "ownershipMaxDuration": 864000,
+   "limitType": "Maximum",
+   "returnOnUserDisable": true,
+   "visibility": "All",
+   "isEnabled": true,
+   "actions": []
+  },
+  {
+   "productId": "p0004-demo-0000-0000-000000000000",
+   "name": "Project",
+   "description": "Project — aan te vragen via de selfservice-catalogus.",
+   "code": "20240004DEMO",
+   "categories": [
+    {
+     "id": "cat-0"
+    }
+   ],
+   "resourceOwnerGroup": {},
+   "approvalWorkflow": {
+    "name": "Auto Approve"
+   },
+   "price": "25,00",
+   "showPrice": true,
+   "hasRiskFactor": false,
+   "riskFactor": null,
+   "hasTimeLimit": false,
+   "ownershipMaxDuration": 60,
+   "limitType": "Maximum",
+   "returnOnUserDisable": true,
+   "visibility": "All",
+   "isEnabled": true,
+   "actions": []
+  },
+  {
+   "productId": "p0005-demo-0000-0000-000000000000",
+   "name": "Beheerderstoegang AD",
+   "description": "Beheerderstoegang AD — aan te vragen via de selfservice-catalogus.",
+   "code": "20240005DEMO",
+   "categories": [
+    {
+     "id": "cat-1"
+    }
+   ],
+   "resourceOwnerGroup": {},
+   "approvalWorkflow": {
+    "name": "Manager"
+   },
+   "price": "",
+   "showPrice": false,
+   "hasRiskFactor": true,
+   "riskFactor": 9,
+   "hasTimeLimit": true,
+   "ownershipMaxDuration": 7200,
+   "limitType": "Maximum",
+   "returnOnUserDisable": false,
+   "visibility": "All",
+   "isEnabled": true,
+   "actions": []
+  },
+  {
+   "productId": "p0006-demo-0000-0000-000000000000",
+   "name": "Exchange-beheer",
+   "description": "Exchange-beheer — aan te vragen via de selfservice-catalogus.",
+   "code": "20240006DEMO",
+   "categories": [
+    {
+     "id": "cat-2"
+    }
+   ],
+   "resourceOwnerGroup": {
+    "name": "ROLE-KWA07-Kwaliteit"
+   },
+   "approvalWorkflow": {
+    "name": "Manager"
+   },
+   "price": "",
+   "showPrice": false,
+   "hasRiskFactor": true,
+   "riskFactor": 8,
+   "hasTimeLimit": true,
+   "ownershipMaxDuration": 7200,
+   "limitType": "Maximum",
+   "returnOnUserDisable": false,
+   "visibility": "All",
+   "isEnabled": true,
+   "actions": []
+  },
+  {
+   "productId": "p0007-demo-0000-0000-000000000000",
+   "name": "Noodprocedure breakglass",
+   "description": "Noodprocedure breakglass — aan te vragen via de selfservice-catalogus.",
+   "code": "20240007DEMO",
+   "categories": [
+    {
+     "id": "cat-3"
+    }
+   ],
+   "resourceOwnerGroup": {},
+   "approvalWorkflow": {
+    "name": "Manager"
+   },
+   "price": "",
+   "showPrice": false,
+   "hasRiskFactor": true,
+   "riskFactor": 10,
+   "hasTimeLimit": true,
+   "ownershipMaxDuration": 1440,
+   "limitType": "Maximum",
+   "returnOnUserDisable": false,
+   "visibility": "All",
+   "isEnabled": true,
+   "actions": []
+  },
+  {
+   "productId": "p0008-demo-0000-0000-000000000000",
+   "name": "Thuiswerkplek",
+   "description": "Thuiswerkplek — aan te vragen via de selfservice-catalogus.",
+   "code": "20240008DEMO",
+   "categories": [
+    {
+     "id": "cat-0"
+    }
+   ],
+   "resourceOwnerGroup": {},
+   "approvalWorkflow": {
+    "name": "Manager"
+   },
+   "price": "",
+   "showPrice": false,
+   "hasRiskFactor": true,
+   "riskFactor": 3,
+   "hasTimeLimit": false,
+   "ownershipMaxDuration": 60,
+   "limitType": "Maximum",
+   "returnOnUserDisable": false,
+   "visibility": "All",
+   "isEnabled": true,
+   "actions": []
+  },
+  {
+   "productId": "p0009-demo-0000-0000-000000000000",
+   "name": "Mobiele telefoon",
+   "description": "Mobiele telefoon — aan te vragen via de selfservice-catalogus.",
+   "code": "20240009DEMO",
+   "categories": [
+    {
+     "id": "cat-1"
+    }
+   ],
+   "resourceOwnerGroup": {
+    "name": "ROLE-KWA07-Kwaliteit"
+   },
+   "approvalWorkflow": {
+    "name": "Manager"
+   },
+   "price": "32,00",
+   "showPrice": true,
+   "hasRiskFactor": true,
+   "riskFactor": 2,
+   "hasTimeLimit": false,
+   "ownershipMaxDuration": 60,
+   "limitType": "Maximum",
+   "returnOnUserDisable": false,
+   "visibility": "All",
+   "isEnabled": true,
+   "actions": []
+  },
+  {
+   "productId": "p0010-demo-0000-0000-000000000000",
+   "name": "Laptop",
+   "description": "Laptop — aan te vragen via de selfservice-catalogus.",
+   "code": "20240010DEMO",
+   "categories": [
+    {
+     "id": "cat-2"
+    }
+   ],
+   "resourceOwnerGroup": {},
+   "approvalWorkflow": {
+    "name": "Manager"
+   },
+   "price": "45,00",
+   "showPrice": true,
+   "hasRiskFactor": true,
+   "riskFactor": 4,
+   "hasTimeLimit": false,
+   "ownershipMaxDuration": 60,
+   "limitType": "Maximum",
+   "returnOnUserDisable": false,
+   "visibility": "All",
+   "isEnabled": true,
+   "actions": []
+  },
+  {
+   "productId": "p0011-demo-0000-0000-000000000000",
+   "name": "Parkeerplaats",
+   "description": "Parkeerplaats — aan te vragen via de selfservice-catalogus.",
+   "code": "20240011DEMO",
+   "categories": [
+    {
+     "id": "cat-3"
+    }
+   ],
+   "resourceOwnerGroup": {},
+   "approvalWorkflow": {
+    "name": "Auto Approve"
+   },
+   "price": "85,00",
+   "showPrice": true,
+   "hasRiskFactor": false,
+   "riskFactor": null,
+   "hasTimeLimit": false,
+   "ownershipMaxDuration": 60,
+   "limitType": "Maximum",
+   "returnOnUserDisable": false,
+   "visibility": "All",
+   "isEnabled": true,
+   "actions": []
+  },
+  {
+   "productId": "p0012-demo-0000-0000-000000000000",
+   "name": "Tweede beeldscherm",
+   "description": "Tweede beeldscherm — aan te vragen via de selfservice-catalogus.",
+   "code": "20240012DEMO",
+   "categories": [
+    {
+     "id": "cat-0"
+    }
+   ],
+   "resourceOwnerGroup": {
+    "name": "ROLE-KWA07-Kwaliteit"
+   },
+   "approvalWorkflow": {
+    "name": "Auto Approve"
+   },
+   "price": "18,00",
+   "showPrice": true,
+   "hasRiskFactor": false,
+   "riskFactor": null,
+   "hasTimeLimit": false,
+   "ownershipMaxDuration": 60,
+   "limitType": "Maximum",
+   "returnOnUserDisable": false,
+   "visibility": "All",
+   "isEnabled": true,
+   "actions": []
+  },
+  {
+   "productId": "p0013-demo-0000-0000-000000000000",
+   "name": "Toegangspas hoofdlocatie",
+   "description": "Toegangspas hoofdlocatie — aan te vragen via de selfservice-catalogus.",
+   "code": "20240013DEMO",
+   "categories": [
+    {
+     "id": "cat-1"
+    }
+   ],
+   "resourceOwnerGroup": {},
+   "approvalWorkflow": {
+    "name": "Manager"
+   },
+   "price": "",
+   "showPrice": false,
+   "hasRiskFactor": true,
+   "riskFactor": 5,
+   "hasTimeLimit": false,
+   "ownershipMaxDuration": 60,
+   "limitType": "Maximum",
+   "returnOnUserDisable": false,
+   "visibility": "All",
+   "isEnabled": true,
+   "actions": []
+  }
+ ]
+}

@@ -18,8 +18,8 @@ helloid-config.json
 helloid-config.json.tmp
 
 # Exports pulled from a live tenant.
-product-assignments.csv
-products.json
+/product-assignments.csv
+/products.json
 helloid-service-automation*.json
 
 # Collector output — real directories carry personal data. demo/ stays the exception.

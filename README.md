@@ -32,9 +32,12 @@ that opened the page: they are never uploaded to the host serving it.
 
 ## Demo data
 
-`make-demo-set.py` writes a fictional organisation into `demo/`: six exports describing
-the same invented people, so the vault, the rules and the activity files actually join.
-Where that directory is published, the Imports view offers to load all six in one click.
+`make-demo-set.py` writes a fictional organisation into `demo/`: nine exports describing
+the same invented people — reconciliation, vault (employer › divisions › departments),
+a directory collection, rules, granted and historic actions, the Service Automation
+catalogue and assignments, and a HelloID audit log — so every file joins every other
+and the fit check reads them as one tenant. Where that directory is published, the
+Imports view offers to load them all in one click.
 While it is loaded, a banner sits above every view and every page of the board report
 carries a printed mark, because a PDF outlives the tab it came from.
 

@@ -1,6 +1,6 @@
 {
  "kind": "helloid-analytics-demo",
- "generatedOn": "2026-08-04",
+ "generatedOn": "2026-09-04",
  "seed": 1,
  "synthetic": true,
  "files": [
@@ -11,6 +11,10 @@
   {
    "slot": "vault",
    "file": "vault.json"
+  },
+  {
+   "slot": "directory",
+   "file": "ad.json"
   },
   {
    "slot": "rules",
@@ -35,6 +39,10 @@
   {
    "slot": "nedapbook",
    "file": "nedap-book.json"
+  },
+  {
+   "slot": "audit",
+   "file": "audit.json"
   }
  ]
 }

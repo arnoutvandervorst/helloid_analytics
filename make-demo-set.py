@@ -42,6 +42,16 @@ TITLES = ['Verzorgende IG', 'Verpleegkundige', 'Begeleider niveau 1', 'Begeleide
           'Inkoopadviseur', 'Wijkverpleegkundige', 'Activiteitenbegeleider']
 
 CONTRACT_TYPES = ['Dienstverband', 'Uitzendkracht', 'Stagiair', 'Vrijwilliger']
+CONTRACT_WEIGHTS = [70, 12, 10, 8]          # a care organisation: mostly employees
+
+# The organisation above the departments: the employer on top, two divisions, and the
+# departments under those — the shape an HR export carries, and what the org walker walks.
+EMPLOYER = ('AVO', 'Avondrood Zorggroep')
+DIVISIONS = {
+    'ZRG': ('Zorg', ['CA010', 'CA060', 'CZ08', 'CB12', 'ZRG06', 'KWA07']),
+    'BDV': ('Bedrijfsvoering', ['FIN01', 'HRM02', 'ICT03', 'FAC04', 'COM05', 'INK08'])
+}
+DIVISION_OF = {code: div for div, (_label, codes) in DIVISIONS.items() for code in codes}
 LOCATIONS = ['Hoofdlocatie Zwolle', 'Locatie Deventer', 'Locatie Apeldoorn', 'Thuiswerkplek']
 
 ORIGINS = ['ContractUpdate', 'PersonUpdate', 'Import', 'BusinessRuleUpdate', 'Retry',
@@ -54,6 +64,14 @@ def unit_code(unit):
 
 def unit_label(unit):
     return unit.split('-', 1)[1]
+
+
+def slug_of(first, last):
+    """first.last the way a directory writes it: particles folded in, accents dropped."""
+    s = (first + '.' + last).lower()
+    for a, b in (('ë', 'e'), ('é', 'e'), ('ï', 'i'), ('ö', 'o'), ('ü', 'u'), (' ', '')):
+        s = s.replace(a, b)
+    return s
 
 
 def csv_line(values):
@@ -70,6 +88,20 @@ class DemoSet:
         self.args = args
         self.rnd = random.Random(args.seed)
         self.today = datetime.strptime(args.today, '%Y-%m-%d')
+        self.seen_users = set()
+
+    def username(self, first, last):
+        """Unique, and numbered only when a namesake got there first."""
+        base = slug_of(first, last)
+        user, k = base, 2
+        while user in self.seen_users:
+            user = f'{base}{k}'
+            k += 1
+        self.seen_users.add(user)
+        return user
+
+    def contract_type(self):
+        return self.rnd.choices(CONTRACT_TYPES, weights=CONTRACT_WEIGHTS)[0]
 
     # ---------------------------------------------------------------- reconciliation
     """How access is shaped, and why it matters that the demo shapes it this way.
@@ -162,7 +194,7 @@ class DemoSet:
                 'unit': unit,
                 'title': rnd.choice(TITLES),
                 'location': rnd.choice(LOCATIONS),
-                'type': rnd.choice(CONTRACT_TYPES)
+                'type': self.contract_type()
             }
             start_days = rnd.randint(120, 3000)
             # One in ten moved here from another department, with the date on record.
@@ -170,8 +202,7 @@ class DemoSet:
             if rnd.random() < 0.10:
                 moved = {'from': rnd.choice([u for u in UNITS if u != unit]),
                          'days': rnd.randint(30, 400)}
-            slug = (first + '.' + last.split()[-1]).lower().replace('ë', 'e').replace(' ', '')
-            user = f'{slug}{i % 97}'
+            user = self.username(first, last)
             licence = rnd.choice(make_sample.LICENCES)
             leaver = rnd.random() < 0.08
 
@@ -216,7 +247,7 @@ class DemoSet:
             self.people.append({
                 'name': f'{first} {last}', 'ext': ext,
                 'contract': {'unit': rnd.choice(UNITS), 'title': rnd.choice(TITLES),
-                             'location': rnd.choice(LOCATIONS), 'type': rnd.choice(CONTRACT_TYPES)},
+                             'location': rnd.choice(LOCATIONS), 'type': self.contract_type()},
                 'leaver': False, 'moved': None, 'user': '', 'display': f'{first} {last}',
                 'start_days': -rnd.randint(5, 75)
             })
@@ -232,10 +263,13 @@ class DemoSet:
             self.unit_manager[u]['leaver'] = True
 
         # Accounts nobody owns: admin, service and test, the way a directory accumulates them.
+        # The person they are named after must have an account already: a future joiner
+        # has no username yet, and "adm-" on its own is nobody.
+        with_user = [p for p in self.people if p['user']]
         for i in range(self.args.orphans):
             kind = rnd.choice(['adm', 'svc', 'test'])
             if kind == 'adm':
-                victim = rnd.choice(self.people)
+                victim = rnd.choice(with_user)
                 user = 'adm-' + victim['user']
                 display = victim['name'] + ' (admin)'
                 perms = rnd.sample(make_sample.PRIVILEGED, rnd.randint(1, 3))
@@ -244,7 +278,7 @@ class DemoSet:
                 display = 'Service account ' + user
                 perms = rnd.sample(make_sample.SERVER, rnd.randint(1, 3))
             else:
-                victim = rnd.choice(self.people)
+                victim = rnd.choice(with_user)
                 user = 'test.' + victim['user']
                 display = victim['name'] + ' (test)'
                 perms = rnd.sample(make_sample.FREE_APPS, 2) + [rnd.choice(make_sample.LICENCES)]
@@ -254,12 +288,15 @@ class DemoSet:
                    'enabled': enabled, 'perms': [], 'owner': None}
             rows.append(csv_line([system, '', display, user, 'True' if enabled else 'False',
                                   '', '', '', 'Account unmanaged',
-                                  'Excluded' if rnd.random() < 0.08 else 'None']))
+                                  'Excluded' if rnd.random() < 0.2 else 'None']))
             for perm in perms:
                 path = f'avo.local/Demo/Groups/{perm}'
                 acc['perms'].append(f'{perm} ({path})')
+                # Some of these an administrator looked at and excluded — a decision the
+                # audit log then carries with its reason.
                 rows.append(csv_line([system, '', display, user, 'True' if enabled else 'False',
-                                      f'{perm} ({path})', '', '', 'Permission unmanaged', 'None']))
+                                      f'{perm} ({path})', '', '', 'Permission unmanaged',
+                                      'Excluded' if kind != 'test' and rnd.random() < 0.3 else 'None']))
             self.accounts.append(acc)
 
         rnd.shuffle(rows)
@@ -272,9 +309,15 @@ class DemoSet:
         persons = []
         for p in self.people:
             persons.append(self.person(p['name'], p['ext'], p, p['leaver']))
-        departments = [{
+        departments = [{'ExternalId': EMPLOYER[0], 'DisplayName': EMPLOYER[1], 'Code': EMPLOYER[0],
+                        'ParentExternalId': '', 'Manager': {}}]
+        for div, (label, _codes) in DIVISIONS.items():
+            departments.append({'ExternalId': div, 'DisplayName': label, 'Code': div,
+                                'ParentExternalId': EMPLOYER[0], 'Manager': {}})
+        departments += [{
             'ExternalId': unit_code(u), 'DisplayName': unit_label(u), 'Code': unit_code(u),
-            'ParentExternalId': '', 'Manager': {}
+            'ParentExternalId': DIVISION_OF.get(unit_code(u), EMPLOYER[0]),
+            'Manager': self.manager_ref(u, None)
         } for u in UNITS]
         self.vault = {'Persons': persons, 'Departments': departments}
         self.person_by_display = {p['DisplayName']: p for p in persons}
@@ -623,7 +666,15 @@ class DemoSet:
             for perm in acc['perms']:
                 holders_by_perm.setdefault(perm.split(' (')[0], []).append((login, acc))
 
-        approvers = ['Teamleider Zorg', 'Manager Bedrijfsvoering', 'Hoofd ICT']
+        # The approver is the requester's own manager, the way the workflow routes it.
+        manager_of = {}
+        for acc in self.accounts:
+            owner = acc.get('owner')
+            if owner:
+                mgr = self.unit_manager.get(owner['contract']['unit'])
+                manager_of[acc['user'] + '@avondrood.local'] = mgr['name'] if mgr else ''
+        comments = ['Akkoord', 'Nodig voor de functie', 'Akkoord, tijdelijk', 'Goedgekeurd na overleg',
+                    'Conform aanvraag', 'Ok', 'Akkoord – zie ticket']
         # People whose contracts have all ended, so the demo carries the case where a
         # product outlives the person's employment.
         leavers = [p_['UserName'] + '@avondrood.local' for p_ in self.vault['Persons']
@@ -662,18 +713,24 @@ class DemoSet:
                 approved = requested + timedelta(hours=rnd.randint(1, 72))
                 if approved > self.today:
                     approved = self.today - timedelta(hours=1)
-                # A handful approved by the requester: the control that was skipped.
-                self_approved = rnd.random() < 0.03
-                approver = login if self_approved else (
-                    rnd.choice(approvers) if product['hasRiskFactor'] else '')
+                # A handful approved by the requester: the control that was skipped; most
+                # by the manager; some without a recorded approver at all.
+                roll = rnd.random()
+                if roll < 0.03:
+                    approver = login
+                elif roll < 0.88:
+                    approver = manager_of.get(login) or (rnd.choice(list(self.unit_manager.values()))['name'])
+                else:
+                    approver = ''
+                source = 'Request' if rnd.random() < 0.85 else 'Import'
                 returned = ''
                 if rnd.random() < 0.05:
                     returned = (approved + timedelta(days=rnd.randint(30, 400))).strftime('%Y-%m-%dT%H:%M:%S')
                 rows.append(csv_line([
                     f'a{n:05d}-demo', login, f'u{n:05d}', name, product['productId'],
                     product['code'], requested.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3],
-                    approved.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3], returned, '',
-                    approver, 'Akkoord' if approver else '',
+                    approved.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3], returned, source,
+                    approver, rnd.choice(comments) if approver else '',
                     'True' if approver else ''
                 ]))
         return rows
@@ -746,6 +803,320 @@ class DemoSet:
                     ['ContractUpdate', 'Blocked: person excluded'])
         return lines
     # ------------------------------------------------------------------------ write
+    # -------------------------------------------------------------------- directory
+    def build_directory(self):
+        """The AD collector's envelope for the same accounts, so the directory import
+        joins the reconciliation instead of describing another tenant: every account
+        becomes a user with the attributes its contract implies, every permission a
+        group, plus the nesting, empty groups and stale sign-ins the directory-backed
+        controls are there to find."""
+        rnd = self.rnd
+        base_dn = 'DC=avo,DC=local'
+        groups = {}
+
+        def group(name, ou='OU=Groepen', description=''):
+            if name not in groups:
+                groups[name] = {
+                    'id': f'CN={name},{ou},{base_dn}', 'name': name, 'accountName': name,
+                    'description': description, 'category': 'Security', 'scope': 'Global',
+                    'managedBy': '', 'created': '2019-03-12T09:00:00Z', 'mail': '',
+                    'ou': f'{ou},{base_dn}', 'memberUsers': [], 'memberGroups': []
+                }
+            return groups[name]
+
+        def nest(parent, child):
+            p, c = group(parent), group(child)
+            if c['id'] not in p['memberGroups']:
+                p['memberGroups'].append(c['id'])
+
+        users = []
+        for acc in self.accounts:
+            owner = acc.get('owner')
+            c = owner['contract'] if owner else None
+            unit = c['unit'] if c else None
+            ou = f"OU={unit_label(unit).replace(' ', '')}" if unit else ('OU=Beheer' if acc['user'].startswith('adm-') else 'OU=Service')
+            dn = f"CN={acc['display']},{ou},{base_dn}"
+            enabled = acc['enabled']
+            # Sign-ins: most enabled users recently, a slice long ago — the dormant control.
+            if enabled and rnd.random() < 0.85:
+                last = self.today - timedelta(days=rnd.randint(0, 20), hours=rnd.randint(0, 12))
+            elif enabled:
+                last = self.today - timedelta(days=rnd.randint(120, 400))
+            else:
+                last = self.today - timedelta(days=rnd.randint(200, 900))
+            created = (owner.get('start_date') if owner else None) or (self.today - timedelta(days=rnd.randint(300, 2500)))
+            etype = c['type'] if c else ('Beheer' if acc['user'].startswith('adm-') else 'Service')
+            ext = {}
+            if unit:
+                ext = {'extensionAttribute1': f'KP{unit_code(unit)[-3:]}', 'extensionAttribute5': unit_code(unit)}
+            if etype == 'Uitzendkracht':
+                ext['extensionAttribute10'] = 'EXTERN'
+            users.append({
+                'id': dn, 'userName': acc['user'], 'upn': f"{acc['user']}@avo.local",
+                'displayName': acc['display'],
+                'givenName': (owner['name'].split(' ', 1)[0] if owner else ''),
+                'surname': (owner['name'].split(' ', 1)[1] if owner and ' ' in owner['name'] else ''),
+                'initials': (owner['name'][0] + '.') if owner else '',
+                'mailNickname': acc['user'], 'proxyAddresses': [f"SMTP:{acc['user']}@avo.local"],
+                'usageLocation': 'NL', 'synced': False, 'enabled': enabled,
+                'created': created.strftime('%Y-%m-%dT08:00:00Z'),
+                'lastLogon': last.strftime('%Y-%m-%dT%H:%M:00Z') if rnd.random() > 0.05 else None,
+                'expires': None,
+                'department': unit_label(unit) if unit else '', 'title': c['title'] if c else '',
+                'company': EMPLOYER[1], 'office': c['location'] if c else '',
+                'employeeId': owner['ext'] if owner else '', 'employeeType': etype,
+                'description': '' if owner else acc['display'], 'notes': '',
+                'mail': f"{acc['user']}@avo.local", 'phone': '', 'homePhone': '',
+                'mobile': f'06-{rnd.randint(10000000, 99999999)}' if owner else '',
+                'fax': '', 'pager': '', 'ipPhone': '', 'street': 'Zorglaan 1', 'poBox': '',
+                'city': (c['location'].split()[-1] if c else 'Zwolle'), 'state': 'OV',
+                'postalCode': '8000 AA', 'country': 'Nederland',
+                'ou': f'{ou},{base_dn}', 'managerId': '', 'managerName': '',
+                'extensionAttributes': ext
+            })
+            for perm in acc['perms']:
+                group(perm.split(' (')[0])['memberUsers'].append(dn)
+
+        # Nesting: the baselines hang under "everyone", each department umbrella under
+        # that, one deliberately deep chain for the nesting control, three empty groups.
+        group('G-Alle-Medewerkers', description='Iedereen in dienst')
+        for sec in make_sample.SECURITY:
+            nest(sec, 'G-Alle-Medewerkers')
+        for unit in UNITS:
+            code = unit_code(unit)
+            umbrella = f'G-Afdeling-{unit_label(unit)}'
+            nest('G-Alle-Medewerkers', umbrella)
+            nest(f'FS-{code}-RO', umbrella)
+        deep = ['G-Alle-Medewerkers', 'G-Afdeling-Techniek', 'ROLE-Applicatiebeheerder', 'FS-ICT03-RW']
+        for parent, child in zip(deep, deep[1:]):
+            nest(parent, child)
+        for stray in ['Oude share boekhouding', '#Migratie2019', 'test_groep_jan']:
+            group(stray, description='Nergens meer voor gebruikt')
+
+        # Managers, from the vault's own department managers.
+        by_user = {u['userName']: u for u in users}
+        for acc in self.accounts:
+            owner = acc.get('owner')
+            if not owner:
+                continue
+            mgr = self.unit_manager.get(owner['contract']['unit'])
+            if mgr and mgr['user'] and mgr['user'] != acc['user'] and mgr['user'] in by_user:
+                by_user[acc['user']]['managerId'] = by_user[mgr['user']]['id']
+                by_user[acc['user']]['managerName'] = mgr['name']
+
+        return {
+            'kind': 'helloid-analytics-directory', 'version': 1, 'source': 'ad',
+            'collectedAt': self.today.strftime('%Y-%m-%dT09:00:00Z'), 'domain': 'avo.local', 'searchBase': '',
+            'tenant': {'tenantId': '00000000-1111-2222-3333-444444444444', 'displayName': EMPLOYER[1],
+                       'initialDomain': 'avondrood.onmicrosoft.com', 'defaultDomain': 'avo.local',
+                       'verifiedDomains': ['avondrood.onmicrosoft.com', 'avo.local', 'avondrood.nl']},
+            'users': users, 'groups': list(groups.values())
+        }
+
+    # ------------------------------------------------------------------- audit log
+    def build_audit(self, history_lines, recon_lines):
+        """What helloid-audit.py would pull for this tenant: the same actions the history
+        export holds, plus the decisions no export carries — exclusions with a reason,
+        threshold approvals, rule publishes — and the engine's own runs, logins and
+        incidents. Coherent with the other files: same people, same groups, same rules."""
+        import csv as _csv
+        import io as _io
+        rnd = self.rnd
+        system = SYSTEMS[0]
+        iso = lambda d: d.strftime('%Y-%m-%dT%H:%M:%S.0000000Z')
+        admins = ['Administrator', 'beheer.ict', 'a.terlouw']
+        out = {'kind': 'helloid-audit', 'version': 1, 'collectedAt': iso(self.today),
+               'tenant': {'name': f'{EMPLOYER[1]} (demo)', 'tid': 'demo-0000-tenant'},
+               'from': iso(self.today - timedelta(days=400)), 'to': iso(self.today), 'counts': {}}
+        display_of = {acc['person']: acc['display'] for acc in self.accounts if acc['person']}
+
+        # provisioning: the history rows, in the audit log's own words
+        prov = []
+        for r in _csv.DictReader(_io.StringIO('\n'.join(history_lines))):
+            if r['Result'] == 'Skipped':
+                continue
+            when = datetime.strptime(r['CreatedOn'], '%m/%d/%Y %H:%M:%S')
+            group_name = r['EntitlementName'].split(' (')[0]
+            account = display_of.get(r['Person'], r['Person'].split(' (')[0])
+            failed = r['Result'] == 'Failed'
+            if r['Operation'] == 'Grant':
+                action = 'GrantPermission'
+                msg = 'Failed to grant group permission to account' if failed else f'Permission to group {group_name} added for account {account}'
+            else:
+                action = 'RevokePermission'
+                msg = f'Permission to group {group_name} removed from account {account}'
+            prov.append({'logDate': iso(when), 'action': action, 'state': 'Error' if failed else 'Finished',
+                         'personDisplayName': r['Person'], 'systemName': system, 'systemType': 'ActiveDirectory',
+                         'message': msg, 'actionDurationMs': rnd.randint(40, 900), 'waitDurationMs': rnd.randint(20, 300),
+                         'event': 'provisioning-audit'})
+        # account lifecycle: joiners created and enabled, leavers disabled
+        for p in self.people:
+            start = p.get('start_date')
+            if not start or not p['user']:
+                continue
+            if (self.today - start).days <= 400:
+                for action, verb in (('CreateAccount', 'created'), ('EnableAccount', 'enabled')):
+                    prov.append({'logDate': iso(start + timedelta(hours=rnd.randint(1, 6))), 'action': action, 'state': 'Finished',
+                                 'personDisplayName': f"{p['name']} ({p['ext']})", 'systemName': system, 'systemType': 'ActiveDirectory',
+                                 'message': f"Account {p['name']} {verb}", 'actionDurationMs': rnd.randint(200, 1500), 'waitDurationMs': 50,
+                                 'event': 'provisioning-audit'})
+            if p['leaver']:
+                when = self.today - timedelta(days=rnd.randint(10, 380))
+                failed = rnd.random() < 0.15
+                prov.append({'logDate': iso(when), 'action': 'DisableAccount', 'state': 'Error' if failed else 'Finished',
+                             'personDisplayName': f"{p['name']} ({p['ext']})", 'systemName': system, 'systemType': 'ActiveDirectory',
+                             'message': 'Failed to disable account because there was an error while mapping' if failed else f"Account {p['name']} disabled",
+                             'actionDurationMs': rnd.randint(100, 800), 'waitDurationMs': 60, 'event': 'provisioning-audit'})
+
+        # reconciliation: every excluded row is a decision somebody took
+        reasons = ['is nodig voor beheer', 'tijdelijk, project Zorgdossier', 'servicedesk heeft dit nodig',
+                   'afgestemd met de manager', 'monitoring', 'wordt Q4 opgeruimd', 'noodprocedure']
+        recon = []
+        for r in _csv.DictReader(_io.StringIO('\n'.join(recon_lines))):
+            if r.get('Resolution') != 'Excluded':
+                continue
+            months = rnd.choice([3, 6, 12])
+            when = self.today - timedelta(days=rnd.randint(5, 300))
+            until = when + timedelta(days=30 * months)
+            account_level = r['Issue'] == 'Account unmanaged'
+            recon.append({'logDate': iso(when), 'context': 'Reconciliation', 'action': 'Exclude', 'issue': r['Issue'],
+                          'accountUserName': r['AccountUserName'], 'accountDisplayName': r['AccountDisplayName'],
+                          'permissionDisplayName': '' if account_level else r['PermissionDisplayName'],
+                          'person': r['Person'], 'system': system, 'systemId': 'sys-ad', 'systemType': 'Target',
+                          'description': f'Issue has been excluded for {months} months (until {until.month}/{until.day}/{until.year} 00:00:00)',
+                          'comment': rnd.choice(reasons) if rnd.random() < 0.7 else '',
+                          'userName': rnd.choice(admins), 'userGuid': 'u-admin',
+                          'tags': ['Service account'] if 'svc-' in r['AccountUserName'] else [],
+                          'event': 'provisioning-user-action-reconciliation'})
+
+        thresholds = [{'logDate': iso(self.today - timedelta(days=d)), 'context': 'Thresholds', 'action': 'Approve',
+                       'systemName': 'HR Personeel', 'systemId': 'sys-hr', 'systemType': 'Source',
+                       'description': f'Threshold is manually approved for import that: removes {n} person(s)',
+                       'userName': rnd.choice(admins), 'userGuid': 'u-admin', 'event': 'provisioning-user-action-thresholds'}
+                      for d, n in ((4, 12), (33, 9), (61, 15), (120, 8), (201, 21), (310, 11))]
+
+        rules = []
+        for i, rr in enumerate(self.rules_rows):
+            ents = [e.split(' - ', 1)[1].split(' (')[0] for e in rr['Entitlements'].split('|')]
+            for k in range(rnd.randint(1, 3)):
+                when = self.today - timedelta(days=rnd.randint(2, 380))
+                added = ents if k == 0 else rnd.sample(ents, min(len(ents), rnd.randint(1, 2)))
+                n_scope = int(rr['PersonsLatestEvaluation'])
+                rules.append({'logDate': iso(when), 'context': 'BusinessRules', 'action': 'Publish', 'ruleName': rr['Name'],
+                              'ruleId': f'rule-{i:03d}', 'addedEntitlements': [f'{system} - {e}' for e in added],
+                              'addedEntitlementsCount': len(added), 'removedEntitlementsCount': 1 if rnd.random() < 0.15 else 0,
+                              'currentSelectedEntitlementsCount': len(ents), 'previousSelectedEntitlementsCount': max(0, len(ents) - len(added)),
+                              'currentPersonsInScopeCount': n_scope, 'previousPersonsInScopeCount': 0 if k == 0 else n_scope,
+                              'personsAddedToScopeCount': n_scope if k == 0 else rnd.randint(0, 4),
+                              'personsRemovedFromScopeCount': 0 if k == 0 else rnd.randint(0, 2),
+                              'currentConditionSummary': '- ' + rr['Conditions'].replace('|', '\n- '), 'unmanageEntitlementsOption': False,
+                              'userName': rnd.choice(admins[:2]), 'userGuid': 'u-admin', 'event': 'provisioning-user-action-business-rules'})
+
+        evaluations, imports, snapshots = [], [], []
+        total = len(self.people)
+        for d in range(400, -1, -1):
+            day = self.today - timedelta(days=d)
+            if day.weekday() < 5:
+                ok = d not in (17, 96)
+                imports.append({'logDate': iso(day.replace(hour=6, minute=15)), 'systemName': 'HR Personeel', 'systemId': 'sys-hr',
+                                'systemType': 'PowerShellSourceOnPremises', 'type': 'Scheduled', 'result': 'Succeeded' if ok else 'Failed',
+                                'startDate': iso(day.replace(hour=6, minute=14)), 'endDate': iso(day.replace(hour=6, minute=15)),
+                                'processingTimeMs': rnd.randint(2000, 9000), 'scriptDurationMs': rnd.randint(1500, 8000),
+                                'waitTimeMs': rnd.randint(100, 900), 'totalRawPersons': total, 'totalRawDepartments': len(UNITS),
+                                'importId': f'imp-{d}', 'userName': 'HelloID scheduler', 'userId': 'u-sched',
+                                'repositoryName': 'HelloID-Conn-Prov-Source-HR', 'repositoryRelease': 'v2.1.0', 'event': 'provisioning-source-import'})
+                if ok:
+                    snapshots.append({'logDate': iso(day.replace(hour=6, minute=16)), 'snapshotId': f'snap-{d}', 'importIds': [f'imp-{d}'],
+                                      'systemIds': ['sys-hr'], 'systemNames': ['HR Personeel'], 'type': 'Scheduled', 'result': 'Succeeded',
+                                      'totalPersons': total, 'totalDepartments': len(UNITS),
+                                      'personsAdded': rnd.choice([0, 0, 0, 1, 2]), 'personsRemoved': rnd.choice([0, 0, 0, 1]),
+                                      'personsBlocked': 0, 'personsAggregated': 0, 'processingTimeMs': rnd.randint(500, 2000), 'waitTimeMs': 100,
+                                      'startDate': iso(day.replace(hour=6, minute=15)), 'endDate': iso(day.replace(hour=6, minute=16)),
+                                      'userName': 'HelloID scheduler', 'userId': 'u-sched', 'repositoryNames': ['HelloID-Conn-Prov-Source-HR'],
+                                      'repositoryReleases': ['v2.1.0'], 'event': 'provisioning-source-snapshot'})
+                    evaluations.append({'logDate': iso(day.replace(hour=6, minute=30)), 'context': 'Evaluation', 'action': 'Start',
+                                        'runType': 'Scheduled', 'isEnforcement': True, 'createResources': True,
+                                        'description': 'Started scheduled enforcement', 'runId': f'run-{d}',
+                                        'userName': 'HelloID scheduler', 'userGuid': 'u-sched', 'event': 'provisioning-user-action-evaluation'})
+                    prov.append({'logDate': iso(day.replace(hour=6, minute=45)), 'action': 'SendNotification', 'state': 'Finished',
+                                 'systemName': 'Email', 'systemType': 'MailNotification',
+                                 'message': "Notification 'Evaluation summary' for event 'evaluation summary' has been sent to 'beheer@avondrood.nl'",
+                                 'actionDurationMs': 0, 'waitDurationMs': 0, 'event': 'provisioning-audit'})
+            if rnd.random() < 0.04:
+                evaluations.append({'logDate': iso(day.replace(hour=rnd.randint(9, 16), minute=rnd.randint(0, 59))), 'context': 'Evaluation',
+                                    'action': 'Start', 'runType': 'Manual', 'isEnforcement': rnd.random() < 0.5, 'createResources': False,
+                                    'description': 'Started manual evaluation', 'runId': f'run-m{d}',
+                                    'userName': rnd.choice(admins[:2]), 'userGuid': 'u-admin', 'event': 'provisioning-user-action-evaluation'})
+
+        system_changes = [{'logDate': iso(self.today - timedelta(days=d)), 'context': 'TargetSystem', 'area': area, 'action': act,
+                           'systemName': system, 'systemId': 'sys-ad', 'systemType': 'ActiveDirectory', 'description': desc,
+                           'userName': rnd.choice(admins[:2]), 'userGuid': 'u-admin', 'event': 'provisioning-user-action-target-system'}
+                          for d, area, act, desc in ((3, 'Mapping', 'Update', "Updated field mapping 'department'"),
+                                                     (40, 'Mapping', 'Create', "Created field mapping 'extensionAttribute1'"),
+                                                     (88, 'Scripts', 'Update', 'Updated create script'),
+                                                     (130, 'Settings', 'Update', 'Changed OU for new accounts'),
+                                                     (190, 'Mapping', 'Delete', "Deleted field mapping 'pager'"),
+                                                     (250, 'Scripts', 'Update', 'Updated disable script'),
+                                                     (300, 'Settings', 'Update', 'Enabled account correlation on employeeId'),
+                                                     (370, 'Mapping', 'Update', "Updated field mapping 'title'"))]
+
+        logins = []
+        idps = {'Administrator': ('Local', 'Local'), 'beheer.ict': ('AD - avo.local', 'ActiveDirectory'),
+                'a.terlouw': ('AD - avo.local', 'ActiveDirectory')}
+        for d in range(400, -1, -1):
+            day = self.today - timedelta(days=d)
+            for who, (idp, idptype) in idps.items():
+                if rnd.random() < (0.5 if who == 'Administrator' else 0.2):
+                    ok = rnd.random() > 0.04
+                    logins.append({'logDate': iso(day.replace(hour=rnd.randint(7, 17), minute=rnd.randint(0, 59))), 'userName': who,
+                                   'userGuid': f'u-{who}', 'idpName': idp, 'idpType': idptype, 'loginSuccess': ok, 'resultCode': 0 if ok else 1317,
+                                   'ipAddress': '145.131.150.30', 'geoip': {'country_iso_code': 'NL', 'city_name': 'Zwolle'},
+                                   'user_agent': {'os': {'name': rnd.choice(['Windows', 'Mac OS X'])}, 'name': 'Chrome'},
+                                   'event': 'authentication-login'})
+        for _ in range(4):
+            logins.append({'logDate': iso(self.today - timedelta(days=rnd.randint(1, 20), hours=rnd.randint(0, 20))), 'userName': 'admin',
+                           'userGuid': 'u-x', 'idpName': 'Local', 'idpType': 'Local', 'loginSuccess': False, 'resultCode': 1317,
+                           'ipAddress': '185.220.101.7', 'geoip': {'country_iso_code': 'DE', 'city_name': 'Frankfurt'},
+                           'user_agent': {'os': {'name': 'Linux'}, 'name': 'curl'}, 'event': 'authentication-login'})
+
+        portal = []
+        for p in self.people[:60]:
+            if p['user']:
+                portal.append({'logDate': iso(self.today - timedelta(days=rnd.randint(1, 390))), 'displayName': p['name'],
+                               'userName': f"{p['user']}@avo.local", 'userGuid': f"u-{p['ext']}", 'eventSource': 'DirSync',
+                               'createdByUserName': 'DirSync', 'event': rnd.choice(['authentication-user-create', 'authentication-user-update'])})
+        portal.append({'logDate': iso(self.today - timedelta(days=45)), 'displayName': 'ext_admin', 'userName': 'ext_admin', 'userGuid': 'u-ext',
+                       'eventSource': 'Admin', 'createdByUserName': 'Administrator', 'event': 'authentication-user-create'})
+
+        incidents = []
+        for start_d, dur, closed in ((200, 2, True), (95, 1, True), (3, None, False)):
+            created = self.today - timedelta(days=start_d)
+            row = {'identifier': f'Agent-avo-{start_d}', 'title': "Agent 'VM-AVO-01' is down",
+                   'description': 'The agent VM-AVO-01 has not sent a request for some time, and is probably unavailable.',
+                   'createdAt': iso(created), 'modifiedAt': iso(created), 'logDate': iso(created),
+                   'tags': [{'displayName': 'Domain: Prov', 'type': 'Domain', 'value': 'Prov'},
+                            {'displayName': 'Component: Agent', 'type': 'Component', 'value': 'Agent'}],
+                   'event': 'general-incidents'}
+            incidents.append(row)
+            if closed:
+                done = created + timedelta(days=dur)
+                incidents.append(dict(row, logDate=iso(done), modifiedAt=iso(done), closedAt=iso(done)))
+
+        licenses = [{'logDate': iso((self.today - timedelta(days=d)).replace(hour=1)),
+                     'usageCountDate': (self.today - timedelta(days=d + 1)).strftime('%Y-%m-%dT00:00:00Z'),
+                     'provisioningCount': total - (d // 40), 'serviceAutomationCount': total - 30 - (d // 50),
+                     'accessManagementCount': 0, 'governanceCount': 0, 'event': 'general-license-counts'}
+                    for d in range(400, -1, -1)]
+
+        for key, rows in (('provisioning', prov), ('reconciliation', recon), ('thresholds', thresholds), ('rules', rules),
+                          ('entitlements', []), ('evaluations', evaluations), ('systemChanges', system_changes),
+                          ('imports', imports), ('snapshots', snapshots), ('logins', logins), ('portalAdmin', portal),
+                          ('mfa', []), ('incidents', incidents), ('licenses', licenses)):
+            rows.sort(key=lambda r: r['logDate'])
+            out[key] = rows
+            out['counts'][key] = len(rows)
+        return out
+
     def run(self, outdir):
         os.makedirs(outdir, exist_ok=True)
         recon = self.build_recon()
@@ -755,6 +1126,8 @@ class DemoSet:
         history = self.build_history()
         self.products = self.build_products()
         assignments = self.build_assignments()
+        directory = self.build_directory()
+        audit = self.build_audit(history, recon)
 
         files = {
             'recon.csv': '\n'.join(recon) + '\n',
@@ -763,7 +1136,9 @@ class DemoSet:
             'history.csv': '\n'.join(history) + '\n',
             'vault.json': json.dumps(self.vault, indent=1, ensure_ascii=False) + '\n',
             'products.json': json.dumps(self.products, indent=1, ensure_ascii=False) + '\n',
-            'product-assignments.csv': '\n'.join(assignments) + '\n'
+            'product-assignments.csv': '\n'.join(assignments) + '\n',
+            'ad.json': json.dumps(directory, ensure_ascii=False) + '\n',
+            'audit.json': json.dumps(audit, ensure_ascii=False, separators=(',', ':')) + '\n'
         }
         for name, text in files.items():
             with open(os.path.join(outdir, name), 'w', encoding='utf-8') as fh:
@@ -777,6 +1152,7 @@ class DemoSet:
             'files': [
                 {'slot': 'recon', 'file': 'recon.csv'},
                 {'slot': 'vault', 'file': 'vault.json'},
+                {'slot': 'directory', 'file': 'ad.json'},
                 {'slot': 'rules', 'file': 'rules.csv'},
                 {'slot': 'granted', 'file': 'granted.csv'},
                 {'slot': 'history', 'file': 'history.csv'},
@@ -784,6 +1160,10 @@ class DemoSet:
                 {'slot': 'assignments', 'file': 'product-assignments.csv'}
             ]
         }
+        # The Nedap book is maintained by hand next to the generated files; keep it listed.
+        if os.path.exists(os.path.join(outdir, 'nedap-book.json')):
+            manifest['files'].append({'slot': 'nedapbook', 'file': 'nedap-book.json'})
+        manifest['files'].append({'slot': 'audit', 'file': 'audit.json'})
         with open(os.path.join(outdir, 'manifest.json'), 'w', encoding='utf-8') as fh:
             json.dump(manifest, fh, indent=1)
             fh.write('\n')

@@ -3,6 +3,11 @@
 Versions are CalVer (`YYYY.M.N` — Nth release of that month). This file is
 generated from `js/changelog.js` by `make-changelog.js`; edit there, not here.
 
+## [2026.9.37] — 2026-09-04
+
+- The demo set describes a whole tenant now. The generator writes a coherent directory collection (every demo account with its attributes, every group with its members, nesting, empty groups, stale sign-ins) and a HelloID audit log (the history as provisioning actions, exclusions with reasons and expiry dates, threshold approvals, rule publishes, scheduled imports and evaluations, logins, incidents, licence counts) from the same people — so Evidence, engine health, admin access and the directory-backed controls all show in the demo and the fit check reads nine files as one organisation.
+- The demo organisation has an employer on top: Avondrood Zorggroep › Zorg / Bedrijfsvoering › the twelve departments, the way an HR export carries it. Names come from a pool three times larger (no more five Quaedvliegs), contract types are weighted like a care organisation, usernames are first.last with a number only on collision, product assignments carry their approver and source, and the admin account named after a person who had no username yet (“adm-”) is gone.
+
 ## [2026.9.36] — 2026-09-04
 
 - “Load demo” fetches the demo files bypassing the browser cache. A deploy had briefly left the demo set off the host and the CDN in front handed browsers a four-hour TTL on the resulting 404s; the files are back and the fetch no longer trusts a cached answer.
