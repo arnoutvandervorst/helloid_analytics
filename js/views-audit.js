@@ -224,6 +224,69 @@
     return wrap;
   }
 
+  /* --------------------------------------------------------- admin access */
+  function adminTab(m, audit) {
+    const A = HR.audit.adminAccess(audit);
+    const wrap = el('div', {});
+    const C = HR.charts;
+    wrap.appendChild(el('div', { class: 'grid g4', style: 'margin-bottom:14px' }, [
+      tile(T('au.kLogins'), U.fmtInt(A.logins.total), T('au.kLoginsFoot', { ok: U.fmtInt(A.logins.ok), failed: U.fmtInt(A.logins.failed), users: U.fmtInt(A.users.length) })),
+      tile(T('au.kLocal'), U.fmtPct(A.logins.localShare, 0), T('au.kLocalFoot'), { severity: A.logins.localShare > 0.5 ? 'high' : A.logins.localShare > 0 ? 'medium' : 'good' }),
+      tile(T('au.kFailedUsers'), U.fmtInt(A.logins.failedUsersRecent.length), T('au.kFailedUsersFoot'), { severity: A.logins.failedUsersRecent.length ? 'medium' : 'good', small: true }),
+      tile(T('au.kManualPortal'), U.fmtInt(A.portal.manual), T('au.kManualPortalFoot', { n: U.fmtInt(A.portal.total) }), { small: true })
+    ]));
+    wrap.appendChild(el('p', { class: 'note', 'data-lead': '1', text: T(A.logins.mfaKnown ? 'au.mfaKnown' : 'au.mfaUnknown') }));
+    wrap.appendChild(card(T('au.usersTitle'), T('au.usersNote'), HR.table.make({
+      columns: [
+        { key: 'user', label: T('au.cWho'), value: u => u.user },
+        { key: 'logins', label: T('au.cLogins'), value: u => u.logins, align: 'right' },
+        { key: 'failed', label: T('au.cFailed'), value: u => u.failed, align: 'right', render: u => el('span', { class: u.failed ? 'sev medium' : 'note', text: String(u.failed) }) },
+        { key: 'local', label: T('au.cLocal'), value: u => u.local, align: 'right', render: u => el('span', { class: u.local ? 'sev high' : 'note', text: String(u.local) }) },
+        { key: 'idps', label: T('au.cIdp'), value: u => u.idps.join(', ') },
+        { key: 'countries', label: T('au.cCountries'), value: u => u.countries.join(', ') },
+        { key: 'os', label: T('au.cDevices'), value: u => u.os.join(', ') },
+        { key: 'last', label: T('au.cLastLogin'), value: u => u.last ? +u.last : 0, render: u => el('span', { class: 'nowrap', text: day(u.last) }) }
+      ],
+      rows: A.users, pageSize: 25, exportName: 'helloid-portal-logins', initialSort: { key: 'logins', dir: -1 },
+      search: (u, q) => (u.user + ' ' + u.idps.join(' ')).toLowerCase().includes(q)
+    })));
+    const g = el('div', { class: 'grid g2' });
+    g.appendChild(card(T('au.portalTitle'), T('au.portalNote'), HR.table.make({
+      columns: [
+        { key: 'event', label: T('au.cEvent'), value: e => e.event },
+        { key: 'n', label: T('au.cTotal'), value: e => e.n, align: 'right' },
+        { key: 'manual', label: T('au.cByHand'), value: e => e.manual, align: 'right', render: e => el('span', { class: e.manual ? 'sev medium' : 'note', text: String(e.manual) }) }
+      ],
+      rows: A.portal.byEvent, pageSize: 12, exportName: 'helloid-portal-changes', initialSort: { key: 'n', dir: -1 }
+    })));
+    g.appendChild(card(T('au.manualTitle'), T('au.manualNote'), A.portal.manualRows.length ? HR.table.make({
+      columns: [
+        { key: 'at', label: T('au.cWhen'), value: e => e.at ? +e.at : 0, render: e => el('span', { class: 'nowrap', text: day(e.at) }) },
+        { key: 'who', label: T('au.cWho'), value: e => e.source },
+        { key: 'event', label: T('au.cEvent'), value: e => e.event },
+        { key: 'what', label: T('au.cWhat'), value: e => e.what }
+      ],
+      rows: A.portal.manualRows, pageSize: 10, exportName: 'helloid-portal-manual', initialSort: { key: 'at', dir: -1 }
+    }) : el('p', { class: 'note', text: T('au.noManual') })));
+    wrap.appendChild(g);
+    return wrap;
+  }
+
+  /* ------------------------------------------------------------- licences */
+  function licenceTab(m, audit) {
+    const A = HR.audit.adminAccess(audit);
+    const C = HR.charts;
+    const L = A.licenses;
+    if (!L.rows.length) return card(T('au.licTitle'), null, el('p', { class: 'note', text: T('au.licNone') }));
+    const labels = L.rows.map(r => day(r.usageCountDate ? new Date(r.usageCountDate) : r.at));
+    return el('div', {}, [
+      el('div', { class: 'grid g4', style: 'margin-bottom:14px' }, L.modules.map(mo =>
+        tile(T('au.lic.' + mo.key), U.fmtInt(mo.latest), T('au.licFoot', { peak: U.fmtInt(mo.peak), first: U.fmtInt(mo.first) }), { small: true }))),
+      el('div', { class: 'grid g2' }, L.modules.map((mo, i) => card(T('au.lic.' + mo.key), T('au.licNote', { n: U.fmtInt(L.rows.length), from: labels[0], to: labels[labels.length - 1] }),
+        C.line([{ label: T('au.lic.' + mo.key), color: C.slot(i + 1), points: L.rows.map((r, x) => ({ x, y: r[mo.key] || 0 })) }], labels))))
+    ]);
+  }
+
   /* --------------------------------------------------------- who did what */
   function actorsTab(m, audit) {
     const actors = HR.audit.actors(audit);
@@ -252,7 +315,9 @@
       { id: 'decisions', label: T('au.tab.decisions'), count: audit.exclusions.length + audit.thresholds.length, build: () => decisionsTab(m, audit) },
       { id: 'rules', label: T('au.tab.rules'), count: audit.rules.filter(r => /publish/i.test(r.action || '')).length, build: () => rulesTab(m, audit) },
       { id: 'health', label: T('au.tab.health'), count: HR.audit.health(audit).failures.recentFailed, build: () => healthTab(m, audit) },
-      { id: 'actors', label: T('au.tab.actors'), build: () => actorsTab(m, audit) }
+      { id: 'actors', label: T('au.tab.actors'), build: () => actorsTab(m, audit) },
+      { id: 'admin', label: T('au.tab.admin'), count: audit.logins.length, build: () => adminTab(m, audit) },
+      audit.licenses.length ? { id: 'licences', label: T('au.tab.licences'), build: () => licenceTab(m, audit) } : null
     ], params));
     return f;
   }

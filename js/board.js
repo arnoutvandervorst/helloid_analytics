@@ -564,6 +564,7 @@
           el('p', { class: 'lead', text: T('bd.opsLead', { from: A.meta.first ? U.fmtDate(A.meta.first).split(',')[0] : '—', to: A.meta.last ? U.fmtDate(A.meta.last).split(',')[0] : '—',
             actions: U.fmtInt(h.failures.actions), exclusions: U.fmtInt(A.exclusions.length), noReason: U.fmtInt(noReason), thresholds: U.fmtInt(A.thresholds.length),
             publishes: U.fmtInt(A.rules.filter(r => /publish/i.test(r.action || '')).length), actors: U.fmtInt(HR.audit.actors(A).length) }) }),
+          (() => { const ad = HR.audit.adminAccess(A); return el('p', { class: 'lead', text: T('bd.opsAdmin', { users: U.fmtInt(ad.users.length), logins: U.fmtInt(ad.logins.total), failed: U.fmtInt(ad.logins.failed), local: U.fmtPct(ad.logins.localShare, 0) }) }); })(),
           el('h3', { class: 'sheet-h3', text: T('bd.opsFailures') }),
           ft,
           el('p', { class: 'footnote', text: T('bd.opsFoot') })
@@ -714,7 +715,8 @@
         imports: { runs: h.imports.runs, failed: h.imports.failed, failedRecent: h.imports.failedRecent }, evaluations: { starts: h.evaluations.starts, ageDays: h.evaluations.ageDays, last: h.evaluations.last },
         incidents: { distinct: h.incidents.distinct, open: h.incidents.open.length }, exclusions: m.audit.exclusions.length,
         exclusionsWithoutReason: m.audit.exclusions.filter(x => !String(x.comment || '').trim()).length, thresholdApprovals: m.audit.thresholds.length,
-        rulePublishes: m.audit.rules.filter(r => /publish/i.test(r.action || '')).length };
+        rulePublishes: m.audit.rules.filter(r => /publish/i.test(r.action || '')).length,
+        adminAccess: (() => { const ad = HR.audit.adminAccess(m.audit); return { users: ad.users.length, logins: ad.logins.total, failed: ad.logins.failed, localShare: ad.logins.localShare, licenses: ad.licenses.latest }; })() };
     }
     if (m.vault && HR.workforce) {
       try {

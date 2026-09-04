@@ -226,5 +226,67 @@
     return audit._health;
   }
 
-  HR.audit = { parse, looksLikeAudit, asHistory, evidenceFor, actors, untilOf, health };
+  /* -------------------------------------------------------- admin access */
+
+  /**
+   * Who logs in to HelloID itself, how, and whether it works — the privileged access
+   * review of the identity system's own console. MFA is not in the log on most tenants
+   * (the mfa index is empty), so "federated" is the proxy: a Local-IdP login bypasses
+   * whatever the organisation's IdP enforces. Cached on the audit object.
+   */
+  function adminAccess(audit, now) {
+    if (audit._admin) return audit._admin;
+    now = now || new Date();
+    const recent = r => r.at && (now - r.at) <= 30 * DAY;
+    const byUser = new Map();
+    for (const r of audit.logins) {
+      const k = r.userName || '?';
+      if (!byUser.has(k)) byUser.set(k, { user: k, logins: 0, ok: 0, failed: 0, failedRecent: 0, local: 0, idps: new Set(), countries: new Set(), os: new Set(), first: null, last: null, lastFailed: null });
+      const u = byUser.get(k); u.logins++;
+      if (r.loginSuccess) u.ok++; else { u.failed++; if (recent(r)) u.failedRecent++; if (!u.lastFailed || r.at > u.lastFailed) u.lastFailed = r.at; }
+      if (/local/i.test(r.idpType || r.idpName || '')) u.local++;
+      if (r.idpName || r.idpType) u.idps.add(r.idpName || r.idpType);
+      const geo = r.geoip || {}; if (geo.country_iso_code) u.countries.add(geo.country_iso_code);
+      if (r.user_agent && r.user_agent.os && r.user_agent.os.name) u.os.add(r.user_agent.os.name);
+      if (!u.first || r.at < u.first) u.first = r.at;
+      if (r.loginSuccess && (!u.last || r.at > u.last)) u.last = r.at;
+    }
+    const users = Array.from(byUser.values()).map(u => Object.assign(u, { idps: Array.from(u.idps), countries: Array.from(u.countries), os: Array.from(u.os) }))
+      .sort((a, b) => b.logins - a.logins);
+    const ok = audit.logins.filter(r => r.loginSuccess);
+    const localOk = ok.filter(r => /local/i.test(r.idpType || r.idpName || ''));
+    const recentOk = ok.filter(recent);
+    const logins = {
+      total: audit.logins.length, ok: ok.length, failed: audit.logins.length - ok.length,
+      local: localOk.length, localShare: ok.length ? localOk.length / ok.length : 0,
+      recentLocalShare: recentOk.length ? recentOk.filter(r => /local/i.test(r.idpType || r.idpName || '')).length / recentOk.length : (ok.length ? localOk.length / ok.length : 0),
+      countries: Array.from(U.counts(audit.logins, r => (r.geoip || {}).country_iso_code || '?').entries()).map(([country, n]) => ({ country, n })).sort((a, b) => b.n - a.n),
+      failedUsersRecent: users.filter(u => u.failedRecent >= 5),
+      mfaKnown: audit.mfa.length > 0
+    };
+
+    /* Portal users and groups: what the directory sync does versus what a person did by hand. */
+    const changes = audit.portalAdmin.map(r => ({ at: r.at, event: String(r.event || '').replace(/^authentication-/, ''),
+      source: r.eventSource || r.source || r.createdByUserName || (r.userName === 'Api' ? 'Api' : r.userName) || '?',
+      who: r.userName || r.createdByUserName || '', what: r.displayName || r.groupName || r.userName || '' }));
+    const manual = changes.filter(c => !/dirsync|api|sync/i.test(c.source));
+    const portal = {
+      total: changes.length, manual: manual.length, synced: changes.length - manual.length,
+      byEvent: Array.from(U.counts(changes, c => c.event).entries()).map(([event, n]) => ({ event, n, manual: manual.filter(c => c.event === event).length })).sort((a, b) => b.n - a.n),
+      manualRows: manual.sort((a, b) => (b.at || 0) - (a.at || 0))
+    };
+
+    /* Licence counts: one row a day per module; the latest and the peak say what is paid for. */
+    const lic = audit.licenses.slice().sort((a, b) => (a.at || 0) - (b.at || 0));
+    const MODULES = ['provisioningCount', 'serviceAutomationCount', 'accessManagementCount', 'governanceCount'];
+    const licenses = {
+      rows: lic, latest: lic.length ? lic[lic.length - 1] : null,
+      modules: MODULES.map(k => ({ key: k, latest: lic.length ? (lic[lic.length - 1][k] || 0) : 0, peak: Math.max(0, ...lic.map(r => r[k] || 0)),
+        first: lic.length ? (lic[0][k] || 0) : 0 })).filter(mo => mo.peak > 0)
+    };
+    audit._admin = { users, logins, portal, licenses, now };
+    return audit._admin;
+  }
+
+  HR.audit = { parse, looksLikeAudit, asHistory, evidenceFor, actors, untilOf, health, adminAccess };
 })(window.HR);

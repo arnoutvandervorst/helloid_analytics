@@ -3,6 +3,11 @@
 Versions are CalVer (`YYYY.M.N` — Nth release of that month). This file is
 generated from `js/changelog.js` by `make-changelog.js`; edit there, not here.
 
+## [2026.9.30] — 2026-09-04
+
+- Who administers HelloID itself. Evidence gains an Admin access tab from the audit log: every portal login per user — how often, through which identity provider, from which countries, on what, last success and repeated failures — and every change to HelloID’s own users and groups split into what the directory sync did and what a person did by hand. MFA is rarely in the log, so the identity provider is the proxy: a Local login bypasses whatever the organisation’s IdP enforces, and the page says so.
+- Two Compliance controls follow: HelloID logins outside the IdP (max 0 %; ISO A.8.5, BIO 9.4.2, NIS2 21(2)(i)) and administrators with five or more failed logins in 30 days. A Licences tab draws HelloID’s own daily licence counts per module over time. The board’s operations page states who logged in and how; the artifact “Where HelloID stops” describes the audit trail.
+
 ## [2026.9.29] — 2026-09-04
 
 - Engine health, from the audit log. Evidence gains a tab that says whether HelloID itself runs and lands: the share of provisioning actions that failed over the last 30 active days, grouped by system and message with the people behind each group; every source import per system with its last run, result and median duration; people added, removed and blocked per snapshot; evaluations and enforcements with the age of the last one; incidents by component with the open ones listed.

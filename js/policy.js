@@ -286,6 +286,12 @@
         const list = m.audit.exclusions.filter(x => !String(x.comment || '').trim());
         return { value: list.length, affected: [] };
       } },
+    { id: 'local-admin-logins', unit: 'pct', dir: 'max', def: 0, needs: ['audit'], severity: 'high',
+      refs: { nis2: '21(2)(i)', iso27001: 'A.8.5', bio: '9.4.2' },
+      measure: m => ({ value: 100 * HR.audit.adminAccess(m.audit).logins.recentLocalShare, affected: [] }) },
+    { id: 'portal-login-failures', unit: 'count', dir: 'max', def: 0, needs: ['audit'], severity: 'medium',
+      refs: { iso27001: 'A.8.15', bio: '12.4.1' },
+      measure: m => ({ value: HR.audit.adminAccess(m.audit).logins.failedUsersRecent.length, affected: [] }) },
     { id: 'sod-violations', unit: 'count', dir: 'max', def: 0, needs: [], severity: 'critical',
       refs: { nis2: '21(2)(i)', iso27001: 'A.5.3', bio: '6.1.2' }, finding: 'sod-violation',
       measure: m => {
