@@ -3,6 +3,10 @@
 Versions are CalVer (`YYYY.M.N` — Nth release of that month). This file is
 generated from `js/changelog.js` by `make-changelog.js`; edit there, not here.
 
+## [2026.9.33] — 2026-09-04
+
+- The Entra collector can use a saved profile too. collect-entra.ps1 -AppOnly signs in as an app registration (tenant id, client id, client secret — asked once, kept in helloid-config.json alongside the HelloID keys) for scheduled, unattended collections; it needs the same three permissions as Application permissions with admin consent. The interactive sign-in stays the default: it leaves no secret on disk and its consent is revocable. docs/ENTRA-CONSENT.md explains both.
+
 ## [2026.9.32] — 2026-09-04
 
 - helloid-export.ps1 verified against a live tenant and fixed: a page variable shadowed the page size (PowerShell variable names are case-insensitive), and an empty assignment list came back as one bogus row. Both collectors now produce the same file as their Python twins for the same tenant.

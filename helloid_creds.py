@@ -32,6 +32,13 @@ KINDS = {
                    ('apiKey', 'HELLOID_API_KEY', 'API key', False),
                    ('apiSecret', 'HELLOID_API_SECRET', 'API secret', True)]
     },
+    'entra': {
+        'title': 'Microsoft Entra ID app registration (unattended collector runs)',
+        'where': 'Entra admin center → App registrations → your app: tenant id, application (client) id, a client secret; Application permissions User.Read.All, Group.Read.All, Organization.Read.All with admin consent.',
+        'fields': [('entraTenantId', 'ENTRA_TENANT_ID', 'Tenant id (GUID or <tenant>.onmicrosoft.com)', False),
+                   ('entraClientId', 'ENTRA_CLIENT_ID', 'Application (client) id', False),
+                   ('entraClientSecret', 'ENTRA_CLIENT_SECRET', 'Client secret', True)]
+    },
     'elastic': {
         'title': 'HelloID Elastic API (audit log)',
         'where': 'Enable it at https://<tenant>.helloid.com/admin/elasticapikey — the page shows the URL, key and secret.',
@@ -102,9 +109,9 @@ def list_profiles():
         return
     print(f'Profiles in {CONFIG}:')
     for name, p in data['profiles'].items():
-        has = [label for key, label in (('apiKey', 'REST API'), ('elasticKey', 'Elastic')) if p.get(key)]
+        has = [label for key, label in (('apiKey', 'REST API'), ('elasticKey', 'Elastic'), ('entraClientId', 'Entra app')) if p.get(key)]
         mark = ' (default)' if name == data['default'] else ''
-        print(f'  {name}{mark}: {p.get("url") or p.get("elasticUrl") or "?"} — {", ".join(has) if has else "no keys"}')
+        print(f'  {name}{mark}: {p.get("url") or p.get("elasticUrl") or p.get("entraTenantId") or "?"} — {", ".join(has) if has else "no keys"}')
 
 
 def forget(name):

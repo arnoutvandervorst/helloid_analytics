@@ -40,6 +40,16 @@ Graph Command Line Tools* enterprise application. That means:
 - An admin sees exactly the scopes above on the consent screen and can consent
   for their own account only.
 
+## Unattended runs (optional)
+
+For a scheduled collection the script can run without a person signing in:
+`collect-entra.ps1 -AppOnly`. That needs an **app registration** in the tenant
+with the same three permissions as *Application* permissions (admin consent),
+and a client secret. The script asks for tenant id, client id and secret once
+and keeps them as a profile in `helloid-config.json` on the collecting machine.
+This is the one mode where a secret stays behind; the interactive sign-in above
+remains the default for that reason.
+
 ## Revoking afterwards
 
 Entra admin center → **Enterprise applications** → *Microsoft Graph Command

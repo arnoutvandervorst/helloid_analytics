@@ -23,6 +23,13 @@
   Command Line Tools → Permissions → revoke. See docs/ENTRA-CONSENT.md for the
   full walkthrough to share with the customer.
 
+  UNATTENDED RUNS (-AppOnly): for a scheduled collection the script can instead
+  sign in as an app registration you created — tenant id, client id and client
+  secret, asked once and kept as a profile in helloid-config.json (shared with
+  the HelloID collectors). That app needs the same three permissions as
+  *Application* permissions with admin consent, and the secret then lives on
+  this machine: the interactive sign-in stays the default for that reason.
+
   The output file contains personal data: handle it like any HR export. It is
   read locally in the analyst's browser and never uploaded anywhere.
 
@@ -42,18 +49,34 @@
   "extra" on each user; the analytics page's field-mapping view names the
   attributes it needs and can generate this list.
 
+.PARAMETER AppOnly
+  Sign in as an app registration (client secret) instead of interactively, for
+  scheduled runs. Asks for the details once and saves them as a profile.
+
+.PARAMETER ProfileName
+  Which saved profile holds the app registration (default: the file's default).
+
+.PARAMETER Setup
+  With -AppOnly: ask for the app registration details again and save them.
+
 .EXAMPLE
   .\collect-entra.ps1
   .\collect-entra.ps1 -IncludeSignInActivity
   .\collect-entra.ps1 -ExtraAttributes ageGroup,employeeOrgData
+  .\collect-entra.ps1 -AppOnly -ProfileName customer-a
 #>
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '',
   Justification = 'Interactive console script; the scope listing, progress and the PII warning belong on the host, never in the pipeline.')]
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingConvertToSecureStringWithPlainText', '',
+  Justification = 'The client secret comes from the saved profile and is wrapped for Connect-MgGraph in memory only.')]
 [CmdletBinding()]
 param(
   [string]$OutFile = "directory-entra.json",
   [switch]$IncludeSignInActivity,
-  [string[]]$ExtraAttributes = @()
+  [string[]]$ExtraAttributes = @(),
+  [switch]$AppOnly,
+  [string]$ProfileName = '',
+  [switch]$Setup
 )
 
 $ErrorActionPreference = 'Stop'
@@ -65,9 +88,19 @@ function Write-Step([string]$Message) {
 $scopes = @('User.Read.All', 'Group.Read.All', 'Organization.Read.All')
 if ($IncludeSignInActivity) { $scopes += 'AuditLog.Read.All' }
 
-Write-Host "Connecting to Microsoft Graph with read-only scopes:"
-$scopes | ForEach-Object { Write-Host "  $_" }
-Connect-MgGraph -Scopes $scopes -NoWelcome
+if ($AppOnly) {
+  . (Join-Path $PSScriptRoot 'HelloIDCreds.ps1')
+  $creds = Resolve-HelloIDCredential -Kind entra -ProfileName $ProfileName -Setup:$Setup -EnvFile (Join-Path $PSScriptRoot '.env')
+  Write-Host "Connecting to Microsoft Graph as app $($creds.Key) in tenant $($creds.Url) (application permissions, no user):"
+  $scopes | ForEach-Object { Write-Host "  $_" }
+  $secure = ConvertTo-SecureString $creds.Secret -AsPlainText -Force
+  $appCred = New-Object System.Management.Automation.PSCredential($creds.Key, $secure)
+  Connect-MgGraph -TenantId $creds.Url -ClientSecretCredential $appCred -NoWelcome
+} else {
+  Write-Host "Connecting to Microsoft Graph with read-only scopes:"
+  $scopes | ForEach-Object { Write-Host "  $_" }
+  Connect-MgGraph -Scopes $scopes -NoWelcome
+}
 Write-Step "Connected."
 
 $org = Get-MgOrganization | Select-Object -First 1

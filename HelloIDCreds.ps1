@@ -36,6 +36,15 @@ $script:HelloIDKinds = @{
       @{ Key = 'apiSecret'; Env = 'HELLOID_API_SECRET'; Label = 'API secret';                               Hidden = $true }
     )
   }
+  entra = @{
+    Title  = 'Microsoft Entra ID app registration (unattended collector runs)'
+    Where  = 'Entra admin center -> App registrations -> your app: tenant id, application (client) id, a client secret; Application permissions User.Read.All, Group.Read.All, Organization.Read.All with admin consent.'
+    Fields = @(
+      @{ Key = 'entraTenantId';     Env = 'ENTRA_TENANT_ID';     Label = 'Tenant id (GUID or <tenant>.onmicrosoft.com)'; Hidden = $false },
+      @{ Key = 'entraClientId';     Env = 'ENTRA_CLIENT_ID';     Label = 'Application (client) id';                       Hidden = $false },
+      @{ Key = 'entraClientSecret'; Env = 'ENTRA_CLIENT_SECRET'; Label = 'Client secret';                                 Hidden = $true }
+    )
+  }
   elastic = @{
     Title  = 'HelloID Elastic API (audit log)'
     Where  = 'Enable it at https://<tenant>.helloid.com/admin/elasticapikey - the page shows the URL, key and secret.'
@@ -96,8 +105,9 @@ function Show-HelloIDProfile {
     $has = @()
     if ($p.apiKey) { $has += 'REST API' }
     if ($p.elasticKey) { $has += 'Elastic' }
+    if ($p.entraClientId) { $has += 'Entra app' }
     $mark = ''; if ($name -eq $data.default) { $mark = ' (default)' }
-    $url = $p.url; if (-not $url) { $url = $p.elasticUrl }; if (-not $url) { $url = '?' }
+    $url = $p.url; if (-not $url) { $url = $p.elasticUrl }; if (-not $url) { $url = $p.entraTenantId }; if (-not $url) { $url = '?' }
     $keys = 'no keys'; if ($has.Count) { $keys = $has -join ', ' }
     Write-Host "  $name$mark`: $url - $keys"
   }
@@ -159,7 +169,7 @@ function Get-HelloIDHostName([string]$Url) {
 }
 
 <#
-  Resolve-HelloIDCredential -Kind api|elastic -ProfileName x -Setup -EnvFile path
+  Resolve-HelloIDCredential -Kind api|elastic|entra -ProfileName x -Setup -EnvFile path
   Returns @{ Url; Key; Secret; Profile }. -ListProfiles and -Forget are handled by the caller.
 #>
 function Resolve-HelloIDCredential {
