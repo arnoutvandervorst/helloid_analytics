@@ -35,6 +35,8 @@
     return !!data && typeof data === 'object' &&
       (data.kind === 'helloid-products' || Array.isArray(data.products));
   }
+  /* One Service Automation file: the catalogue and the assignments together — either half may be empty. */
+  const looksLikeServiceAutomation = data => !!data && data.kind === 'helloid-service-automation';
 
   /** ISO with or without fractional seconds; HelloID writes both. */
   function parseDate(value) {
@@ -479,7 +481,7 @@
   }
 
   HR.products = {
-    parseProducts, parseAssignments, looksLikeProducts, looksLikeAssignments,
+    parseProducts, parseAssignments, looksLikeProducts, looksLikeAssignments, looksLikeServiceAutomation,
     linkHolders, matchProducts, applyMapping, parsePrice, tokens, nameScore
   };
 })(window.HR);

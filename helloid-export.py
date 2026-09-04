@@ -6,18 +6,24 @@ publicly, an API key that can read a whole tenant does not belong in a browser's
 storage, and the page's own CSP forbids the call anyway. So the credential stays here,
 on a machine you control, and the dashboard imports what this writes.
 
-    cp .env.example .env      # fill in tenant URL, key and secret
     python3 helloid-export.py
 
-Writes, next to this script unless -o says otherwise:
+The first run asks for the tenant URL, API key and secret (HelloID portal → Security →
+API keys) and offers to save them as a named profile in helloid-config.json, next to
+this script, owner-only. After that it just runs; --profile NAME picks another tenant,
+--setup asks again, --list-profiles and --forget NAME manage the file. Environment
+variables and a .env file still work as before.
 
-    product-assignments.csv   who holds which product, since when, approved by whom
-    products.json             the products themselves, including their tasks
+Writes one file, next to this script unless -o says otherwise:
 
-Why both: the assignment says a person has "Adobe Illustrator"; only the product's tasks
-say which group that turns into. Together they answer the question a reconciliation
+    helloid-service-automation.json   the products (with their tasks) and who holds which
+                                      product, since when, approved by whom
+
+Why both in one: the assignment says a person has "Adobe Illustrator"; only the product's
+tasks say which group that turns into. Together they answer the question a reconciliation
 export cannot — "why does this person hold this group" — with "they requested it on this
-date and their manager approved it".
+date and their manager approved it". Either half may be empty; the dashboard fills what
+it gets. --legacy also writes the two older files (products.json, product-assignments.csv).
 
 Authentication is the documented scheme: Authorization: Basic base64(key:secret).
 Nothing is written to the terminal that carries the credential.
@@ -33,22 +39,10 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import helloid_creds  # noqa: E402  (next to this script)
+
 PAGE = 500          # skip/take paging; the API takes both as query parameters
-
-
-def load_env(path):
-    """Minimal .env reader — no dependency, and it only has to handle KEY=value."""
-    values = {}
-    if not os.path.exists(path):
-        return values
-    with open(path, encoding='utf-8') as fh:
-        for line in fh:
-            line = line.strip()
-            if not line or line.startswith('#') or '=' not in line:
-                continue
-            key, value = line.split('=', 1)
-            values[key.strip()] = value.strip().strip('"').strip("'")
-    return values
 
 
 class HelloID:
@@ -144,22 +138,14 @@ def fetch_products(api):
 def main():
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument('--env', default='.env', help='file holding the credentials (default .env)')
-    p.add_argument('-o', '--out', default='.', help='output directory (default: here)')
+    p.add_argument('-o', '--out', default=os.path.dirname(os.path.abspath(__file__)), help='output directory (default: next to the script)')
+    p.add_argument('--legacy', action='store_true', help='also write products.json and product-assignments.csv')
     p.add_argument('--insecure', action='store_true', help='skip TLS verification (test tenants)')
+    helloid_creds.add_arguments(p)
     args = p.parse_args()
 
-    env = load_env(args.env)
-    base = os.environ.get('HELLOID_URL') or env.get('HELLOID_URL')
-    key = os.environ.get('HELLOID_API_KEY') or env.get('HELLOID_API_KEY')
-    secret = os.environ.get('HELLOID_API_SECRET') or env.get('HELLOID_API_SECRET')
-    missing = [n for n, v in [('HELLOID_URL', base), ('HELLOID_API_KEY', key),
-                              ('HELLOID_API_SECRET', secret)] if not v]
-    if missing:
-        raise SystemExit('Missing ' + ', '.join(missing) + f' — put them in {args.env} '
-                         '(see .env.example) or the environment.')
-
-    api = HelloID(base, key, secret, args.insecure)
+    creds = helloid_creds.resolve('api', args)
+    api = HelloID(creds['url'], creds['key'], creds['secret'], args.insecure)
     os.makedirs(args.out, exist_ok=True)
 
     print(f'Tenant {urllib.parse.urlparse(api.base).netloc}')
@@ -167,21 +153,30 @@ def main():
     assignments = api.paged('/product-assignment')
     print(f'  product assignments: {len(assignments)}')
 
-    products_file = os.path.join(args.out, 'products.json')
-    with open(products_file, 'w', encoding='utf-8') as fh:
+    tenant = urllib.parse.urlparse(api.base).netloc
+    rows = [assignment_row(a) for a in assignments]
+    merged_file = os.path.join(args.out, 'helloid-service-automation.json')
+    with open(merged_file, 'w', encoding='utf-8') as fh:
         json.dump({
-            'kind': 'helloid-products',
+            'kind': 'helloid-service-automation',
+            'version': 1,
             'source': product_path,
-            'tenant': urllib.parse.urlparse(api.base).netloc,
-            'products': products
+            'tenant': tenant,
+            'products': products,
+            'assignments': rows
         }, fh, indent=1, ensure_ascii=False)
 
+    products_file = os.path.join(args.out, 'products.json')
     assignments_file = os.path.join(args.out, 'product-assignments.csv')
-    with open(assignments_file, 'w', encoding='utf-8', newline='') as fh:
-        writer = csv.DictWriter(fh, fieldnames=ASSIGNMENT_COLUMNS)
-        writer.writeheader()
-        for a in assignments:
-            writer.writerow(assignment_row(a))
+    if args.legacy:
+        with open(products_file, 'w', encoding='utf-8') as fh:
+            json.dump({'kind': 'helloid-products', 'source': product_path, 'tenant': tenant, 'products': products},
+                      fh, indent=1, ensure_ascii=False)
+        with open(assignments_file, 'w', encoding='utf-8', newline='') as fh:
+            writer = csv.DictWriter(fh, fieldnames=ASSIGNMENT_COLUMNS)
+            writer.writeheader()
+            for r in rows:
+                writer.writerow(r)
 
     # What the dashboard will be able to resolve without guessing, said up front.
     native = sum(1 for p_ in products for a in (p_.get('actions') or [])
@@ -189,9 +184,10 @@ def main():
     powershell = sum(1 for p_ in products for a in (p_.get('actions') or [])
                      if a.get('executionType') == 'powershell')
     withactions = sum(1 for p_ in products if p_.get('actions'))
-    print(f'\n{products_file}: {len(products)} products, {withactions} with tasks '
-          f'({native} native, {powershell} PowerShell)')
-    print(f'{assignments_file}: {len(assignments)} assignments')
+    print(f'\n{merged_file}: {len(products)} products ({withactions} with tasks: {native} native, {powershell} PowerShell), '
+          f'{len(assignments)} assignments. Drop it on the dashboard under Imports.')
+    if args.legacy:
+        print(f'  also {products_file} and {assignments_file}')
     if powershell and not any((a.get('variables') for p_ in products for a in (p_.get('actions') or []))):
         print('\nNote: no task variables came back. Group names for PowerShell tasks then '
               'live only in the script bodies, which this endpoint does not return.')

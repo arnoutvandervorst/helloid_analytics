@@ -525,7 +525,8 @@
   let collectorProbe = null;
   function probeCollectors() {
     if (collectorProbe) return collectorProbe;
-    collectorProbe = Promise.all(['collect-ad.ps1', 'collect-entra.ps1', 'docs/ENTRA-CONSENT.md'].map(path =>
+    collectorProbe = Promise.all(['collect-ad.ps1', 'collect-entra.ps1', 'docs/ENTRA-CONSENT.md',
+      'helloid-audit.py', 'helloid-audit.ps1', 'helloid-export.py', 'helloid-export.ps1', 'HelloIDCreds.ps1', 'helloid_creds.py'].map(path =>
       fetch(path, { method: 'HEAD' })
         .then(res => res.ok && !(res.headers.get('content-type') || '').includes('html') ? path : null)
         .catch(() => null)
@@ -533,9 +534,19 @@
     return collectorProbe;
   }
 
-  function collectorDownloads() {
+  /* Which collector files belong to which slot: the directory has its two scripts, the
+     HelloID collectors come with the credential helper they dot-source / import. */
+  const COLLECTORS = {
+    directory: ['collect-ad.ps1', 'collect-entra.ps1', 'docs/ENTRA-CONSENT.md'],
+    audit: ['helloid-audit.py', 'helloid_creds.py', 'helloid-audit.ps1', 'HelloIDCreds.ps1'],
+    products: ['helloid-export.py', 'helloid_creds.py', 'helloid-export.ps1', 'HelloIDCreds.ps1'],
+    assignments: ['helloid-export.py', 'helloid_creds.py', 'helloid-export.ps1', 'HelloIDCreds.ps1']
+  };
+  function collectorDownloads(kind) {
     const row = el('div', { class: 'slot-actions' });
-    probeCollectors().then(found => {
+    const want = COLLECTORS[kind || 'directory'];
+    probeCollectors().then(all => {
+      const found = all.filter(p => want.includes(p));
       if (!found.length) return;
       found.forEach(path => row.appendChild(el('a', {
         class: 'btn sm', href: path, download: path.split('/').pop(),
@@ -565,12 +576,14 @@
           el('div', { class: 'note', text: st.loaded
             ? (days === 0 ? T('src.today') : T('src.daysAgo', { n: U.fmtInt(days) })) + ' · ' + U.fmtDate(st.loaded)
             : T('src.noDate') }),
-          healthLine ? el('div', { class: 'note slot-health', text: '\u26a0 ' + healthLine }) : null
+          healthLine ? el('div', { class: 'note slot-health', text: '\u26a0 ' + healthLine }) : null,
+          /* A loaded slot still offers its collector: the next run is how it gets refreshed. */
+          COLLECTORS[slot.kind] ? collectorDownloads(slot.kind) : null
         ].filter(Boolean))
       : el('div', {}, [
           el('div', { class: 'note', text: T('src.slot.' + slot.kind + '.unlocks') }),
           el('div', { class: 'note', text: T('src.slot.' + slot.kind + '.where') }),
-          slot.kind === 'directory' ? collectorDownloads() : null
+          COLLECTORS[slot.kind] ? collectorDownloads(slot.kind) : null
         ].filter(Boolean));
 
     const actions = el('div', { class: 'slot-actions' }, [

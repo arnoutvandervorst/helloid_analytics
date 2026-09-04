@@ -262,6 +262,7 @@
       if (peek.kind === 'helloid-recon-snapshots' || Array.isArray(peek.snapshots)) return 'snapshots';
       if (HR.directory.looksLikeDirectory(peek)) return 'directory';
       if (HR.audit.looksLikeAudit(peek)) return 'audit';
+      if (HR.products.looksLikeServiceAutomation(peek)) return 'products';
       if (HR.products.looksLikeProducts(peek)) return 'products';
       if (HR.fieldmap.looksLikeFieldMapping(peek)) return 'fieldmapping';
       if (HR.fieldmap.looksLikeSourceMapping(peek)) return 'sourcemapping';
@@ -410,6 +411,34 @@
     go('products');
   }
 
+  /** The catalogue and the assignments in one file (helloid-export.py / .ps1): each half
+      lands in its own slot, and an empty half simply leaves that slot as it was. */
+  async function importServiceAutomation(data, fileName) {
+    const products = Array.isArray(data.products) ? data.products : [];
+    const rows = Array.isArray(data.assignments) ? data.assignments : [];
+    const ctx = { importedAt: state.importedAt, fileNames: state.fileNames };
+    let pMeta = null, aMeta = null;
+    if (products.length) {
+      const text = JSON.stringify({ kind: 'helloid-products', source: data.source || '', tenant: data.tenant || '', products });
+      try { state.products = HR.products.parseProducts(text, fileName); } catch (err) { U.toast(err.message, 7000); return; }
+      state.raw.products = text; state.importedAt.products = Date.now(); state.fileNames.products = fileName; ctx.products = text;
+      pMeta = state.products.meta;
+      HR.usage.imported('products', pMeta.rowCount);
+    }
+    if (rows.length) {
+      const text = U.toCSV(rows);
+      try { state.assignments = HR.products.parseAssignments(text, fileName); } catch (err) { U.toast(err.message, 7000); return; }
+      state.raw.assignments = text; state.importedAt.assignments = Date.now(); state.fileNames.assignments = fileName; ctx.assignments = text;
+      aMeta = state.assignments.meta;
+      HR.usage.imported('assignments', aMeta.rowCount);
+    }
+    if (!pMeta && !aMeta) { U.toast(T('toast.saEmpty'), 6000); return; }
+    HR.store.saveContext(ctx);
+    await withBusy(T('busy.recalc'), () => rebuild());
+    U.toast(T('toast.saLoaded', { products: pMeta ? U.fmtInt(pMeta.rowCount) : '0', assignments: aMeta ? U.fmtInt(aMeta.rowCount) : '0' }), 6000);
+    go('products');
+  }
+
   /** The product catalogue: price, risk factor, time limit, return behaviour. */
   async function importProducts(text, fileName) {
     let parsed;
@@ -479,6 +508,7 @@
     }
     if (peek && HR.directory.looksLikeDirectory(peek)) return importDirectory(text, fileName);
     if (peek && HR.audit.looksLikeAudit(peek)) return importAudit(text, fileName);
+    if (peek && HR.products.looksLikeServiceAutomation(peek)) return importServiceAutomation(peek, fileName);
     if (peek && HR.products.looksLikeProducts(peek)) return importProducts(text, fileName);
     if (peek && HR.fieldmap.looksLikeFieldMapping(peek)) return importFieldMapping(text, fileName);
     if (peek && HR.fieldmap.looksLikeSourceMapping(peek)) {

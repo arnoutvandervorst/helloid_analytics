@@ -13,6 +13,9 @@ COPY demo/ /usr/share/nginx/html/demo/
 # The collector scripts and their consent explainer, so the Imports view can offer
 # them for download. They read data; they never carry any.
 COPY collect-ad.ps1 collect-entra.ps1 /usr/share/nginx/html/
+# The HelloID collectors (REST API and Elastic audit log) and their credential helpers.
+# They ask for a key at run time; none is inside them.
+COPY helloid-export.py helloid-audit.py helloid_creds.py helloid-export.ps1 helloid-audit.ps1 HelloIDCreds.ps1 /usr/share/nginx/html/
 COPY docs/ENTRA-CONSENT.md /usr/share/nginx/html/docs/
 
 # Deliberately absent: *.csv, vault*.json and dist/. Exports carry account, person and

@@ -17,7 +17,8 @@ modelled, draft-only and unmodelled; **granted entitlements** and **historic act
 distinguish "granted outside HelloID" from "granted by HelloID and not recorded", and turn
 a missing entitlement into a failed grant on a date; the **product catalogue** and
 **product assignments** connect Service Automation requests and approvals to the access
-they explain.
+they explain — `helloid-export.py` / `helloid-export.ps1` pull both from the tenant into one
+`helloid-service-automation.json` (either half may be empty); the two older files still load.
 
 A view whose exports are missing is not hidden: it wears a lock in the sidebar and renders
 a page naming exactly which export unlocks it, what that export contains and where in
@@ -350,9 +351,16 @@ added, every import and evaluation run, every login to HelloID itself. `helloid-
 pulls it into `helloid-audit.json`:
 
 ```
-cp .env.example .env     # HELLOID_ELASTIC_URL / _KEY / _SECRET from https://<tenant>.helloid.com/admin/elasticapikey
-python3 helloid-audit.py --days 400
+python3 helloid-audit.py --days 400        # or: .\helloid-audit.ps1 -Days 400
 ```
+
+The first run asks for the Elastic URL, key and secret (create them at
+`https://<tenant>.helloid.com/admin/elasticapikey`; the page shows all three) and offers to
+save them as a named profile in `helloid-config.json` next to the scripts — owner-only,
+gitignored, shared by the Python and PowerShell collectors. After that it just runs;
+`--profile NAME` / `-ProfileName NAME` picks another tenant, `--setup` asks again,
+`--list-profiles` and `--forget NAME` manage the file. Environment variables and a `.env`
+file still work for scheduled runs (`.env.example`).
 
 The app cannot call the API itself — the proxy sends no CORS headers and the page's CSP
 forbids it, and an API key that reads a whole tenant does not belong in a browser. The

@@ -11,12 +11,16 @@ Vault*.json
 # Build output; build.py regenerates it.
 dist/
 
-# Tenant credentials for helloid-export.py. Never commit; .env.example is the template.
+# Tenant credentials for the collectors. Never commit; .env.example is the template for the
+# environment fallback, helloid-config.json holds the saved profiles (owner-only).
 .env
+helloid-config.json
+helloid-config.json.tmp
 
 # Exports pulled from a live tenant.
 product-assignments.csv
 products.json
+helloid-service-automation*.json
 
 # Collector output — real directories carry personal data. demo/ stays the exception.
 directory*.json

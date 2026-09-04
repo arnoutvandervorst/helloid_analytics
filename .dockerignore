@@ -6,8 +6,10 @@ vault*.json
 Vault*.json
 *-vault.json
 helloid-audit*.json
+helloid-service-automation*.json
 directory*.json
 .env
+helloid-config.json
 dist/
 .git/
 .remember/

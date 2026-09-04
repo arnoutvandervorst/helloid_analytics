@@ -18,6 +18,14 @@
 
   const ENTRIES = [
     {
+      version: '2026.9.31', date: '2026-09-04',
+      changes: [
+        'The collectors ask for their credentials. helloid-export.py and helloid-audit.py no longer need environment variables or a .env file: the first run asks for the tenant URL, key and secret (the secret typed without echo), says where in HelloID the key is created, and offers to save them as a named profile in helloid-config.json next to the scripts — owner-only, gitignored, never deployed. After that a run just runs; --profile picks another tenant, --setup asks again, --list-profiles and --forget manage the file. The old ways still work for scheduled jobs.',
+        'PowerShell twins for consultants without Python: helloid-export.ps1 and helloid-audit.ps1 write the same files with the same progress output, share the profile file with the Python scripts (HelloIDCreds.ps1 / helloid_creds.py), and read the secret with Read-Host -AsSecureString.',
+        'Service Automation comes as one file. The export collectors now write helloid-service-automation.json — the product catalogue and the product assignments together, either half may be empty — and the app fills both slots from it; the two older files (products.json, product-assignments.csv) still load, and --legacy / -Legacy still writes them. The Imports view offers every collector for download next to the slot it feeds, also when the slot is already loaded.'
+      ]
+    },
+    {
       version: '2026.9.30', date: '2026-09-04',
       changes: [
         'Who administers HelloID itself. Evidence gains an Admin access tab from the audit log: every portal login per user — how often, through which identity provider, from which countries, on what, last success and repeated failures — and every change to HelloID’s own users and groups split into what the directory sync did and what a person did by hand. MFA is rarely in the log, so the identity provider is the proxy: a Local login bypasses whatever the organisation’s IdP enforces, and the page says so.',

@@ -12,11 +12,14 @@ forbids it — and an API key that reads a whole tenant does not belong in a bro
 anyway. So the credential stays here, on a machine you control, and the dashboard
 imports what this writes.
 
-    cp .env.example .env      # fill in the Elastic URL, key and secret
     python3 helloid-audit.py --days 400
 
-The key is created in HelloID at  https://<tenant>.helloid.com/admin/elasticapikey ;
-the URL it gives you looks like  https://<region>.helloid.cloud/service/elastic-proxy/elastic .
+The first run asks for the Elastic URL, key and secret (the key is created in HelloID at
+https://<tenant>.helloid.com/admin/elasticapikey and the page shows all three) and offers
+to save them as a named profile in helloid-config.json, next to this script, owner-only.
+After that it just runs; --profile NAME picks another tenant, --setup asks again,
+--list-profiles and --forget NAME manage the file. Environment variables and a .env file
+still work as before.
 
 Writes helloid-audit.json next to this script unless -o says otherwise. One file, one
 tenant, one window; rows keep the field names Kibana shows so anything here can be
@@ -36,6 +39,9 @@ import sys
 import time
 import urllib.error
 import urllib.request
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import helloid_creds  # noqa: E402  (next to this script)
 
 T0 = time.monotonic()
 
@@ -82,21 +88,6 @@ SOURCES = [
     ('general-license-counts*', 'licenses', None),
 ]
 DROP = {'tenant', 'tid'}     # the same on every row; the tenant is named once in the header
-
-
-def load_env(path):
-    """Minimal .env reader — no dependency, and it only has to handle KEY=value."""
-    values = {}
-    if not os.path.exists(path):
-        return values
-    with open(path, encoding='utf-8') as fh:
-        for line in fh:
-            line = line.strip()
-            if not line or line.startswith('#') or '=' not in line:
-                continue
-            key, value = line.split('=', 1)
-            values[key.strip()] = value.strip().strip('"').strip("'")
-    return values
 
 
 class Elastic:
@@ -190,23 +181,18 @@ def tenant_of(api):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument('--env', default=os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env'))
     p.add_argument('--days', type=int, default=400, help='how far back to read (default 400)')
     p.add_argument('-o', '--out', default=os.path.join(os.path.dirname(os.path.abspath(__file__)), 'helloid-audit.json'))
     p.add_argument('--insecure', action='store_true', help='skip TLS verification (corporate proxies)')
+    helloid_creds.add_arguments(p)
     args = p.parse_args()
 
-    env = load_env(args.env)
-    url = os.environ.get('HELLOID_ELASTIC_URL') or env.get('HELLOID_ELASTIC_URL')
-    key = os.environ.get('HELLOID_ELASTIC_KEY') or env.get('HELLOID_ELASTIC_KEY')
-    secret = os.environ.get('HELLOID_ELASTIC_SECRET') or env.get('HELLOID_ELASTIC_SECRET')
-    if not (url and key and secret):
-        raise SystemExit('HELLOID_ELASTIC_URL, HELLOID_ELASTIC_KEY and HELLOID_ELASTIC_SECRET are needed — in .env or the environment.')
-
-    api = Elastic(url, key, secret, insecure=args.insecure)
+    creds = helloid_creds.resolve('elastic', args)
+    url = creds['url']
+    api = Elastic(url, creds['key'], creds['secret'], insecure=args.insecure)
     end = dt.datetime.now(dt.timezone.utc).replace(microsecond=0) + dt.timedelta(minutes=1)
     start = end - dt.timedelta(days=args.days)
-    step(f'Connecting to {url.split("/service/")[0]} …')
+    step(f'Connecting to {url.split("/service/")[0]}' + (f' (profile {creds["profile"]})' if creds['profile'] else '') + ' …')
     tenant = tenant_of(api)
     step(f'Tenant: {tenant["name"] or "(unnamed)"} — window {iso(start)[:10]} → {iso(end)[:10]} ({args.days} days), {len(SOURCES)} index patterns')
 
