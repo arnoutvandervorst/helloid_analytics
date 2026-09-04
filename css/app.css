@@ -526,6 +526,9 @@ button.pill { background: none; font: inherit; font-size: 11px; line-height: inh
 .sheet .fw-appendix dt { margin-top: 10px; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
 .sheet .fw-appendix dd { margin: 2px 0 0; color: #26251f; line-height: 1.5; }
 .sheet .fw-tag { border-color: #c3c2b7; color: #6b6a66; }
+/* the finding a control pointed at: opens and lights up once */
+@keyframes finding-flash { from { box-shadow: 0 0 0 3px var(--accent, #4a7cf6); } to { box-shadow: 0 0 0 0 transparent; } }
+details.finding.finding-target { animation: finding-flash 2.4s ease-out 1; scroll-margin-top: 80px; }
 .sod-why { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 10px 0 6px; font-size: 12.5px; }
 .sod-why dt { color: var(--text-primary); }
 .sod-why dd { margin: 0; color: var(--text-secondary); }

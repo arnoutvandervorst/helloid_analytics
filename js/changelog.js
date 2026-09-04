@@ -18,6 +18,12 @@
 
   const ENTRIES = [
     {
+      version: '2026.9.35', date: '2026-09-04',
+      changes: [
+        'A control’s link lands on the thing itself. “See finding” on Compliance now opens Risk & findings with that one finding expanded, highlighted and scrolled into view, and is only offered when the finding actually fired. Every other control has an “open →” link to the page and tab it reads from — leavers, workforce, attestation, engine health, decisions, admin access, toxic combinations, accounts (unowned filter), people, permissions, business rules — instead of a page where the reader still had to look.'
+      ]
+    },
+    {
       version: '2026.9.34', date: '2026-09-04',
       changes: [
         'Every compliance limit in one place. Settings › Weights & thresholds gains a “Compliance limits” table: each control with its shipped default, what is set now (marked when it differs), when it last changed, and a reset per row. The Edit fold on a Compliance row now says the default next to the limit. The limits themselves were always editable per row and saved with the settings file; the defaults live in the control catalogue.'

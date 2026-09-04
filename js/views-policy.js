@@ -158,9 +158,20 @@
       el('span', { class: 'note', text: T('po.due') }),
       el('span', { text: row.due || '—' })
     ]));
-    if (row.def.finding) {
-      who.appendChild(el('a', { href: '#', class: 'note', text: T('po.seeFinding'),
-        onclick: e => { e.preventDefault(); HR.app.go('risk', { tab: 'findings' }); } }));
+    /* Where to go: the finding itself when it fired, else the page the control reads from. */
+    const fired = row.def.finding && m.findings.some(f => f.id === row.def.finding);
+    if (fired) {
+      who.appendChild(el('a', { href: '#', class: 'note', text: T('po.seeFinding') + ' \u2192',
+        onclick: e => { e.preventDefault(); HR.app.go('risk', { tab: 'findings', finding: row.def.finding }); } }));
+    } else if (row.def.goto) {
+      const g = row.def.goto;
+      const tab = g.params && g.params.tab;
+      /* The tab's own label, from whichever view owns it. */
+      const tabKey = tab && [g.view === 'org' ? 'org.tab.' + tab : null, g.view === 'audit' ? 'au.tab.' + tab : null,
+        g.view === 'risk' ? (tab === 'toxic' ? 'sod.tab' : 'rk.tab.' + tab) : null].find(k => k && HR.i18n.has(k));
+      who.appendChild(el('a', { href: '#', class: 'note', text: T('po.open') + ' \u2192',
+        title: T('nav.' + g.view) + (tabKey ? ' \u203a ' + T(tabKey) : ''),
+        onclick: e => { e.preventDefault(); HR.app.go(g.view, Object.assign({}, g.params || {})); } }));
     }
     const editor = el('div', { class: 'ctl-edit', hidden: true });
     const editLink = el('a', { href: '#', class: 'note', text: T('po.edit') + ' ▾', onclick: e => {

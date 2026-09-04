@@ -267,7 +267,7 @@
 
     const body = el('div', { class: 'tab-body' });
     let content = null;
-    try { content = active.build(); }
+    try { content = active.build(params || {}); }
     catch (err) {
       console.error(err);
       content = card(T('app.renderFail'), null, el('p', { class: 'note', text: String(err && err.message || err) }));
@@ -858,7 +858,7 @@
        ranking are three different reads, not one scroll. */
     f.appendChild(tabbed('risk', [
       { id: 'findings', label: T('rk.tab.findings'), count: m.findings.length,
-        build: () => riskFindings(m) },
+        build: p => riskFindings(m, p) },
       { id: 'score', label: T('rk.tab.score'), build: () => riskScoreTab(m) },
       { id: 'permissions', label: T('rk.tab.permissions'), build: () => riskPermsTab(m) },
       HR.sod ? { id: 'toxic', label: T('sod.tab'), count: HR.sod.evaluate(m).violations.length, build: () => riskToxicTab(m) } : null
@@ -971,8 +971,9 @@
     return g;
   }
 
-  function riskFindings(m) {
+  function riskFindings(m, params) {
     const list = el('div', { class: 'stack' });
+    const target = params && params.finding;
     list.appendChild(el('div', { class: 'row' }, [
       el('span', { class: 'spacer' }),
       el('button', {
@@ -990,7 +991,19 @@
         }
       })
     ]));
-    m.findings.forEach(fd => list.appendChild(findingCard(fd, m)));
+    m.findings.forEach(fd => {
+      const card = findingCard(fd, m);
+      /* Arriving from a control: this one opens, lights up and is the first thing on screen. */
+      if (target && fd.id === target) {
+        card.open = true;
+        card.classList.add('finding-target');
+        requestAnimationFrame(() => setTimeout(() => card.scrollIntoView({ block: 'start', behavior: 'smooth' }), 50));
+      }
+      list.appendChild(card);
+    });
+    if (target && !m.findings.some(f => f.id === target)) {
+      list.insertBefore(el('p', { class: 'note', text: T('rk.findingGone') }), list.children[1] || null);
+    }
     return list;
   }
 
