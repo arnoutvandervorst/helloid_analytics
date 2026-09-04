@@ -1941,6 +1941,7 @@
       { id: 'rules', label: T('py.tab.rules'), count: ruleCount,
         build: () => {
           const wrap = el('div', {});
+          wrap.appendChild(minedForestCard());
           wrap.appendChild(minedRulesCard());
           const cd = condensedCard(m, P);
           if (cd) wrap.appendChild(cd);
@@ -2063,6 +2064,92 @@
       initialSort: { key: 'rank', dir: 1 },
       onRowClick: r => drawerPyramidRule(m, P, r)
     }), capNote].filter(Boolean));
+    }
+
+    /* ---- the same rules as a forest: the picture the HR proposal draws ----
+       A rule's parent is the rule with a strict subset of its attributes whose values
+       cover it — the closest such; roots have none and the baseline is the trunk above
+       every family. Bar length is the group, opacity how alike its members are. */
+    function minedForestCard() {
+      const cd = HR.pyramid.condensedOf(m, P);
+      const rk = HR.pyramid.rankForCap(m, P, cd);
+      const rows = cd.rules.map(r => {
+        const src = r.from === 1 ? r.sources[0] : null;
+        const kind = r.from > 1 ? 'condensed' : (src && src.kind === 'combo' ? 'combo' : 'pyramid');
+        return {
+          kind, conds: r.conds, members: r.members.length, membersList: r.members, grants: r.grants,
+          entitlements: r.grants.length, from: r.from, sources: r.sources, node: null,
+          alike: HR.cohorts.alikeOf(P.people, r.members, r.conds.map(c => c.attr), P.attributes, HR.cohorts.weightsFor(m)),
+          minCoverage: Math.min.apply(null, r.grants.map(g => g.coverage)),
+          missing: new Set(r.grants.flatMap(g => g.missing)).size,
+          rank: r.rank, withinCap: r.withinCap !== false, rankTotal: rk.total,
+          name: r.conds.map(c => (T('py.attr.' + c.attr) || c.attr) + ': ' + (c.labels[0] || c.values[0])).join(' / '),
+          level: kind === 'condensed' ? 98 : kind === 'combo' ? 99 : src.level
+        };
+      });
+      const covers = (parent, child) => parent.conds.length < child.conds.length && parent.conds.every(pc => {
+        const cc = child.conds.find(c => c.attr === pc.attr);
+        return cc && cc.values.every(v => pc.values.includes(v));
+      });
+      rows.forEach(r => {
+        const parents = rows.filter(p => p !== r && covers(p, r)).sort((a, b) => b.conds.length - a.conds.length || b.members - a.members);
+        r.parent = parents[0] || null;
+      });
+      const roots = rows.filter(r => !r.parent).sort((a, b) => b.members - a.members);
+      const childrenOf = r => rows.filter(x => x.parent === r).sort((a, b) => b.members - a.members);
+      const biggest = Math.max.apply(null, roots.map(r => r.members).concat([1]));
+      const attrName = a => T('py.attr.' + a) || a;
+
+      const rowEl = (r, depth) => {
+        const line = el('div', { class: 'forest-row' + (depth ? ' child' : '') + (r.withinCap ? '' : ' over'), onclick: () => drawerPyramidRule(m, P, r) });
+        line.style.paddingLeft = (depth * 18) + 'px';
+        const own = depth ? r.conds.filter(c => !r.parent.conds.some(pc => pc.attr === c.attr)) : r.conds;
+        const label = el('div', { class: 'forest-label', title: r.name }, [
+          el('span', { class: 'note', text: (depth ? '+ ' : '') + own.map(c => attrName(c.attr)).join(' + ') + ' · ' }),
+          el('span', { text: own.map(c => c.labels.length > 1 ? c.labels[0] + ' +' + (c.labels.length - 1) : (c.labels[0] || c.values[0])).join(' · ') })
+        ]);
+        if (!r.withinCap) label.appendChild(el('span', { class: 'pill warn', style: 'margin-left:6px', title: T('py.rankOverCap'), text: T('py.pillOverCap', { n: r.rank }) }));
+        if (r.missing) label.appendChild(el('span', { class: 'sev medium', style: 'margin-left:6px', title: T('py.cMissingPeople'), text: T('py.pillMissing', { n: U.fmtInt(r.missing) }) }));
+        if (r.kind !== 'pyramid') label.appendChild(el('span', { class: 'pill muted', style: 'margin-left:6px', text: T('py.kind.' + r.kind) }));
+        const bar = el('div', { class: 'forest-bar' });
+        bar.style.width = (r.members / biggest * 85) + '%';
+        bar.style.opacity = String(0.35 + 0.65 * r.alike);
+        const meta = el('span', { class: 'forest-meta', text: U.fmtInt(r.members) + ' · ' + U.fmtInt(r.entitlements) + ' \u2713 · ' + U.fmtPct(r.minCoverage, 0) });
+        line.append(label, el('div', { class: 'forest-track' }, [bar, meta]));
+        return line;
+      };
+      const FIRST = 40;
+      const forest = el('div', { class: 'forest' });
+      const search = el('input', { type: 'search', placeholder: T('co.searchRoles') });
+      search.style.minWidth = '220px';
+      let showAll = false;
+      const draw = () => {
+        forest.innerHTML = '';
+        const q = search.value.trim().toLowerCase();
+        const hit = r => r.name.toLowerCase().includes(q);
+        const fams = roots.filter(root => !q || hit(root) || rows.some(r => { for (let x = r; x; x = x.parent) if (x === root && hit(r)) return true; return false; }));
+        const shown = showAll || q ? fams : fams.slice(0, FIRST);
+        shown.forEach(root => {
+          const block = el('div', { class: 'forest-family' });
+          const walk = (r, depth) => { block.appendChild(rowEl(r, depth)); childrenOf(r).forEach(c => walk(c, depth + 1)); };
+          walk(root, 0);
+          forest.appendChild(block);
+        });
+        if (!shown.length) forest.appendChild(el('p', { class: 'note', text: T('co.kMixNone') }));
+        if (shown.length < fams.length) forest.appendChild(el('button', { class: 'btn sm', text: T('co.showAll', { n: U.fmtInt(fams.length) }), onclick: () => { showAll = true; draw(); } }));
+      };
+      search.addEventListener('input', draw);
+      draw();
+      const rootGrants = P.ruleGroups.get(P.root);
+      const trunk = rootGrants ? el('div', { class: 'forest-trunk' }, [
+        el('span', { class: 'pill ok', text: T('py.baselineTag') }),
+        el('span', { text: ' ' + T('py.forestTrunk', { n: U.fmtInt(P.root.members.length), ents: U.fmtInt(rootGrants.length) }) })
+      ]) : null;
+      return card(T('py.forestTitle'), T('py.forestNote'), [
+        el('div', { class: 'row', style: 'justify-content:space-between;gap:8px;flex-wrap:wrap' }, [
+          el('span', { class: 'note', text: T('py.forestLegend', { n: U.fmtInt(rows.length), roots: U.fmtInt(roots.length) }) }), search]),
+        trunk, forest
+      ].filter(Boolean));
     }
 
     function gapsCard() {

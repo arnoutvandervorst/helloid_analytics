@@ -529,6 +529,8 @@ button.pill { background: none; font: inherit; font-size: 11px; line-height: inh
 /* the finding a control pointed at: opens and lights up once */
 @keyframes finding-flash { from { box-shadow: 0 0 0 3px var(--accent, #4a7cf6); } to { box-shadow: 0 0 0 0 transparent; } }
 details.finding.finding-target { animation: finding-flash 2.4s ease-out 1; scroll-margin-top: 80px; }
+.forest-trunk { padding: 6px 0 8px; border-bottom: 1px solid var(--border); margin-bottom: 8px; font-size: 12.5px; }
+.forest-row.over .forest-bar { background-image: repeating-linear-gradient(135deg, transparent 0 4px, rgba(255,255,255,.35) 4px 8px); }
 .sod-why { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 10px 0 6px; font-size: 12.5px; }
 .sod-why dt { color: var(--text-primary); }
 .sod-why dd { margin: 0; color: var(--text-secondary); }

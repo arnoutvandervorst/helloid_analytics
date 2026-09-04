@@ -18,6 +18,12 @@
 
   const ENTRIES = [
     {
+      version: '2026.9.38', date: '2026-09-04',
+      changes: [
+        'Mined rules draw the same forest as Roles from HR. Above the rule table, Mining › Mined rules now shows one block per root rule with its specialisations indented under it: bar length is the group, opacity how alike its members are, the meta says entitlements and weakest coverage, pills flag missing people, combination or condensed rules and a rank beyond the cap (striped bar); the baseline is the trunk on top. Click a row for the rule’s drawer; search and “show all” as on the HR proposal.'
+      ]
+    },
+    {
       version: '2026.9.37', date: '2026-09-04',
       changes: [
         'The demo set describes a whole tenant now. The generator writes a coherent directory collection (every demo account with its attributes, every group with its members, nesting, empty groups, stale sign-ins) and a HelloID audit log (the history as provisioning actions, exclusions with reasons and expiry dates, threshold approvals, rule publishes, scheduled imports and evaluations, logins, incidents, licence counts) from the same people — so Evidence, engine health, admin access and the directory-backed controls all show in the demo and the fit check reads nine files as one organisation.',
